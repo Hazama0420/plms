@@ -1,10 +1,6 @@
 // components/properties/location-select.tsx
-
 "use client";
 
-import { useEffect } from "react";
-import { useLocation } from "@/hooks/use-location";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -12,6 +8,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface LocationSelectProps {
   countryId?: string;
@@ -19,11 +16,27 @@ interface LocationSelectProps {
   cityId?: string;
   districtId?: string;
   villageId?: string;
+
+  countries: { id: string; name: string }[];
+  provinces: { id: string; name: string }[];
+  cities: { id: string; name: string }[];
+  districts: { id: string; name: string }[];
+  villages: { id: string; name: string }[];
+
+  loading: {
+    countries: boolean;
+    provinces: boolean;
+    cities: boolean;
+    districts: boolean;
+    villages: boolean;
+  };
+
   onCountryChange: (id: string) => void;
   onProvinceChange: (id: string) => void;
   onCityChange: (id: string) => void;
   onDistrictChange: (id: string) => void;
   onVillageChange: (id: string) => void;
+
   disabled?: boolean;
 }
 
@@ -33,6 +46,12 @@ export function LocationSelect({
   cityId,
   districtId,
   villageId,
+  countries,
+  provinces,
+  cities,
+  districts,
+  villages,
+  loading,
   onCountryChange,
   onProvinceChange,
   onCityChange,
@@ -40,152 +59,131 @@ export function LocationSelect({
   onVillageChange,
   disabled = false,
 }: LocationSelectProps) {
-  const {
-    countries,
-    provinces,
-    cities,
-    districts,
-    villages,
-    fetchProvinces,
-    fetchCities,
-    fetchDistricts,
-    fetchVillages,
-    loading,
-  } = useLocation();
-
-  // Load provinces when country changes
-  useEffect(() => {
-    if (countryId) {
-      fetchProvinces(countryId);
-    }
-  }, [countryId, fetchProvinces]);
-
-  // Load cities when province changes
-  useEffect(() => {
-    if (provinceId) {
-      fetchCities(provinceId);
-    }
-  }, [provinceId, fetchCities]);
-
-  // Load districts when city changes
-  useEffect(() => {
-    if (cityId) {
-      fetchDistricts(cityId);
-    }
-  }, [cityId, fetchDistricts]);
-
-  // Load villages when district changes
-  useEffect(() => {
-    if (districtId) {
-      fetchVillages(districtId);
-    }
-  }, [districtId, fetchVillages]);
-
   return (
     <div className="space-y-4">
       {/* Country */}
       <div className="space-y-2">
-        <Label>Negara</Label>
-        <Select
-          value={countryId || ""}
-          onValueChange={onCountryChange}
-          disabled={disabled || loading.countries}
-        >
-          <SelectTrigger>
-            <SelectValue placeholder="Pilih negara" />
-          </SelectTrigger>
-          <SelectContent>
-            {countries.map((country) => (
-              <SelectItem key={country.id} value={country.id}>
-                {country.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <label className="text-sm font-medium">Negara</label>
+        {loading.countries ? (
+          <Skeleton className="h-10 w-full" />
+        ) : (
+          <Select
+            value={countryId || ""}
+            onValueChange={(val) => onCountryChange(val || "")}
+            disabled={disabled}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Pilih negara" />
+            </SelectTrigger>
+            <SelectContent>
+              {countries.map((c) => (
+                <SelectItem key={c.id} value={c.id}>
+                  {c.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
       </div>
 
       {/* Province */}
       <div className="space-y-2">
-        <Label>Provinsi</Label>
-        <Select
-          value={provinceId || ""}
-          onValueChange={onProvinceChange}
-          disabled={disabled || !countryId || loading.provinces}
-        >
-          <SelectTrigger>
-            <SelectValue placeholder="Pilih provinsi" />
-          </SelectTrigger>
-          <SelectContent>
-            {provinces.map((province) => (
-              <SelectItem key={province.id} value={province.id}>
-                {province.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <label className="text-sm font-medium">Provinsi</label>
+        {loading.provinces ? (
+          <Skeleton className="h-10 w-full" />
+        ) : (
+          <Select
+            value={provinceId || ""}
+            onValueChange={(val) => onProvinceChange(val || "")}
+            disabled={disabled || !countryId}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Pilih provinsi" />
+            </SelectTrigger>
+            <SelectContent>
+              {provinces.map((p) => (
+                <SelectItem key={p.id} value={p.id}>
+                  {p.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
       </div>
 
       {/* City */}
       <div className="space-y-2">
-        <Label>Kota / Kabupaten</Label>
-        <Select
-          value={cityId || ""}
-          onValueChange={onCityChange}
-          disabled={disabled || !provinceId || loading.cities}
-        >
-          <SelectTrigger>
-            <SelectValue placeholder="Pilih kota" />
-          </SelectTrigger>
-          <SelectContent>
-            {cities.map((city) => (
-              <SelectItem key={city.id} value={city.id}>
-                {city.name} {city.city_type ? `(${city.city_type})` : ""}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <label className="text-sm font-medium">Kota / Kabupaten</label>
+        {loading.cities ? (
+          <Skeleton className="h-10 w-full" />
+        ) : (
+          <Select
+            value={cityId || ""}
+            onValueChange={(val) => onCityChange(val || "")}
+            disabled={disabled || !provinceId}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Pilih kota" />
+            </SelectTrigger>
+            <SelectContent>
+              {cities.map((c) => (
+                <SelectItem key={c.id} value={c.id}>
+                  {c.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
       </div>
 
       {/* District */}
       <div className="space-y-2">
-        <Label>Kecamatan</Label>
-        <Select
-          value={districtId || ""}
-          onValueChange={onDistrictChange}
-          disabled={disabled || !cityId || loading.districts}
-        >
-          <SelectTrigger>
-            <SelectValue placeholder="Pilih kecamatan" />
-          </SelectTrigger>
-          <SelectContent>
-            {districts.map((district) => (
-              <SelectItem key={district.id} value={district.id}>
-                {district.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <label className="text-sm font-medium">Kecamatan</label>
+        {loading.districts ? (
+          <Skeleton className="h-10 w-full" />
+        ) : (
+          <Select
+            value={districtId || ""}
+            onValueChange={(val) => onDistrictChange(val || "")}
+            disabled={disabled || !cityId}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Pilih kecamatan" />
+            </SelectTrigger>
+            <SelectContent>
+              {districts.map((d) => (
+                <SelectItem key={d.id} value={d.id}>
+                  {d.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
       </div>
 
       {/* Village */}
       <div className="space-y-2">
-        <Label>Kelurahan / Desa</Label>
-        <Select
-          value={villageId || ""}
-          onValueChange={onVillageChange}
-          disabled={disabled || !districtId || loading.villages}
-        >
-          <SelectTrigger>
-            <SelectValue placeholder="Pilih kelurahan" />
-          </SelectTrigger>
-          <SelectContent>
-            {villages.map((village) => (
-              <SelectItem key={village.id} value={village.id}>
-                {village.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <label className="text-sm font-medium">Kelurahan / Desa</label>
+        {loading.villages ? (
+          <Skeleton className="h-10 w-full" />
+        ) : (
+          <Select
+            value={villageId || ""}
+            onValueChange={(val) => onVillageChange(val || "")}
+            disabled={disabled || !districtId}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Pilih kelurahan" />
+            </SelectTrigger>
+            <SelectContent>
+              {villages.map((v) => (
+                <SelectItem key={v.id} value={v.id}>
+                  {v.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
       </div>
     </div>
   );

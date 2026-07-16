@@ -50,18 +50,19 @@ export function OverviewChart({ data }: OverviewChartProps) {
             tickFormatter={(value) => `${value}`}
           />
           <Tooltip
-            cursor={{ fill: "rgba(59, 130, 246, 0.05)" }}
-            contentStyle={{
-              borderRadius: "12px",
-              border: "1px solid #e2e8f0",
-              boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
-              fontSize: "13px",
-            }}
-            formatter={(value: number, name: string) => [
-              value,
-              name === "properties" ? "Total Properti" : "Terjual",
-            ]}
-          />
+  cursor={{ fill: "rgba(59, 130, 246, 0.05)" }}
+  contentStyle={{
+    borderRadius: "12px",
+    border: "1px solid #e2e8f0",
+    boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+    fontSize: "13px",
+  }}
+  formatter={(value: any, name: any) => {    // ✅ perbaiki di sini
+    const numValue = typeof value === 'number' ? value : 0;
+    const label = name === "properties" ? "Total Properti" : "Terjual";
+    return [numValue, label];
+  }}
+/>
           <Bar dataKey="properties" radius={[4, 4, 0, 0]} fill="#3b82f6">
             {data.map((_, index) => (
               <Cell

@@ -248,26 +248,28 @@ export function AppSidebar() {
     if (collapsed) {
       // Collapsed mode - tooltip only
       return (
-        <TooltipProvider key={item.href} delayDuration={0}>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Link
-                href={item.href}
-                className={cn(
-                  "flex items-center justify-center w-full h-10 rounded-lg transition-all duration-200",
-                  active || hasChildActive
-                    ? "bg-primary text-primary-foreground"
-                    : "hover:bg-muted text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <item.icon size={20} />
-              </Link>
-            </TooltipTrigger>
-            <TooltipContent side="right" className="font-medium">
-              {item.label}
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+       <TooltipProvider key={item.href}>
+  <Tooltip>
+    <TooltipTrigger
+      render={
+        <Link
+          href={item.href}
+          className={cn(
+            "flex items-center justify-center w-full h-10 rounded-lg transition-all duration-200",
+            active || hasChildActive
+              ? "bg-primary text-primary-foreground"
+              : "hover:bg-muted text-muted-foreground hover:text-foreground"
+          )}
+        >
+          <item.icon size={20} />
+        </Link>
+      }
+    />
+    <TooltipContent side="right" className="font-medium">
+      {item.label}
+    </TooltipContent>
+  </Tooltip>
+</TooltipProvider>
       );
     }
 

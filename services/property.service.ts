@@ -153,14 +153,45 @@ export const propertyService = {
         slug: `${original.slug}-copy-${Date.now()}`,
         property_type: original.property_type,
         listing_type: original.listing_type,
+        property_category: original.property_category || null,
         status: "draft",
         owner_id: original.owner_id,
         created_by: original.created_by,
+        description: original.description,
+        selling_point: original.selling_point,
+        rental_period: original.rental_period,
       })
       .select()
       .single();
 
     if (error) throw new Error(error.message);
     return data as Property;
+  },
+
+  // ===== GET MEDIA =====
+  async getMedia(propertyId: string) {
+    const { data, error } = await supabase
+      .from("property_media")
+      .select("*")
+      .eq("property_id", propertyId)
+      .order("is_primary", { ascending: false })
+      .order("created_at", { ascending: true });
+
+    if (error) throw new Error(error.message);
+    return data || [];
+  },
+
+  // ===== UPDATE PROPERTY (for edit page) =====
+  async update(id: string, data: Partial<Property>) {
+    const { error } = await supabase
+      .from("properties")
+      .update({
+        ...data,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", id);
+
+    if (error) throw new Error(error.message);
+    return await this.getById(id);
   },
 };

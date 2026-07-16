@@ -35,6 +35,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { AIChatbox } from "@/components/ai-chatbox";
+import type { PropertyStatus } from "@/types/property.types";
 
 // ============================================================
 // TIPE DATA
@@ -53,7 +54,7 @@ interface PropertyFormData {
   property_type: string;
   listing_type: "jual" | "sewa";
   property_category: string; // second, aset_bank, baru
-  status: "draft" | "review" | "published";
+  status: PropertyStatus;
   description: string;
   selling_point: string;
   country_id: string;
@@ -440,27 +441,27 @@ export default function EditPropertyPage() {
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
-  const handleLocationChange = (field: keyof PropertyFormData, value: string) => {
-    setForm((prev) => ({ ...prev, [field]: value }));
-
-    if (field === "country_id") {
-      setForm((prev) => ({ ...prev, province_id: "", city_id: "", district_id: "", village_id: "" }));
-      setLocationData((prev) => ({ ...prev, provinces: [], cities: [], districts: [], villages: [] }));
-      fetchProvinces(value);
-    } else if (field === "province_id") {
-      setForm((prev) => ({ ...prev, city_id: "", district_id: "", village_id: "" }));
-      setLocationData((prev) => ({ ...prev, cities: [], districts: [], villages: [] }));
-      fetchCities(value);
-    } else if (field === "city_id") {
-      setForm((prev) => ({ ...prev, district_id: "", village_id: "" }));
-      setLocationData((prev) => ({ ...prev, districts: [], villages: [] }));
-      fetchDistricts(value);
-    } else if (field === "district_id") {
-      setForm((prev) => ({ ...prev, village_id: "" }));
-      setLocationData((prev) => ({ ...prev, villages: [] }));
-      fetchVillages(value);
-    }
-  };
+  const handleLocationChange = (field: keyof PropertyFormData, value: string | null) => {
+  const val = value ?? "";
+  setForm((prev) => ({ ...prev, [field]: val }));
+  if (field === "country_id") {
+    setForm((prev) => ({ ...prev, province_id: "", city_id: "", district_id: "", village_id: "" }));
+    setLocationData((prev) => ({ ...prev, provinces: [], cities: [], districts: [], villages: [] }));
+    fetchProvinces(val);
+  } else if (field === "province_id") {
+    setForm((prev) => ({ ...prev, city_id: "", district_id: "", village_id: "" }));
+    setLocationData((prev) => ({ ...prev, cities: [], districts: [], villages: [] }));
+    fetchCities(val);
+  } else if (field === "city_id") {
+    setForm((prev) => ({ ...prev, district_id: "", village_id: "" }));
+    setLocationData((prev) => ({ ...prev, districts: [], villages: [] }));
+    fetchDistricts(val);
+  } else if (field === "district_id") {
+    setForm((prev) => ({ ...prev, village_id: "" }));
+    setLocationData((prev) => ({ ...prev, villages: [] }));
+    fetchVillages(val);
+  }
+};
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {

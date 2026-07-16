@@ -206,7 +206,7 @@ export default function LeadsPage() {
 
             <Select
               value={filters.status}
-              onValueChange={(val) => setFilters((prev) => ({ ...prev, status: val, page: 1 }))}
+              onValueChange={(val) => setFilters((prev) => ({ ...prev, status: val || "all", page: 1 }))}
             >
               <SelectTrigger className="w-[140px] h-9">
                 <SelectValue placeholder="Status" />
@@ -290,60 +290,60 @@ export default function LeadsPage() {
                       <TableCell className="text-sm text-slate-500 dark:text-slate-400">
                         {formatDate(lead.created_at)}
                       </TableCell>
-                     <TableCell>
-  <div
-    className="flex items-center justify-end gap-1"
-    onClick={(e) => e.stopPropagation()}
-  >
-    {/* Detail */}
-    <Button
-      variant="ghost"
-      size="icon"
-      className="h-8 w-8 text-slate-400 hover:text-blue-600"
-      onClick={() => router.push(`/crm/leads/${lead.id}`)}
-    >
-      <Eye size={16} />
-    </Button>
+                      <TableCell>
+                        <div
+                          className="flex items-center justify-end gap-1"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {/* Detail */}
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-slate-400 hover:text-blue-600"
+                            onClick={() => router.push(`/crm/leads/${lead.id}`)}
+                          >
+                            <Eye size={16} />
+                          </Button>
 
-    {/* Edit */}
-    <Button
-      variant="ghost"
-      size="icon"
-      className="h-8 w-8 text-slate-400 hover:text-amber-600"
-      onClick={() => router.push(`/crm/leads/${lead.id}/edit`)}
-    >
-      <Pencil size={16} />
-    </Button>
+                          {/* Edit */}
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-slate-400 hover:text-amber-600"
+                            onClick={() => router.push(`/crm/leads/${lead.id}/edit`)}
+                          >
+                            <Pencil size={16} />
+                          </Button>
 
-    {/* More Actions - FIXED: tanpa asChild dan tanpa nested button */}
-    <DropdownMenu>
-      <DropdownMenuTrigger className="inline-flex items-center justify-center rounded-md h-8 w-8 text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
-        <MoreHorizontal size={16} />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem disabled className="text-xs text-muted-foreground">
-          Ubah Status
-        </DropdownMenuItem>
-        {statusOptions.map((opt) => (
-          <DropdownMenuItem
-            key={opt.value}
-            onClick={() => handleStatusChange(lead.id, opt.value)}
-            className="text-sm"
-          >
-            {opt.label}
-          </DropdownMenuItem>
-        ))}
-        <DropdownMenuItem
-          onClick={() => handleDelete(lead.id, lead.contact?.full_name || "Lead")}
-          className="text-rose-600 hover:text-rose-700 hover:bg-rose-50"
-        >
-          <Trash2 size={14} className="mr-2" />
-          Hapus
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  </div>
-</TableCell>
+                          {/* More Actions */}
+                          <DropdownMenu>
+                            <DropdownMenuTrigger className="inline-flex items-center justify-center rounded-md h-8 w-8 text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                              <MoreHorizontal size={16} />
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem disabled className="text-xs text-muted-foreground">
+                                Ubah Status
+                              </DropdownMenuItem>
+                              {statusOptions.map((opt) => (
+                                <DropdownMenuItem
+                                  key={opt.value}
+                                  onClick={() => handleStatusChange(lead.id, opt.value)}
+                                  className="text-sm"
+                                >
+                                  {opt.label}
+                                </DropdownMenuItem>
+                              ))}
+                              <DropdownMenuItem
+                                onClick={() => handleDelete(lead.id, lead.contact?.full_name || "Lead")}
+                                className="text-rose-600 hover:text-rose-700 hover:bg-rose-50"
+                              >
+                                <Trash2 size={14} className="mr-2" />
+                                Hapus
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

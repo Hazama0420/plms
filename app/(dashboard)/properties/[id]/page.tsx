@@ -1,5 +1,4 @@
 // app/(dashboard)/properties/[id]/page.tsx
-
 "use client";
 
 import { useState, useEffect } from "react";
@@ -7,565 +6,761 @@ import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   ArrowLeft,
-  Edit,
-  Trash2,
-  Copy,
   Home,
   MapPin,
   Building2,
   User,
   Image as ImageIcon,
-  DollarSign,
-  Calendar,
+  Sparkles,
+  Pencil,
+  Trash2,
+  Copy,
   CheckCircle,
   XCircle,
   Clock,
+  Loader2,
 } from "lucide-react";
+import { format, formatDistanceToNow } from "date-fns";
+import { id } from "date-fns/locale";
+
+import { supabase } from "@/lib/supabase/client";
 import { propertyService } from "@/services/property.service";
-import { MediaGallery } from "@/components/properties/media-gallery";
+import type { Property, PropertyStatus } from "@/types/property.types";
+
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 
 // ============================================================
-// TIPE DATA
+// STATUS CONFIG (FIXED: added bg)
 // ============================================================
+const statusConfig: Record<string, { label: string; color: string; bg: string }> = {
+  draft: { label: "Draft", color: "text-gray-600", bg: "bg-gray-100" },
+  review: { label: "Review", color: "text-yellow-600", bg: "bg-yellow-100" },
+  published: { label: "Published", color: "text-green-600", bg: "bg-green-100" },
+  sold: { label: "Sold", color: "text-red-600", bg: "bg-red-100" },
+  rented: { label: "Rented", color: "text-blue-600", bg: "bg-blue-100" },
+  archived: { label: "Archived", color: "text-gray-500", bg: "bg-gray-100" },
+};
 
-interface PropertyDetail {
-  id: string;
-  listing_code: string;
-  title: string;
-  slug: string;
-  property_type: string;
-  listing_type: "jual" | "sewa";
-  status: "draft" | "review" | "published" | "sold" | "rented" | "archived";
-  description: string;
-  created_at: string;
-  updated_at: string;
-  published_at: string | null;
-
-  owner: {
-    id: string;
-    full_name: string;
-    phone: string | null;
-    whatsapp: string | null;
-    email: string | null;
-  } | null;
-
-  address: {
-    id: string;
-    address: string;
-    postal_code: string | null;
-    latitude: number | null;
-    longitude: number | null;
-    country: { name: string } | null;
-    province: { name: string } | null;
-    city: { name: string } | null;
-    district: { name: string } | null;
-    village: { name: string } | null;
-  } | null;
-
-  price: {
-    id: string;
-    selling_price: number | null;
-    rental_price: number | null;
-    service_charge: number | null;
-    maintenance_fee: number | null;
-    negotiable: boolean;
-  } | null;
-
-  specifications: {
-    id: string;
-    bedroom: number | null;
-    bathroom: number | null;
-    garage: number | null;
-    carport: number | null;
-    floor: number | null;
-    electricity: number | null;
-    water_source: string | null;
-    certificate: string | null;
-    facing: string | null;
-    condition: string | null;
-    furnishing: string | null;
-    year_built: number | null;
-  } | null;
-
-  land: {
-    id: string;
-    land_area: number | null;
-    land_unit: string;
-    land_width: number | null;
-    land_length: number | null;
-  } | null;
-
-  building: {
-    id: string;
-    building_area: number | null;
-    building_width: number | null;
-    building_length: number | null;
-  } | null;
-
-  media: {
-    id: string;
-    public_url: string;
-    is_primary: boolean;
-    sort_order: number;
-    original_name: string;
-    file_size: number;
-  }[];
+// ============================================================
+// LOCATION DATA TYPE
+// ============================================================
+interface LocationData {
+  countries: { id: string; name: string }[];
+  provinces: { id: string; name: string }[];
+  cities: { id: string; name: string }[];
+  districts: { id: string; name: string }[];
+  villages: { id: string; name: string }[];
 }
 
 // ============================================================
 // MAIN COMPONENT
 // ============================================================
-
 export default function PropertyDetailPage() {
-  const params = useParams();
   const router = useRouter();
-  const id = params.id as string;
+  const params = useParams();
+  const propertyId = params.id as string;
 
-  const [property, setProperty] = useState<PropertyDetail | null>(null);
+  const [property, setProperty] = useState<Property | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [mediaKey, setMediaKey] = useState(0);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showStatusDialog, setShowStatusDialog] = useState(false);
+  const [newStatus, setNewStatus] = useState<PropertyStatus>("draft");
+  const [updating, setUpdating] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [activeTab, setActiveTab] = useState("details"); // ✅ controlled tab
+
+  // Location data (for display names)
+  const [locationData, setLocationData] = useState<LocationData>({
+    countries: [],
+    provinces: [],
+    cities: [],
+    districts: [],
+    villages: [],
+  });
 
   // ===== FETCH PROPERTY =====
-  const fetchProperty = async () => {
-    setLoading(true);
-    setError(null);
+  useEffect(() => {
+    const fetchProperty = async () => {
+      setLoading(true);
+      try {
+        const data = await propertyService.getById(propertyId);
+        setProperty(data);
+      } catch (error) {
+        console.error("Error fetching property:", error);
+        toast.error("Gagal memuat data property");
+        router.push("/properties");
+      } finally {
+        setLoading(false);
+      }
+    };
 
+    // Load location data for display
+    const fetchLocationData = async () => {
+      try {
+        const [countries, provinces, cities, districts, villages] = await Promise.all([
+          supabase.from("countries").select("id, name").order("name"),
+          supabase.from("provinces").select("id, name").order("name"),
+          supabase.from("cities").select("id, name").order("name"),
+          supabase.from("districts").select("id, name").order("name"),
+          supabase.from("villages").select("id, name").order("name"),
+        ]);
+
+        setLocationData({
+          countries: countries.data || [],
+          provinces: provinces.data || [],
+          cities: cities.data || [],
+          districts: districts.data || [],
+          villages: villages.data || [],
+        });
+      } catch (error) {
+        console.error("Error fetching location data:", error);
+      }
+    };
+
+    fetchProperty();
+    fetchLocationData();
+  }, [propertyId, router]);
+
+  // ===== HANDLE STATUS UPDATE =====
+  const handleUpdateStatus = async () => {
+    if (!property) return;
+    setUpdating(true);
     try {
-      const data = await propertyService.getById(id);
-      setProperty(data as PropertyDetail);
-    } catch (err: any) {
-      console.error("Error fetching property:", err);
-      setError(err.message || "Gagal memuat data property.");
-      toast.error("Gagal memuat property", {
-        description: err.message || "Silakan coba lagi.",
+      await propertyService.updateStatus(property.id, newStatus);
+      toast.success(`Status berhasil diubah menjadi ${statusConfig[newStatus]?.label || newStatus}`);
+      const updated = await propertyService.getById(property.id);
+      setProperty(updated);
+      setShowStatusDialog(false);
+    } catch (error: any) {
+      console.error("Error updating status:", error);
+      toast.error("Gagal mengubah status", {
+        description: error.message || "Silakan coba lagi.",
       });
     } finally {
-      setLoading(false);
+      setUpdating(false);
     }
   };
 
-  useEffect(() => {
-    if (!id) return;
-    fetchProperty();
-  }, [id, mediaKey]);
-
-  // ===== HANDLER: DELETE =====
+  // ===== HANDLE DELETE =====
   const handleDelete = async () => {
     if (!property) return;
+    setDeleting(true);
     try {
       await propertyService.delete(property.id);
-      toast.success("Property berhasil dihapus.");
+      toast.success("Property berhasil dihapus");
       router.push("/properties");
-    } catch (err: any) {
+    } catch (error: any) {
+      console.error("Error deleting property:", error);
       toast.error("Gagal menghapus property", {
-        description: err.message,
+        description: error.message || "Silakan coba lagi.",
       });
+    } finally {
+      setDeleting(false);
+      setShowDeleteDialog(false);
     }
   };
 
-  // ===== HANDLER: DUPLICATE =====
+  // ===== HANDLE DUPLICATE =====
   const handleDuplicate = async () => {
     if (!property) return;
     try {
-      const newProperty = await propertyService.duplicate(property.id);
-      toast.success("Property berhasil di-duplicate!");
-      router.push(`/properties/${newProperty.id}`);
-    } catch (err: any) {
-      toast.error("Gagal duplicate property", {
-        description: err.message,
+      const duplicated = await propertyService.duplicate(property.id);
+      toast.success("Property berhasil diduplikasi!");
+      router.push(`/properties/${duplicated.id}`);
+    } catch (error: any) {
+      console.error("Error duplicating property:", error);
+      toast.error("Gagal menduplikasi property", {
+        description: error.message || "Silakan coba lagi.",
       });
     }
   };
 
-  // ===== FORMAT HARGA =====
-  const formatPrice = (price: number | null) => {
-    if (!price) return "-";
+  // ===== HELPERS =====
+  const formatDate = (date: string) => {
+    return format(new Date(date), "dd MMM yyyy, HH:mm", { locale: id });
+  };
+
+  const formatRelativeTime = (date: string) => {
+    return formatDistanceToNow(new Date(date), { addSuffix: true, locale: id });
+  };
+
+  const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("id-ID", {
       style: "currency",
       currency: "IDR",
       minimumFractionDigits: 0,
       maximumFractionDigits: 0,
-    }).format(price);
+    }).format(amount);
   };
 
-  // ===== REFRESH MEDIA =====
-  const refreshMedia = () => {
-    setMediaKey((prev) => prev + 1);
+  const getLocationName = (id: string, list: { id: string; name: string }[]) => {
+    return list.find((item) => item.id === id)?.name || "-";
   };
 
-  // ===== STATUS BADGE =====
-  const statusConfig: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
-    draft: { label: "Draft", color: "bg-slate-100 text-slate-700", icon: <Clock size={16} /> },
-    review: { label: "Review", color: "bg-amber-100 text-amber-700", icon: <Clock size={16} /> },
-    published: { label: "Published", color: "bg-emerald-100 text-emerald-700", icon: <CheckCircle size={16} /> },
-    sold: { label: "Sold", color: "bg-blue-100 text-blue-700", icon: <CheckCircle size={16} /> },
-    rented: { label: "Rented", color: "bg-purple-100 text-purple-700", icon: <CheckCircle size={16} /> },
-    archived: { label: "Archived", color: "bg-rose-100 text-rose-700", icon: <XCircle size={16} /> },
-  };
-
-  // ===== LOADING =====
+  // ============================================================
+  // LOADING STATE
+  // ============================================================
   if (loading) {
     return (
       <div className="space-y-6">
         <Skeleton className="h-12 w-48" />
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 space-y-4">
+          <div className="lg:col-span-2">
             <Skeleton className="h-64 w-full rounded-xl" />
-            <Skeleton className="h-48 w-full rounded-xl" />
+            <Skeleton className="h-48 w-full rounded-xl mt-4" />
           </div>
-          <div className="space-y-4">
-            <Skeleton className="h-48 w-full rounded-xl" />
-            <Skeleton className="h-32 w-full rounded-xl" />
+          <div className="lg:col-span-1">
+            <Skeleton className="h-64 w-full rounded-xl" />
           </div>
         </div>
       </div>
     );
   }
 
-  // ===== ERROR =====
-  if (error || !property) {
+  if (!property) {
     return (
       <div className="flex flex-col items-center justify-center h-96 text-center">
         <div className="text-6xl mb-4">🏠</div>
         <h2 className="text-2xl font-bold text-slate-700">Property Tidak Ditemukan</h2>
-        <p className="text-slate-500 mt-2">{error || "Data property tidak tersedia."}</p>
-        <Button onClick={() => router.push("/properties")} className="mt-4">
-          <ArrowLeft size={18} className="mr-2" />
-          Kembali ke Daftar
+        <p className="text-slate-500 mt-2">Property yang Anda cari mungkin telah dihapus.</p>
+        <Button onClick={() => router.back()} className="mt-4">
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Kembali
         </Button>
       </div>
     );
   }
 
-  // ===== RENDER =====
+  // ============================================================
+  // RENDER
+  // ============================================================
   return (
     <div className="space-y-6">
-      {/* ===== HEADER ===== */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-blue-600 via-purple-600 to-pink-500 p-6 text-white shadow-lg">
-        <div className="absolute -right-12 -top-12 h-48 w-48 rounded-full bg-white/10 blur-3xl" />
-        <div className="absolute -bottom-16 -left-16 h-48 w-48 rounded-full bg-white/10 blur-3xl" />
-        <div className="relative flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+      {/* HEADER */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="icon" onClick={() => router.back()}>
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
           <div>
-            <div className="flex items-center gap-3 flex-wrap">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => router.back()}
-                className="h-10 w-10 text-white hover:bg-white/20"
+            <h1 className="text-2xl font-bold tracking-tight flex items-center gap-3">
+              {property.title}
+              <Badge
+                className={cn(
+                  "text-xs font-medium border-0",
+                  statusConfig[property.status]?.color,
+                  statusConfig[property.status]?.bg
+                )}
               >
-                <ArrowLeft size={22} />
-              </Button>
-              <div>
-                <h1 className="text-2xl font-bold tracking-tight">{property.title}</h1>
-                <div className="flex items-center gap-3 mt-1 flex-wrap">
-                  <Badge className="bg-white/20 text-white border-0">
-                    {property.listing_code}
-                  </Badge>
-                  <Badge className={cn("border-0", statusConfig[property.status]?.color, statusConfig[property.status]?.bg)}>
-                    {statusConfig[property.status]?.icon}
-                    <span className="ml-1">{statusConfig[property.status]?.label}</span>
-                  </Badge>
-                  <Badge variant="outline" className="border-white/30 text-white">
-                    {property.listing_type === "jual" ? "💰 Jual" : "📋 Sewa"}
-                  </Badge>
-                  <Badge variant="outline" className="border-white/30 text-white">
-                    🏠 {property.property_type}
-                  </Badge>
-                </div>
-              </div>
-            </div>
+                {statusConfig[property.status]?.label || property.status}
+              </Badge>
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              {property.listing_code} • {property.property_type}
+            </p>
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => router.push(`/properties/${property.id}/edit`)}
-              className="bg-white/20 text-white hover:bg-white/30"
-            >
-              <Edit size={16} className="mr-2" />
-              Edit
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={handleDuplicate}
-              className="bg-white/20 text-white hover:bg-white/30"
-            >
-              <Copy size={16} className="mr-2" />
-              Duplicate
-            </Button>
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button variant="secondary" size="sm" className="bg-rose-500/20 text-white hover:bg-rose-500/30">
-                  <Trash2 size={16} className="mr-2" />
-                  Hapus
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Yakin hapus property ini?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    Tindakan ini tidak bisa dibatalkan. Property "{property.title}" akan dihapus permanen dari database.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Batal</AlertDialogCancel>
-                  <AlertDialogAction onClick={handleDelete} className="bg-rose-500 hover:bg-rose-600">
-                    Hapus
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          </div>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button variant="outline" size="sm" onClick={() => router.push(`/properties/${property.id}/edit`)}>
+            <Pencil className="h-4 w-4 mr-2" />
+            Edit
+          </Button>
+          <Button variant="outline" size="sm" onClick={handleDuplicate}>
+            <Copy className="h-4 w-4 mr-2" />
+            Duplikasi
+          </Button>
+          <Button variant="default" size="sm" onClick={() => setShowStatusDialog(true)}>
+            <Clock className="h-4 w-4 mr-2" />
+            Ubah Status
+          </Button>
+          <Button variant="destructive" size="sm" onClick={() => setShowDeleteDialog(true)}>
+            <Trash2 className="h-4 w-4 mr-2" />
+            Hapus
+          </Button>
         </div>
       </div>
 
-      {/* ===== CONTENT ===== */}
+      {/* MAIN GRID */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* LEFT COLUMN - 2/3 */}
+        {/* LEFT COLUMN - Details */}
         <div className="lg:col-span-2 space-y-6">
-          {/* ===== MEDIA GALLERY ===== */}
-<Card className="border-0 shadow-md overflow-hidden">
-  <CardHeader className="bg-gradient-to-r from-cyan-50 to-sky-50 rounded-t-xl">
-    <CardTitle className="text-base flex items-center gap-2 text-slate-700">
-      <ImageIcon size={18} className="text-cyan-500" />
-      Gallery
-    </CardTitle>
-  </CardHeader>
-  <CardContent className="p-6">
-    <MediaGallery
-      propertyId={property.id}
-      media={property.media || []}
-      onUpdate={fetchProperty}
-    />
-  </CardContent>
-</Card>
+          {/* ✅ FIX: Tabs controlled */}
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <TabsList className="grid w-full grid-cols-3">
+              <TabsTrigger value="details">📋 Detail</TabsTrigger>
+              <TabsTrigger value="location">📍 Lokasi</TabsTrigger>
+              <TabsTrigger value="media">🖼️ Media</TabsTrigger>
+            </TabsList>
 
-          {/* DESCRIPTION */}
-          {property.description && (
-            <Card className="border-0 shadow-md">
-              <CardHeader className="bg-gradient-to-r from-slate-50 to-gray-50 rounded-t-xl">
-                <CardTitle className="text-base flex items-center gap-2 text-slate-700">
-                  <span>📝</span> Deskripsi
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-6">
-                <p className="text-slate-600 whitespace-pre-wrap">{property.description}</p>
-              </CardContent>
-            </Card>
-          )}
+            {/* DETAILS TAB */}
+            <TabsContent value="details" className="mt-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Informasi Property</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {/* Basic Info */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-muted-foreground text-sm">Kode Listing</Label>
+                      <p className="font-medium">{property.listing_code}</p>
+                    </div>
+                    <div>
+                      <Label className="text-muted-foreground text-sm">Tipe</Label>
+                      <p className="font-medium">{property.property_type}</p>
+                    </div>
+                    <div>
+                      <Label className="text-muted-foreground text-sm">Tipe Listing</Label>
+                      <p className="font-medium">{property.listing_type === "jual" ? "Jual" : "Sewa"}</p>
+                    </div>
+                    <div>
+                      <Label className="text-muted-foreground text-sm">Kategori</Label>
+                      <p className="font-medium">{property.property_category || "-"}</p>
+                    </div>
+                    <div>
+                      <Label className="text-muted-foreground text-sm">Status</Label>
+                      <Badge
+                        className={cn(
+                          "text-xs font-medium border-0",
+                          statusConfig[property.status]?.color,
+                          statusConfig[property.status]?.bg
+                        )}
+                      >
+                        {statusConfig[property.status]?.label || property.status}
+                      </Badge>
+                    </div>
+                    <div>
+                      <Label className="text-muted-foreground text-sm">Dibuat</Label>
+                      <p className="font-medium text-sm">{formatRelativeTime(property.created_at)}</p>
+                    </div>
+                  </div>
 
-          {/* SPECIFICATIONS */}
-          {property.specifications && (
-            <Card className="border-0 shadow-md">
-              <CardHeader className="bg-gradient-to-r from-purple-50 to-violet-50 rounded-t-xl">
-                <CardTitle className="text-base flex items-center gap-2 text-slate-700">
-                  <Building2 size={18} className="text-purple-500" />
-                  Spesifikasi
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-6">
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                  {property.specifications.bedroom !== null && (
-                    <div><span className="text-slate-500">Kamar Tidur</span><br /><span className="font-semibold">{property.specifications.bedroom}</span></div>
-                  )}
-                  {property.specifications.bathroom !== null && (
-                    <div><span className="text-slate-500">Kamar Mandi</span><br /><span className="font-semibold">{property.specifications.bathroom}</span></div>
-                  )}
-                  {property.specifications.garage !== null && (
-                    <div><span className="text-slate-500">Garasi</span><br /><span className="font-semibold">{property.specifications.garage}</span></div>
-                  )}
-                  {property.specifications.carport !== null && (
-                    <div><span className="text-slate-500">Carport</span><br /><span className="font-semibold">{property.specifications.carport}</span></div>
-                  )}
-                  {property.specifications.floor !== null && (
-                    <div><span className="text-slate-500">Lantai</span><br /><span className="font-semibold">{property.specifications.floor}</span></div>
-                  )}
-                  {property.specifications.electricity !== null && (
-                    <div><span className="text-slate-500">Daya Listrik</span><br /><span className="font-semibold">{property.specifications.electricity} VA</span></div>
-                  )}
-                  {property.specifications.water_source && (
-                    <div><span className="text-slate-500">Sumber Air</span><br /><span className="font-semibold">{property.specifications.water_source}</span></div>
-                  )}
-                  {property.specifications.certificate && (
-                    <div><span className="text-slate-500">Sertifikat</span><br /><span className="font-semibold">{property.specifications.certificate}</span></div>
-                  )}
-                  {property.specifications.facing && (
-                    <div><span className="text-slate-500">Hadap</span><br /><span className="font-semibold">{property.specifications.facing}</span></div>
-                  )}
-                  {property.specifications.condition && (
-                    <div><span className="text-slate-500">Kondisi</span><br /><span className="font-semibold">{property.specifications.condition}</span></div>
-                  )}
-                  {property.specifications.furnishing && (
-                    <div><span className="text-slate-500">Furnishing</span><br /><span className="font-semibold">{property.specifications.furnishing}</span></div>
-                  )}
-                  {property.specifications.year_built && (
-                    <div><span className="text-slate-500">Tahun Bangun</span><br /><span className="font-semibold">{property.specifications.year_built}</span></div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          )}
+                  <Separator />
 
-          {/* LAND & BUILDING */}
-          {(property.land || property.building) && (
-            <Card className="border-0 shadow-md">
-              <CardHeader className="bg-gradient-to-r from-amber-50 to-yellow-50 rounded-t-xl">
-                <CardTitle className="text-base flex items-center gap-2 text-slate-700">
-                  <Home size={18} className="text-amber-500" />
-                  Tanah & Bangunan
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-6">
-                <div className="grid grid-cols-2 gap-4">
-                  {property.land && (
-                    <>
-                      {property.land.land_area !== null && (
-                        <div><span className="text-slate-500">Luas Tanah</span><br /><span className="font-semibold">{property.land.land_area} {property.land.land_unit}</span></div>
-                      )}
-                      {property.land.land_width !== null && (
-                        <div><span className="text-slate-500">Lebar Tanah</span><br /><span className="font-semibold">{property.land.land_width} m</span></div>
-                      )}
-                      {property.land.land_length !== null && (
-                        <div><span className="text-slate-500">Panjang Tanah</span><br /><span className="font-semibold">{property.land.land_length} m</span></div>
-                      )}
-                    </>
+                  {/* Description */}
+                  <div>
+                    <Label className="text-muted-foreground text-sm">Deskripsi</Label>
+                    <p className="text-sm mt-1 whitespace-pre-wrap">{property.description || "Tidak ada deskripsi"}</p>
+                  </div>
+
+                  {/* Selling Point */}
+                  {property.selling_point && (
+                    <div>
+                      <Label className="text-muted-foreground text-sm">💎 Selling Point</Label>
+                      <p className="text-sm mt-1">{property.selling_point}</p>
+                    </div>
                   )}
-                  {property.building && (
-                    <>
-                      {property.building.building_area !== null && (
-                        <div><span className="text-slate-500">Luas Bangunan</span><br /><span className="font-semibold">{property.building.building_area} m²</span></div>
+
+                  <Separator />
+
+                  {/* Price */}
+                  <div className="grid grid-cols-2 gap-4">
+                    {property.listing_type === "jual" && property.price?.selling_price && (
+                      <div>
+                        <Label className="text-muted-foreground text-sm">Harga Jual</Label>
+                        <p className="font-medium text-lg text-emerald-600">
+                          {formatCurrency(property.price.selling_price)}
+                        </p>
+                      </div>
+                    )}
+                    {property.listing_type === "sewa" && property.price?.rental_price && (
+                      <div>
+                        <Label className="text-muted-foreground text-sm">Harga Sewa / Bulan</Label>
+                        <p className="font-medium text-lg text-emerald-600">
+                          {formatCurrency(property.price.rental_price)}
+                        </p>
+                      </div>
+                    )}
+                    {property.price?.service_charge && (
+                      <div>
+                        <Label className="text-muted-foreground text-sm">Service Charge</Label>
+                        <p className="font-medium">{formatCurrency(property.price.service_charge)}</p>
+                      </div>
+                    )}
+                    {property.price?.maintenance_fee && (
+                      <div>
+                        <Label className="text-muted-foreground text-sm">Maintenance Fee</Label>
+                        <p className="font-medium">{formatCurrency(property.price.maintenance_fee)}</p>
+                      </div>
+                    )}
+                    {property.price?.negotiable && (
+                      <div>
+                        <Label className="text-muted-foreground text-sm">Nego</Label>
+                        <p className="font-medium text-green-600">✅ Bisa Nego</p>
+                      </div>
+                    )}
+                  </div>
+
+                  <Separator />
+
+                  {/* Specifications */}
+                  <div>
+                    <Label className="text-muted-foreground text-sm">Spesifikasi</Label>
+                    <div className="grid grid-cols-3 gap-2 mt-2">
+                      {property.specifications?.bedroom && (
+                        <div className="p-2 bg-slate-50 rounded-lg text-center">
+                          <p className="text-sm font-medium">{property.specifications.bedroom}</p>
+                          <p className="text-xs text-muted-foreground">🛏️ Kamar</p>
+                        </div>
                       )}
-                      {property.building.building_width !== null && (
-                        <div><span className="text-slate-500">Lebar Bangunan</span><br /><span className="font-semibold">{property.building.building_width} m</span></div>
+                      {property.specifications?.bathroom && (
+                        <div className="p-2 bg-slate-50 rounded-lg text-center">
+                          <p className="text-sm font-medium">{property.specifications.bathroom}</p>
+                          <p className="text-xs text-muted-foreground">🛁 KM</p>
+                        </div>
                       )}
-                      {property.building.building_length !== null && (
-                        <div><span className="text-slate-500">Panjang Bangunan</span><br /><span className="font-semibold">{property.building.building_length} m</span></div>
+                      {property.specifications?.garage && (
+                        <div className="p-2 bg-slate-50 rounded-lg text-center">
+                          <p className="text-sm font-medium">{property.specifications.garage}</p>
+                          <p className="text-xs text-muted-foreground">🚗 Garasi</p>
+                        </div>
                       )}
-                    </>
+                      {property.specifications?.carport && (
+                        <div className="p-2 bg-slate-50 rounded-lg text-center">
+                          <p className="text-sm font-medium">{property.specifications.carport}</p>
+                          <p className="text-xs text-muted-foreground">🏎️ Carport</p>
+                        </div>
+                      )}
+                      {property.specifications?.floor && (
+                        <div className="p-2 bg-slate-50 rounded-lg text-center">
+                          <p className="text-sm font-medium">{property.specifications.floor}</p>
+                          <p className="text-xs text-muted-foreground">🏗️ Lantai</p>
+                        </div>
+                      )}
+                      {property.specifications?.electricity && (
+                        <div className="p-2 bg-slate-50 rounded-lg text-center">
+                          <p className="text-sm font-medium">{property.specifications.electricity} VA</p>
+                          <p className="text-xs text-muted-foreground">⚡ Listrik</p>
+                        </div>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 mt-2">
+                      {property.specifications?.certificate && (
+                        <div>
+                          <Label className="text-muted-foreground text-xs">Sertifikat</Label>
+                          <p className="text-sm font-medium">{property.specifications.certificate}</p>
+                        </div>
+                      )}
+                      {property.specifications?.facing && (
+                        <div>
+                          <Label className="text-muted-foreground text-xs">Hadap</Label>
+                          <p className="text-sm font-medium">{property.specifications.facing}</p>
+                        </div>
+                      )}
+                      {property.specifications?.condition && (
+                        <div>
+                          <Label className="text-muted-foreground text-xs">Kondisi</Label>
+                          <p className="text-sm font-medium">{property.specifications.condition}</p>
+                        </div>
+                      )}
+                      {property.specifications?.furnishing && (
+                        <div>
+                          <Label className="text-muted-foreground text-xs">Furnishing</Label>
+                          <p className="text-sm font-medium">{property.specifications.furnishing}</p>
+                        </div>
+                      )}
+                      {property.specifications?.year_built && (
+                        <div>
+                          <Label className="text-muted-foreground text-xs">Tahun Bangun</Label>
+                          <p className="text-sm font-medium">{property.specifications.year_built}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <Separator />
+
+                  {/* Land & Building */}
+                  <div className="grid grid-cols-2 gap-4">
+                    {property.land?.land_area && (
+                      <div>
+                        <Label className="text-muted-foreground text-sm">Luas Tanah</Label>
+                        <p className="font-medium">{property.land.land_area} {property.land.land_unit || "m²"}</p>
+                      </div>
+                    )}
+                    {property.building?.building_area && (
+                      <div>
+                        <Label className="text-muted-foreground text-sm">Luas Bangunan</Label>
+                        <p className="font-medium">{property.building.building_area} m²</p>
+                      </div>
+                    )}
+                    {property.land?.land_width && property.land?.land_length && (
+                      <div>
+                        <Label className="text-muted-foreground text-sm">Dimensi Tanah</Label>
+                        <p className="font-medium">{property.land.land_width} x {property.land.land_length} m</p>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* LOCATION TAB */}
+            <TabsContent value="location" className="mt-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">📍 Alamat & Lokasi</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-muted-foreground text-sm">Negara</Label>
+                      <p className="font-medium">
+                        {getLocationName(property.address?.country_id || "", locationData.countries)}
+                      </p>
+                    </div>
+                    <div>
+                      <Label className="text-muted-foreground text-sm">Provinsi</Label>
+                      <p className="font-medium">
+                        {getLocationName(property.address?.province_id || "", locationData.provinces)}
+                      </p>
+                    </div>
+                    <div>
+                      <Label className="text-muted-foreground text-sm">Kota / Kabupaten</Label>
+                      <p className="font-medium">
+                        {getLocationName(property.address?.city_id || "", locationData.cities)}
+                      </p>
+                    </div>
+                    <div>
+                      <Label className="text-muted-foreground text-sm">Kecamatan</Label>
+                      <p className="font-medium">
+                        {getLocationName(property.address?.district_id || "", locationData.districts)}
+                      </p>
+                    </div>
+                    <div>
+                      <Label className="text-muted-foreground text-sm">Kelurahan / Desa</Label>
+                      <p className="font-medium">
+                        {getLocationName(property.address?.village_id || "", locationData.villages)}
+                      </p>
+                    </div>
+                    <div>
+                      <Label className="text-muted-foreground text-sm">Kode Pos</Label>
+                      <p className="font-medium">{property.address?.postal_code || "-"}</p>
+                    </div>
+                  </div>
+                  <div>
+                    <Label className="text-muted-foreground text-sm">Alamat Lengkap</Label>
+                    <p className="font-medium mt-1">{property.address?.address || "Tidak ada alamat"}</p>
+                  </div>
+                  {property.address?.latitude && property.address?.longitude && (
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label className="text-muted-foreground text-sm">Latitude</Label>
+                        <p className="font-medium">{property.address.latitude}</p>
+                      </div>
+                      <div>
+                        <Label className="text-muted-foreground text-sm">Longitude</Label>
+                        <p className="font-medium">{property.address.longitude}</p>
+                      </div>
+                    </div>
                   )}
-                </div>
-              </CardContent>
-            </Card>
-          )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* MEDIA TAB */}
+            <TabsContent value="media" className="mt-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">🖼️ Foto & Media</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {property.media && property.media.length > 0 ? (
+                    <div className="grid grid-cols-3 gap-4">
+                      {property.media.map((media) => (
+                        <div key={media.id} className="relative group aspect-square rounded-lg border overflow-hidden">
+                          <img
+                            src={media.public_url}
+                            alt={media.file_name}
+                            className="w-full h-full object-cover"
+                          />
+                          {media.is_primary && (
+                            <div className="absolute top-2 left-2 px-2 py-0.5 bg-blue-500 text-white text-xs rounded">
+                              Primary
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-muted-foreground text-center py-8">Belum ada foto</p>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+          </Tabs>
         </div>
 
-        {/* RIGHT COLUMN - 1/3 */}
-        <div className="space-y-6">
-          {/* PRICE CARD */}
-          {property.price && (
-            <Card className="border-0 shadow-md">
-              <CardHeader className="bg-gradient-to-r from-emerald-50 to-green-50 rounded-t-xl">
-                <CardTitle className="text-base flex items-center gap-2 text-slate-700">
-                  <DollarSign size={18} className="text-emerald-500" />
-                  Harga
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-6 space-y-2">
-                {property.listing_type === "jual" && (
-                  <div>
-                    <span className="text-slate-500 text-sm">Harga Jual</span>
-                    <p className="text-2xl font-bold text-slate-800">{formatPrice(property.price.selling_price)}</p>
-                  </div>
-                )}
-                {property.listing_type === "sewa" && (
-                  <div>
-                    <span className="text-slate-500 text-sm">Harga Sewa / Bulan</span>
-                    <p className="text-2xl font-bold text-slate-800">{formatPrice(property.price.rental_price)}</p>
-                  </div>
-                )}
-                {property.price.service_charge && (
-                  <div className="text-sm"><span className="text-slate-500">Service Charge:</span> {formatPrice(property.price.service_charge)}</div>
-                )}
-                {property.price.maintenance_fee && (
-                  <div className="text-sm"><span className="text-slate-500">IPL:</span> {formatPrice(property.price.maintenance_fee)}</div>
-                )}
-                {property.price.negotiable && (
-                  <Badge variant="outline" className="text-emerald-600 border-emerald-300">💰 Bisa Nego</Badge>
-                )}
-              </CardContent>
-            </Card>
-          )}
-
-          {/* LOCATION CARD */}
-          {property.address && (
-            <Card className="border-0 shadow-md">
-              <CardHeader className="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-t-xl">
-                <CardTitle className="text-base flex items-center gap-2 text-slate-700">
-                  <MapPin size={18} className="text-emerald-500" />
-                  Lokasi
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-6 space-y-1 text-sm">
-                <p><span className="text-slate-500">Alamat:</span> {property.address.address}</p>
-                {property.address.village && <p><span className="text-slate-500">Kelurahan:</span> {property.address.village.name}</p>}
-                {property.address.district && <p><span className="text-slate-500">Kecamatan:</span> {property.address.district.name}</p>}
-                {property.address.city && <p><span className="text-slate-500">Kota:</span> {property.address.city.name}</p>}
-                {property.address.province && <p><span className="text-slate-500">Provinsi:</span> {property.address.province.name}</p>}
-                {property.address.country && <p><span className="text-slate-500">Negara:</span> {property.address.country.name}</p>}
-                {property.address.postal_code && <p><span className="text-slate-500">Kode Pos:</span> {property.address.postal_code}</p>}
-                {property.address.latitude && property.address.longitude && (
-                  <p className="text-xs text-slate-400">
-                    📍 {property.address.latitude}, {property.address.longitude}
-                  </p>
-                )}
-              </CardContent>
-            </Card>
-          )}
-
-          {/* OWNER CARD */}
+        {/* RIGHT COLUMN - Sidebar */}
+        <div className="lg:col-span-1 space-y-6">
+          {/* Owner Card */}
           {property.owner && (
-            <Card className="border-0 shadow-md">
-              <CardHeader className="bg-gradient-to-r from-pink-50 to-rose-50 rounded-t-xl">
-                <CardTitle className="text-base flex items-center gap-2 text-slate-700">
-                  <User size={18} className="text-pink-500" />
-                  Pemilik
-                </CardTitle>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">👤 Pemilik</CardTitle>
               </CardHeader>
-              <CardContent className="p-6 space-y-1 text-sm">
-                <p className="font-semibold">{property.owner.full_name}</p>
-                {property.owner.phone && <p>📞 {property.owner.phone}</p>}
-                {property.owner.whatsapp && <p>💬 {property.owner.whatsapp}</p>}
-                {property.owner.email && <p>✉️ {property.owner.email}</p>}
+              <CardContent className="space-y-2 text-sm">
+                <div className="flex items-center gap-3">
+                  <Avatar className="h-10 w-10">
+                    <AvatarFallback className="bg-primary/10 text-primary">
+                      {property.owner.full_name?.charAt(0).toUpperCase() || "O"}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div>
+                    <p className="font-medium">{property.owner.full_name}</p>
+                    <p className="text-muted-foreground text-xs">{property.owner.owner_code}</p>
+                  </div>
+                </div>
+                <Separator />
+                {property.owner.phone && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-muted-foreground">📞</span>
+                    <span>{property.owner.phone}</span>
+                  </div>
+                )}
+                {property.owner.whatsapp && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-muted-foreground">💬</span>
+                    <span>{property.owner.whatsapp}</span>
+                  </div>
+                )}
+                {property.owner.email && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-muted-foreground">✉️</span>
+                    <span>{property.owner.email}</span>
+                  </div>
+                )}
+                {property.owner.address && (
+                  <div className="flex items-start gap-2">
+                    <span className="text-muted-foreground">📍</span>
+                    <span className="text-xs">{property.owner.address}</span>
+                  </div>
+                )}
+                {property.owner.notes && (
+                  <div className="flex items-start gap-2 mt-2">
+                    <span className="text-muted-foreground">📝</span>
+                    <span className="text-xs text-muted-foreground">{property.owner.notes}</span>
+                  </div>
+                )}
               </CardContent>
             </Card>
           )}
 
-          {/* META CARD */}
-          <Card className="border-0 shadow-md">
-            <CardHeader className="bg-gradient-to-r from-slate-50 to-gray-50 rounded-t-xl">
-              <CardTitle className="text-base flex items-center gap-2 text-slate-700">
-                <Calendar size={18} className="text-slate-500" />
-                Informasi Lainnya
-              </CardTitle>
+          {/* Quick Actions */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">⚡ Aksi Cepat</CardTitle>
             </CardHeader>
-            <CardContent className="p-6 space-y-1 text-sm">
-              <div><span className="text-slate-500">Dibuat:</span> {new Date(property.created_at).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}</div>
-              {property.published_at && (
-                <div><span className="text-slate-500">Dipublikasi:</span> {new Date(property.published_at).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}</div>
-              )}
-              <div><span className="text-slate-500">Terakhir diupdate:</span> {new Date(property.updated_at).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}</div>
+            <CardContent className="space-y-2">
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                onClick={() => router.push(`/properties/${property.id}/edit`)}
+              >
+                <Pencil className="h-4 w-4 mr-2" />
+                Edit Property
+              </Button>
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                onClick={() => router.push(`/properties/${property.id}/media`)}
+              >
+                <ImageIcon className="h-4 w-4 mr-2" />
+                Kelola Media
+              </Button>
+              <Button
+                variant="outline"
+                className="w-full justify-start text-emerald-600"
+                onClick={() => window.open(`/properties/${property.id}/export`, "_blank")}
+              >
+                <Sparkles className="h-4 w-4 mr-2" />
+                Export Portal
+              </Button>
             </CardContent>
           </Card>
         </div>
       </div>
+
+      {/* ===== DIALOGS ===== */}
+
+      {/* Status Update Dialog */}
+      <Dialog open={showStatusDialog} onOpenChange={setShowStatusDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Ubah Status</DialogTitle>
+            <DialogDescription>Pilih status baru untuk property ini</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <Select
+              value={newStatus}
+              onValueChange={(val) => setNewStatus(val as PropertyStatus)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Pilih status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="draft">📝 Draft</SelectItem>
+                <SelectItem value="review">👀 Review</SelectItem>
+                <SelectItem value="published">🚀 Published</SelectItem>
+                <SelectItem value="sold">✅ Sold</SelectItem>
+                <SelectItem value="rented">📋 Rented</SelectItem>
+                <SelectItem value="archived">📦 Archived</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowStatusDialog(false)}>Batal</Button>
+            <Button onClick={handleUpdateStatus} disabled={updating}>
+              {updating ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Simpan
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Dialog */}
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>⚠️ Hapus Property</DialogTitle>
+            <DialogDescription>
+              Apakah Anda yakin ingin menghapus property "{property.title}"?
+              Tindakan ini tidak dapat dibatalkan.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>Batal</Button>
+            <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
+              {deleting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Hapus
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

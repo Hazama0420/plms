@@ -1,10 +1,15 @@
+// app/(dashboard)/crm/leads/create/page.tsx
 "use client";
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowLeft, Save, User, Phone, Mail, Building2, DollarSign, Tag, MapPin } from "lucide-react";
+import { ArrowLeft, Save, Loader2, Plus, X } from "lucide-react";
+
 import { crmService } from "@/services/crm.service";
+import { supabase } from "@/lib/supabase/client";
+import type { LeadStatus } from "@/types/crm.types";
+
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -18,410 +23,352 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
+import { Skeleton } from "@/components/ui/skeleton";
 
+// ============================================================
+// TYPES
+// ============================================================
+interface Contact {
+  id: string;
+  full_name: string;
+  phone: string | null;
+  email: string | null;
+}
+
+interface Property {
+  id: string;
+  title: string;
+  listing_code: string;
+}
+
+// ============================================================
+// MAIN COMPONENT
+// ============================================================
 export default function CreateLeadPage() {
   const router = useRouter();
-  const [loading, setLoading] = useState(false);
-  const [agents, setAgents] = useState<{ id: string; full_name: string }[]>([]);
-  const [properties, setProperties] = useState<{ id: string; title: string; listing_code: string }[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
+  // Data options
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [agents, setAgents] = useState<any[]>([]);
+  const [properties, setProperties] = useState<Property[]>([]);
+
+  // Form state
   const [form, setForm] = useState({
-    // Contact
-    full_name: "",
-    phone: "",
-    whatsapp: "",
-    email: "",
-    occupation: "",
-    city: "",
-    notes: "",
-    // Lead
+    contact_id: "",
+    assigned_to: "",
     source: "",
-    status: "new",
+    status: "new" as LeadStatus,
     interest_type: "",
     budget: "",
-    assigned_to: "",
-    property_ids: [] as string[],
+    notes: "",
   });
+
+  // ✅ State untuk selected properties (multi-select)
+  const [selectedProperties, setSelectedProperties] = useState<string[]>([]);
 
   // ===== FETCH DATA =====
   useEffect(() => {
     const fetchData = async () => {
+      setLoading(true);
       try {
-        const [agentsData, propertiesData] = await Promise.all([
+        const [contactsData, agentsData, propertiesData] = await Promise.all([
+          supabase.from("crm_contacts").select("id, full_name, phone, email").order("full_name"),
           crmService.getAgents(),
           crmService.getPropertiesForLead(),
         ]);
-        setAgents(agentsData);
-        setProperties(propertiesData);
+
+        setContacts(contactsData.data || []);
+        setAgents(agentsData || []);
+        setProperties(propertiesData || []);
       } catch (error) {
         console.error("Error fetching data:", error);
         toast.error("Gagal memuat data");
+      } finally {
+        setLoading(false);
       }
     };
+
     fetchData();
   }, []);
 
-  // ===== HANDLE CHANGE =====
-  const handleChange = (field: string, value: any) => {
+  // ===== HANDLERS =====
+  const handleChange = (field: string, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
-  // ===== HANDLE PROPERTY TOGGLE =====
-  const toggleProperty = (propertyId: string) => {
-    setForm((prev) => ({
-      ...prev,
-      property_ids: prev.property_ids.includes(propertyId)
-        ? prev.property_ids.filter((id) => id !== propertyId)
-        : [...prev.property_ids, propertyId],
-    }));
+  const handleAddProperty = (propertyId: string) => {
+    if (!selectedProperties.includes(propertyId)) {
+      setSelectedProperties((prev) => [...prev, propertyId]);
+    }
+  };
+
+  const handleRemoveProperty = (propertyId: string) => {
+    setSelectedProperties((prev) => prev.filter((id) => id !== propertyId));
   };
 
   // ===== SUBMIT =====
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.full_name) {
-      toast.error("Nama kontak wajib diisi.");
+    if (!form.contact_id) {
+      toast.error("Pilih kontak terlebih dahulu");
       return;
     }
 
-    setLoading(true);
-
+    setSaving(true);
     try {
-      // 1. Create contact
-      const contact = await crmService.createContact({
-        full_name: form.full_name,
-        phone: form.phone || null,
-        whatsapp: form.whatsapp || null,
-        email: form.email || null,
-        occupation: form.occupation || null,
-        city: form.city || null,
-        notes: form.notes || null,
-      });
-
-      // 2. Create lead
-      await crmService.createLead({
-        contact_id: contact.id,
-        assigned_to: form.assigned_to || null,
-        source: form.source || null,
-        status: form.status as any,
-        interest_type: form.interest_type || null,
+      // 1. Buat lead
+      const lead = await crmService.createLead({
+        contact_id: form.contact_id,
+        assigned_to: form.assigned_to || undefined,
+        source: form.source || undefined,
+        status: form.status,
+        interest_type: form.interest_type || undefined,
         budget: form.budget ? parseFloat(form.budget) : undefined,
-        property_ids: form.property_ids,
+        property_ids: selectedProperties.length > 0 ? selectedProperties : undefined,
       });
 
       toast.success("Lead berhasil dibuat!");
-      router.push("/crm/leads");
+      router.push(`/crm/leads/${lead.id}`);
+      router.refresh();
     } catch (error: any) {
-      toast.error("Gagal membuat lead", { description: error.message });
+      console.error("Error creating lead:", error);
+      toast.error("Gagal membuat lead", {
+        description: error.message || "Silakan coba lagi.",
+      });
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   };
 
+  // ============================================================
+  // LOADING
+  // ============================================================
+  if (loading) {
+    return (
+      <div className="space-y-6 max-w-2xl mx-auto">
+        <Skeleton className="h-10 w-40" />
+        <Skeleton className="h-96 w-full rounded-xl" />
+      </div>
+    );
+  }
+
+  // ============================================================
+  // RENDER
+  // ============================================================
   return (
-    <div className="space-y-6">
-      {/* HEADER */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-blue-600 via-purple-600 to-pink-500 p-6 text-white shadow-lg">
-        <div className="absolute -right-12 -top-12 h-48 w-48 rounded-full bg-white/10 blur-3xl" />
-        <div className="absolute -bottom-16 -left-16 h-48 w-48 rounded-full bg-white/10 blur-3xl" />
-        <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-4">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => router.back()}
-              className="h-10 w-10 text-white hover:bg-white/20"
-            >
-              <ArrowLeft size={22} />
-            </Button>
-            <div>
-              <h1 className="text-2xl font-bold tracking-tight">➕ Tambah Lead Baru</h1>
-              <p className="text-sm text-white/80">Masukkan data prospek pelanggan</p>
-            </div>
-          </div>
-          <Badge variant="secondary" className="bg-white/20 text-white border-0">
-            {form.status}
-          </Badge>
+    <div className="max-w-2xl mx-auto space-y-6">
+      {/* Header */}
+      <div className="flex items-center gap-4">
+        <Button variant="ghost" size="icon" onClick={() => router.back()}>
+          <ArrowLeft className="h-5 w-5" />
+        </Button>
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">➕ Tambah Lead</h1>
+          <p className="text-sm text-muted-foreground">
+            Buat prospek baru dan kelola minat properti
+          </p>
         </div>
       </div>
 
-      {/* FORM */}
+      {/* Form */}
       <form onSubmit={handleSubmit}>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* MAIN FORM */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* Contact Info */}
-            <Card className="border-0 shadow-md">
-              <CardHeader className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-t-xl">
-                <CardTitle className="text-base flex items-center gap-2 text-slate-700">
-                  <User size={18} className="text-blue-500" />
-                  Informasi Kontak
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-6 space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="full_name" className="font-medium">Nama Lengkap <span className="text-rose-500">*</span></Label>
-                  <Input
-                    id="full_name"
-                    placeholder="Budi Santoso"
-                    value={form.full_name}
-                    onChange={(e) => handleChange("full_name", e.target.value)}
-                    className="border-blue-200 focus:ring-blue-500"
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="phone" className="font-medium flex items-center gap-2">
-                      <Phone size={16} className="text-slate-400" />
-                      Telepon
-                    </Label>
-                    <Input
-                      id="phone"
-                      placeholder="08123456789"
-                      value={form.phone}
-                      onChange={(e) => handleChange("phone", e.target.value)}
-                      className="border-blue-200 focus:ring-blue-500"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="whatsapp" className="font-medium flex items-center gap-2">
-                      <Phone size={16} className="text-green-400" />
-                      WhatsApp
-                    </Label>
-                    <Input
-                      id="whatsapp"
-                      placeholder="08123456789"
-                      value={form.whatsapp}
-                      onChange={(e) => handleChange("whatsapp", e.target.value)}
-                      className="border-blue-200 focus:ring-blue-500"
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="email" className="font-medium flex items-center gap-2">
-                      <Mail size={16} className="text-slate-400" />
-                      Email
-                    </Label>
-                    <Input
-                      id="email"
-                      type="email"
-                      placeholder="budi@email.com"
-                      value={form.email}
-                      onChange={(e) => handleChange("email", e.target.value)}
-                      className="border-blue-200 focus:ring-blue-500"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="occupation" className="font-medium flex items-center gap-2">
-                      <Building2 size={16} className="text-slate-400" />
-                      Pekerjaan
-                    </Label>
-                    <Input
-                      id="occupation"
-                      placeholder="Pengusaha / Karyawan"
-                      value={form.occupation}
-                      onChange={(e) => handleChange("occupation", e.target.value)}
-                      className="border-blue-200 focus:ring-blue-500"
-                    />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="city" className="font-medium flex items-center gap-2">
-                    <MapPin size={16} className="text-slate-400" />
-                    Kota
-                  </Label>
-                  <Input
-                    id="city"
-                    placeholder="Jakarta"
-                    value={form.city}
-                    onChange={(e) => handleChange("city", e.target.value)}
-                    className="border-blue-200 focus:ring-blue-500"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="notes">Catatan</Label>
-                  <Textarea
-                    id="notes"
-                    placeholder="Catatan tambahan tentang kontak..."
-                    value={form.notes}
-                    onChange={(e) => handleChange("notes", e.target.value)}
-                    rows={2}
-                    className="border-blue-200 focus:ring-blue-500"
-                  />
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Lead Info */}
-            <Card className="border-0 shadow-md">
-              <CardHeader className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-t-xl">
-                <CardTitle className="text-base flex items-center gap-2 text-slate-700">
-                  <Tag size={18} className="text-purple-500" />
-                  Informasi Lead
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-6 space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="source">Sumber Lead</Label>
-                    <Select value={form.source} onValueChange={(val) => handleChange("source", val)}>
-                      <SelectTrigger className="border-purple-200 focus:ring-purple-500">
-                        <SelectValue placeholder="Pilih sumber" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="website">Website</SelectItem>
-                        <SelectItem value="referral">Referral</SelectItem>
-                        <SelectItem value="social_media">Social Media</SelectItem>
-                        <SelectItem value="portal">Portal Property</SelectItem>
-                        <SelectItem value="agent">Agent</SelectItem>
-                        <SelectItem value="other">Lainnya</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="interest_type">Tipe Minat</Label>
-                    <Select value={form.interest_type} onValueChange={(val) => handleChange("interest_type", val)}>
-                      <SelectTrigger className="border-purple-200 focus:ring-purple-500">
-                        <SelectValue placeholder="Pilih tipe" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="rumah">Rumah</SelectItem>
-                        <SelectItem value="apartemen">Apartemen</SelectItem>
-                        <SelectItem value="tanah">Tanah</SelectItem>
-                        <SelectItem value="villa">Villa</SelectItem>
-                        <SelectItem value="ruko">Ruko</SelectItem>
-                        <SelectItem value="kantor">Kantor</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="budget" className="font-medium flex items-center gap-2">
-                      <DollarSign size={16} className="text-slate-400" />
-                      Budget
-                    </Label>
-                    <Input
-                      id="budget"
-                      type="number"
-                      placeholder="500000000"
-                      value={form.budget}
-                      onChange={(e) => handleChange("budget", e.target.value)}
-                      className="border-purple-200 focus:ring-purple-500"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="assigned_to">Assign ke Agent</Label>
-                    <Select value={form.assigned_to} onValueChange={(val) => handleChange("assigned_to", val)}>
-                      <SelectTrigger className="border-purple-200 focus:ring-purple-500">
-                        <SelectValue placeholder="Pilih agent" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {agents.length === 0 ? (
-                          <SelectItem value="">Belum ada agent</SelectItem>
-                        ) : (
-                          agents.map((agent) => (
-                            <SelectItem key={agent.id} value={agent.id}>{agent.full_name}</SelectItem>
-                          ))
-                        )}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label>Property yang Diminati</Label>
-                  <div className="grid grid-cols-2 gap-2">
-                    {properties.length === 0 ? (
-                      <p className="text-sm text-slate-400 col-span-2">Belum ada property yang dipublikasi</p>
-                    ) : (
-                      properties.map((prop) => (
-                        <div
-                          key={prop.id}
-                          className={cn(
-                            "p-2 border rounded-lg cursor-pointer transition",
-                            form.property_ids.includes(prop.id)
-                              ? "border-blue-500 bg-blue-50"
-                              : "border-slate-200 hover:border-blue-300"
-                          )}
-                          onClick={() => toggleProperty(prop.id)}
-                        >
-                          <p className="text-sm font-medium text-slate-700 truncate">{prop.title}</p>
-                          <p className="text-xs text-slate-400">{prop.listing_code}</p>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* SIDEBAR */}
-          <div className="lg:col-span-1 space-y-6">
-            <Card className="sticky top-6 shadow-lg border-0 bg-gradient-to-br from-slate-50 to-slate-100">
-              <CardHeader className="bg-gradient-to-r from-yellow-400 to-orange-400 rounded-t-xl">
-                <CardTitle className="text-base flex items-center gap-2 text-white">
-                  <span>💡</span> Ringkasan
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-6 space-y-4">
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Nama</span>
-                    <span className="font-medium text-slate-700 truncate max-w-[140px]">
-                      {form.full_name || "Belum diisi"}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Status</span>
-                    <Badge variant="outline" className="text-xs">
-                      {form.status}
-                    </Badge>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Sumber</span>
-                    <span className="font-medium text-slate-700">{form.source || "Belum diisi"}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Budget</span>
-                    <span className="font-medium text-slate-700">
-                      {form.budget
-                        ? new Intl.NumberFormat("id-ID", {
-                            style: "currency",
-                            currency: "IDR",
-                            minimumFractionDigits: 0,
-                            maximumFractionDigits: 0,
-                          }).format(parseFloat(form.budget))
-                        : "Belum diisi"}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Minat</span>
-                    <span className="font-medium text-slate-700">{form.property_ids.length} property</span>
-                  </div>
-                </div>
-                <hr className="my-2" />
-                <Button
-                  type="submit"
-                  className="w-full bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white shadow-md"
-                  disabled={loading}
-                >
-                  {loading ? (
-                    <><span className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2" />Menyimpan...</>
+        <Card className="border-0 shadow-md">
+          <CardHeader className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-t-xl dark:from-blue-950/30 dark:to-purple-950/30">
+            <CardTitle className="text-base">Informasi Lead</CardTitle>
+          </CardHeader>
+          <CardContent className="p-6 space-y-4">
+            {/* Pilih Kontak */}
+            <div className="space-y-2">
+              <Label htmlFor="contact_id">Kontak <span className="text-rose-500">*</span></Label>
+              <Select
+                value={form.contact_id}
+                onValueChange={(val) => handleChange("contact_id", val || "")}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Pilih kontak" />
+                </SelectTrigger>
+                <SelectContent>
+                  {contacts.length === 0 ? (
+                    <SelectItem value="no-contact" disabled>
+                      Tidak ada kontak
+                    </SelectItem>
                   ) : (
-                    <><Save size={18} className="mr-2" />Simpan Lead</>
+                    contacts.map((contact) => (
+                      <SelectItem key={contact.id} value={contact.id}>
+                        {contact.full_name} {contact.phone ? `(${contact.phone})` : ""}
+                      </SelectItem>
+                    ))
                   )}
-                </Button>
-                <Button type="button" variant="outline" className="w-full" onClick={() => router.back()}>
-                  Batal
-                </Button>
-                <p className="text-xs text-slate-400 text-center">* Data lead akan tersimpan sebagai New</p>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Assign Agent */}
+            <div className="space-y-2">
+              <Label htmlFor="assigned_to">Assign ke Agent</Label>
+              <Select
+                value={form.assigned_to}
+                onValueChange={(val) => handleChange("assigned_to", val || "")}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Pilih agent" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Tidak diassign</SelectItem>
+                  {agents.map((agent) => (
+                    <SelectItem key={agent.id} value={agent.id}>
+                      {agent.full_name || agent.email}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Sumber */}
+            <div className="space-y-2">
+              <Label htmlFor="source">Sumber</Label>
+              <Input
+                id="source"
+                placeholder="Website, Referral, Social Media..."
+                value={form.source}
+                onChange={(e) => handleChange("source", e.target.value)}
+              />
+            </div>
+
+            {/* Status */}
+            <div className="space-y-2">
+              <Label htmlFor="status">Status</Label>
+              <Select
+                value={form.status}
+                onValueChange={(val) => handleChange("status", val || "")}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Pilih status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="new">Baru</SelectItem>
+                  <SelectItem value="contacted">Dihubungi</SelectItem>
+                  <SelectItem value="qualified">Kualifikasi</SelectItem>
+                  <SelectItem value="negotiation">Negosiasi</SelectItem>
+                  <SelectItem value="proposal">Proposal</SelectItem>
+                  <SelectItem value="won">Menang</SelectItem>
+                  <SelectItem value="lost">Hilang</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Tipe Minat */}
+            <div className="space-y-2">
+              <Label htmlFor="interest_type">Tipe Minat</Label>
+              <Input
+                id="interest_type"
+                placeholder="Rumah, Apartemen, Tanah..."
+                value={form.interest_type}
+                onChange={(e) => handleChange("interest_type", e.target.value)}
+              />
+            </div>
+
+            {/* Budget */}
+            <div className="space-y-2">
+              <Label htmlFor="budget">Budget (Rp)</Label>
+              <Input
+                id="budget"
+                type="number"
+                placeholder="2500000000"
+                value={form.budget}
+                onChange={(e) => handleChange("budget", e.target.value)}
+              />
+            </div>
+
+            {/* Catatan */}
+            <div className="space-y-2">
+              <Label htmlFor="notes">Catatan</Label>
+              <Textarea
+                id="notes"
+                placeholder="Catatan tambahan..."
+                value={form.notes}
+                onChange={(e) => handleChange("notes", e.target.value)}
+                rows={3}
+              />
+            </div>
+
+            {/* Properti yang diminati (multi-select) */}
+            <div className="space-y-2 pt-2 border-t dark:border-slate-700">
+              <Label>Properti yang Diminati</Label>
+              <div className="flex flex-wrap gap-2 mb-2">
+                {selectedProperties.map((propId) => {
+                  const prop = properties.find((p) => p.id === propId);
+                  return prop ? (
+                    <Badge key={propId} variant="secondary" className="flex items-center gap-1">
+                      {prop.title}
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveProperty(propId)}
+                        className="ml-1 text-muted-foreground hover:text-rose-500"
+                      >
+                        <X size={14} />
+                      </button>
+                    </Badge>
+                  ) : null;
+                })}
+              </div>
+              <Select
+                value=""
+                onValueChange={(val) => {
+                  if (val) handleAddProperty(val);
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Tambah minat properti" />
+                </SelectTrigger>
+                <SelectContent>
+                  {properties
+                    .filter((p) => !selectedProperties.includes(p.id))
+                    .map((prop) => (
+                      <SelectItem key={prop.id} value={prop.id}>
+                        {prop.title} ({prop.listing_code})
+                      </SelectItem>
+                    ))}
+                  {properties.length === 0 && (
+                    <SelectItem value="no-prop" disabled>
+                      Tidak ada properti tersedia
+                    </SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Submit */}
+            <div className="flex gap-3 pt-4">
+              <Button
+                type="submit"
+                className="bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white shadow-md"
+                disabled={saving}
+              >
+                {saving ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    Menyimpan...
+                  </>
+                ) : (
+                  <>
+                    <Save className="h-4 w-4 mr-2" />
+                    Simpan
+                  </>
+                )}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => router.back()}
+              >
+                Batal
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
       </form>
     </div>
   );

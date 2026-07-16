@@ -5,7 +5,7 @@ import {
   SidebarProvider,
 } from "@/components/ui/sidebar";
 
-import AppSidebar from "./app-sidebar";
+import { AppSidebar } from "./dashboard/app-sidebar";
 import AppHeader from "./app-header";
 
 interface Props {

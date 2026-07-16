@@ -1,5 +1,4 @@
 // app/(dashboard)/properties/page.tsx
-
 "use client";
 
 import { useState } from "react";
@@ -53,6 +52,7 @@ import {
 } from "@/components/ui/pagination";
 import { propertyService } from "@/services/property.service";
 import { cn } from "@/lib/utils";
+import type { PropertyStatus } from "@/types/property.types";
 
 // ============================================================
 // KONFIGURASI STATUS
@@ -138,19 +138,29 @@ export default function PropertiesPage() {
     if (e.key === "Enter") handleSearch();
   };
 
-  const handleStatusChange = (status: string) =>
-    updateFilters({ status: status as any });
-
-  const handleTypeChange = (type: string) =>
-    updateFilters({ listing_type: type as any });
-
-  const handleSortChange = (sort: string) => {
-    const [sort_by, sort_order] = sort.split("-") as [
-      "created_at" | "title" | "listing_code",
-      "asc" | "desc"
-    ];
-    updateFilters({ sort_by, sort_order });
+  // ✅ FIX: casting ke tipe yang tepat
+  const handleStatusChange = (status: string | null) => {
+    updateFilters({
+      status: (status || "all") as PropertyStatus | "all",
+      page: 1,
+    });
   };
+
+  const handleTypeChange = (type: string | null) => {
+    updateFilters({
+      listing_type: (type === "all" ? "all" : type) as "jual" | "sewa" | "all",
+      page: 1,
+    });
+  };
+
+  const handleSortChange = (sort: string | null) => {
+  const val = sort ?? "";
+  const [sort_by, sort_order] = val.split("-") as [
+    "created_at" | "title" | "listing_code",
+    "asc" | "desc"
+  ];
+  updateFilters({ sort_by, sort_order });
+};
 
   const handleDelete = async (id: string) => {
     if (!confirm("Yakin hapus property ini?")) return;

@@ -19,22 +19,18 @@ import {
   Trash2,
   CheckCircle,
   XCircle,
-  Clock as ClockIcon,
   Tag,
   Building2,
-  DollarSign,
   Users,
   MessageSquare,
-  Link as LinkIcon,
   Loader2,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { id } from "date-fns/locale";
 
-import { crmService } from "@/services/crm.service";
-import { propertyService } from "@/services/property.service";
+import { crmService, type LeadWithRelations } from "@/services/crm.service";
 import { usePermissions } from "@/hooks/use-permissions";
-import type { CRMLead, LeadStatus, CRMContact } from "@/types/crm.types";
+import type { LeadStatus, CRMContact } from "@/types/crm.types";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -66,28 +62,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 // ============================================================
 // TYPES
 // ============================================================
-interface LeadWithRelations extends Omit<CRMLead, "contact"> {
-  contact: CRMContact;
-  assigned_user: {
-    id: string;
-    full_name: string;
-    email: string;
-    avatar_url: string | null;
-  } | null;
-  interests: {
-    id: string;
-    property_id: string;
-    interest_level: string | null;
-    notes: string | null;
-    property: {
-      title: string;
-      listing_code: string;
-      status: string;
-      price: { selling_price: number | null; rental_price: number | null } | null;
-    } | null;
-  }[];
-}
-
 interface Activity {
   id: string;
   lead_id: string;
@@ -113,24 +87,31 @@ interface Followup {
   };
 }
 
+// ============================================================
+// STATUS CONFIG (FIX: valid badge variants)
+// ============================================================
 const STATUS_OPTIONS: { value: LeadStatus; label: string; color: string }[] = [
   { value: "new", label: "Baru", color: "bg-blue-500" },
   { value: "contacted", label: "Dihubungi", color: "bg-amber-500" },
   { value: "qualified", label: "Kualifikasi", color: "bg-green-500" },
   { value: "negotiation", label: "Negosiasi", color: "bg-purple-500" },
-  { value: "proposal", label: "Proposal", color: "bg-indigo-500" }, // ✅ tambahkan proposal
+  { value: "proposal", label: "Proposal", color: "bg-indigo-500" },
   { value: "won", label: "Menang", color: "bg-emerald-600" },
   { value: "lost", label: "Hilang", color: "bg-rose-500" },
 ];
 
-const STATUS_BADGE_VARIANTS: Record<LeadStatus, "default" | "success" | "warning" | "destructive" | "secondary"> = {
-  new: "secondary",
-  contacted: "warning",
-  qualified: "success",
-  negotiation: "default",
-  proposal: "default", // ✅ tambahkan ini
-  won: "success",
-  lost: "destructive",
+// ✅ FIX: Gunakan varian yang valid (tanpa "success" dan "warning")
+const STATUS_BADGE_VARIANTS: Record<
+  LeadStatus,
+  { variant: "default" | "secondary" | "destructive" | "outline"; className: string }
+> = {
+  new: { variant: "secondary", className: "bg-blue-100 text-blue-700 border-blue-200" },
+  contacted: { variant: "secondary", className: "bg-amber-100 text-amber-700 border-amber-200" },
+  qualified: { variant: "secondary", className: "bg-green-100 text-green-700 border-green-200" },
+  negotiation: { variant: "secondary", className: "bg-purple-100 text-purple-700 border-purple-200" },
+  proposal: { variant: "secondary", className: "bg-indigo-100 text-indigo-700 border-indigo-200" },
+  won: { variant: "secondary", className: "bg-emerald-100 text-emerald-700 border-emerald-200" },
+  lost: { variant: "secondary", className: "bg-rose-100 text-rose-700 border-rose-200" },
 };
 
 const ACTIVITY_ICONS: Record<string, React.ReactNode> = {
@@ -157,6 +138,9 @@ export default function LeadDetailPage() {
   const [followups, setFollowups] = useState<Followup[]>([]);
   const [loading, setLoading] = useState(true);
   const [properties, setProperties] = useState<any[]>([]);
+
+  // Tabs state (controlled)
+  const [activeTab, setActiveTab] = useState("timeline");
 
   // Dialog states
   const [showAddFollowup, setShowAddFollowup] = useState(false);
@@ -211,7 +195,7 @@ export default function LeadDetailPage() {
     fetchData();
   }, [fetchData]);
 
-  // ===== HANDLE UPDATE STATUS =====
+  // ===== HANDLERS =====
   const handleUpdateStatus = async (status: LeadStatus) => {
     if (!lead) return;
     setSaving(true);
@@ -226,7 +210,6 @@ export default function LeadDetailPage() {
     }
   };
 
-  // ===== HANDLE ADD FOLLOWUP =====
   const handleAddFollowup = async () => {
     if (!lead) return;
     if (!newFollowup.followup_date) {
@@ -253,7 +236,6 @@ export default function LeadDetailPage() {
     }
   };
 
-  // ===== HANDLE ADD NOTE =====
   const handleAddNote = async () => {
     if (!lead) return;
     if (!newNote.trim()) {
@@ -279,7 +261,6 @@ export default function LeadDetailPage() {
     }
   };
 
-  // ===== HANDLE ADD INTEREST =====
   const handleAddInterest = async () => {
     if (!lead) return;
     if (!newInterest.property_id) {
@@ -306,7 +287,6 @@ export default function LeadDetailPage() {
     }
   };
 
-  // ===== HANDLE UPDATE FOLLOWUP STATUS =====
   const handleUpdateFollowupStatus = async (followupId: string, status: "completed" | "cancelled") => {
     setSaving(true);
     try {
@@ -320,7 +300,6 @@ export default function LeadDetailPage() {
     }
   };
 
-  // ===== HANDLE DELETE FOLLOWUP =====
   const handleDeleteFollowup = async (followupId: string) => {
     if (!confirm("Yakin ingin menghapus follow-up ini?")) return;
     setSaving(true);
@@ -406,7 +385,10 @@ export default function LeadDetailPage() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight flex items-center gap-3">
               {lead.contact?.full_name || "Tanpa Nama"}
-              <Badge variant={STATUS_BADGE_VARIANTS[lead.status] || "secondary"} className="text-xs">
+              <Badge
+                variant={STATUS_BADGE_VARIANTS[lead.status].variant}
+                className={STATUS_BADGE_VARIANTS[lead.status].className}
+              >
                 {getStatusLabel(lead.status)}
               </Badge>
             </h1>
@@ -607,7 +589,8 @@ export default function LeadDetailPage() {
 
         {/* RIGHT COLUMN - Timeline & Followups */}
         <div className="lg:col-span-2 space-y-6">
-          <Tabs defaultValue="timeline" className="w-full">
+          {/* ✅ FIX: Tabs controlled */}
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="timeline">⏱️ Timeline</TabsTrigger>
               <TabsTrigger value="followups">📅 Follow-up ({followups.length})</TabsTrigger>

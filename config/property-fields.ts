@@ -3,7 +3,7 @@
 export interface FieldConfig {
   name: string;
   label: string;
-  type: 'text' | 'number' | 'select' | 'textarea' | 'hidden';
+  type: 'text' | 'number' | 'select' | 'textarea' | 'hidden' | 'checkbox' | 'email'; // ✅ ditambahkan checkbox & email
   required?: boolean;
   options?: string[];
   default?: any;
@@ -13,6 +13,7 @@ export interface FieldConfig {
 }
 
 export const BASE_FIELDS: FieldConfig[] = [
+  // Basic
   { name: 'title', label: 'Judul Iklan', type: 'text', required: true },
   { name: 'listing_code', label: 'Kode Listing', type: 'text' },
   { name: 'property_type', label: 'Tipe Properti', type: 'text', readonly: true, default: 'rumah' },
@@ -28,7 +29,7 @@ export const BASE_FIELDS: FieldConfig[] = [
   { name: 'rental_period', label: 'Periode Sewa', type: 'select', options: ['per_hari', 'per_minggu', 'per_bulan', 'per_tahun'] },
   { name: 'service_charge', label: 'Service Charge', type: 'number' },
   { name: 'maintenance_fee', label: 'IPL / Maintenance Fee', type: 'number' },
-  { name: 'negotiable', label: 'Harga Bisa Nego', type: 'checkbox' },
+  { name: 'negotiable', label: 'Harga Bisa Nego', type: 'checkbox' }, // ✅ sekarang valid
   
   // Lokasi
   { name: 'country_id', label: 'Negara', type: 'select' },
@@ -69,7 +70,7 @@ export const BASE_FIELDS: FieldConfig[] = [
   { name: 'owner_name', label: 'Nama Pemilik', type: 'text' },
   { name: 'owner_phone', label: 'Nomor Telepon', type: 'text' },
   { name: 'owner_whatsapp', label: 'Nomor WhatsApp', type: 'text' },
-  { name: 'owner_email', label: 'Email', type: 'email' },
+  { name: 'owner_email', label: 'Email', type: 'email' }, // ✅ sekarang valid
   { name: 'owner_identity_type', label: 'Jenis Identitas', type: 'select', options: ['KTP', 'SIM', 'PASPOR'] },
   { name: 'owner_identity_number', label: 'Nomor Identitas', type: 'text' },
   { name: 'owner_address', label: 'Alamat Pemilik', type: 'textarea' },

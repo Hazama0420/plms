@@ -55,12 +55,12 @@ export function getPermissionsForRole(role: UserRole): Permission[] {
 export function canAccessRoute(userRole: UserRole | null | undefined, route: string): boolean {
   if (!userRole) return false;
 
-  // Super admin bisa akses semua
+  // ✅ Super admin bisa akses semua
   if (userRole === "super_admin") return true;
 
-  // Admin routes
+  // Admin routes (hanya admin, super_admin sudah ditangani di atas)
   if (route.startsWith("/dashboard/admin")) {
-    return userRole === "admin" || userRole === "super_admin";
+    return userRole === "admin";
   }
 
   // Export route

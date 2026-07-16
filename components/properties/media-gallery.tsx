@@ -37,7 +37,8 @@ export function MediaGallery({ propertyId, media, onUpdate }: MediaGalleryProps)
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("User not authenticated");
 
-      const result = await mediaService.uploadMedia(propertyId, files, user.id);
+      // ✅ FIX: pakai uploadImages, tanpa user.id
+      const result = await mediaService.uploadImages(propertyId, files);
       if (result.length > 0) {
         toast.success(`${result.length} foto berhasil diupload!`);
         onUpdate();
@@ -72,7 +73,8 @@ export function MediaGallery({ propertyId, media, onUpdate }: MediaGalleryProps)
   const handleSetPrimary = async (mediaId: string) => {
     setLoading(true);
     try {
-      await mediaService.setPrimary(mediaId, propertyId);
+      // ✅ FIX: urutan parameter (propertyId dulu, baru mediaId)
+      await mediaService.setPrimary(propertyId, mediaId);
       toast.success("Foto primary berhasil diupdate!");
       onUpdate();
     } catch (error: any) {

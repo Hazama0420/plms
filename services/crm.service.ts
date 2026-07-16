@@ -2,6 +2,35 @@
 import { supabase } from "@/lib/supabase/client";
 import type { CRMContact, CRMLead, LeadStatus } from "@/types/crm.types";
 
+// ============================================================
+// TIPE UNTUK RELASI (didefinisikan di sini agar service konsisten)
+// ============================================================
+export interface LeadWithRelations extends Omit<CRMLead, "contact"> {
+  contact: CRMContact; // contact wajib ada
+  assigned_user: {
+    id: string;
+    full_name: string;
+    email: string;
+    avatar_url?: string | null;
+  } | null;
+  interests: {
+    id: string;
+    property_id: string;
+    interest_level?: string | null;
+    notes?: string | null;
+    property?: {
+      id: string;
+      title: string;
+      listing_code: string;
+      status: string;
+      price?: {
+        selling_price?: number | null;
+        rental_price?: number | null;
+      } | null;
+    } | null;
+  }[];
+}
+
 export interface LeadFilter {
   search?: string;
   status?: LeadStatus | "all";
@@ -10,6 +39,9 @@ export interface LeadFilter {
   limit?: number;
 }
 
+// ============================================================
+// CRM SERVICE
+// ============================================================
 export const crmService = {
   // ============================================================
   // CONTACTS
@@ -92,7 +124,7 @@ export const crmService = {
   },
 
   // ============================================================
-  // LEADS
+  // LEADS (dengan type-safety)
   // ============================================================
   async getLeads(filters: LeadFilter = {}) {
     const {
@@ -142,63 +174,56 @@ export const crmService = {
     };
   },
 
+  // ⭐ FIX: getLeadById mengembalikan LeadWithRelations dengan contact wajib
   async getLeadById(id: string): Promise<LeadWithRelations> {
-  const { data, error } = await supabase
-    .from("crm_leads")
-    .select(`
-      *,
-      contact:crm_contacts(*),
-      assigned_user:users!assigned_to(id, full_name, email, avatar_url),
-      interests:crm_interests(
-        id,
-        property_id,
-        interest_level,
-        notes,
-        property:properties(id, title, listing_code, status, price:property_price(selling_price, rental_price))
-      )
-    `)
-    .eq("id", id)
-    .single();
-
-  if (error) throw new Error(error.message);
-  
- // ✅ Pastikan contact ada
-  if (!data.contact) {
-    // Coba fetch contact secara terpisah
-    const { data: contactData } = await supabase
-      .from("crm_contacts")
-      .select("*")
-      .eq("id", data.contact_id)
+    const { data, error } = await supabase
+      .from("crm_leads")
+      .select(`
+        *,
+        contact:crm_contacts(*),
+        assigned_user:users!assigned_to(id, full_name, email, avatar_url),
+        interests:crm_interests(
+          id,
+          property_id,
+          interest_level,
+          notes,
+          property:properties(id, title, listing_code, status, price:property_price(selling_price, rental_price))
+        )
+      `)
+      .eq("id", id)
       .single();
-    
-    if (contactData) {
+
+    if (error) throw new Error(error.message);
+
+    // Pastikan contact ada
+    if (!data.contact) {
+      // Coba fetch contact secara terpisah
+      const { data: contactData, error: contactError } = await supabase
+        .from("crm_contacts")
+        .select("*")
+        .eq("id", data.contact_id)
+        .single();
+
+      if (contactError || !contactData) {
+        throw new Error("Contact not found for lead " + id);
+      }
       data.contact = contactData;
-    } else {
-      throw new Error("Contact not found for lead " + id);
     }
-  }
 
-  return data as LeadWithRelations;
-}
-
-    // Ambil assigned_user secara terpisah
-    let assignedUser = null;
-    if (data.assigned_to) {
-      const { data: userData, error: userError } = await supabase
+    // Pastikan assigned_user memiliki id (jika ada)
+    if (data.assigned_user && !data.assigned_user.id) {
+      // fallback: fetch user
+      const { data: userData } = await supabase
         .from("users")
-        .select("full_name, email, avatar_url")
+        .select("id, full_name, email, avatar_url")
         .eq("id", data.assigned_to)
         .maybeSingle();
-
-      if (!userError && userData) {
-        assignedUser = userData;
+      if (userData) {
+        data.assigned_user = userData;
       }
     }
 
-    return {
-      ...data,
-      assigned_user: assignedUser,
-    } as CRMLead;
+    return data as LeadWithRelations;
   },
 
   async createLead(data: {
@@ -299,17 +324,13 @@ export const crmService = {
       .from("crm_activities")
       .select(`
         *,
-        user:users(
-          id,
-          full_name,
-          avatar_url
-        )
+        user:users(id, full_name, avatar_url)
       `)
       .eq("lead_id", leadId)
       .order("created_at", { ascending: false });
 
     if (error) {
-      // Fallback jika relasi ke users belum ada
+      // Fallback jika join ke users gagal
       console.warn("Activities join to users failed, falling back to basic query");
       const { data: basicData, error: basicError } = await supabase
         .from("crm_activities")
@@ -396,7 +417,7 @@ export const crmService = {
   },
 
   // ============================================================
-  // USERS (agents)
+  // AGENTS (USERS)
   // ============================================================
   async getAgents() {
     try {
@@ -425,8 +446,19 @@ export const crmService = {
     }
   },
 
+  async getAgentById(id: string) {
+    const { data, error } = await supabase
+      .from("users")
+      .select("id, full_name, email, avatar_url")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (error) throw new Error(error.message);
+    return data;
+  },
+
   // ============================================================
-  // PROPERTIES (for interests)
+  // PROPERTIES (untuk interest selection)
   // ============================================================
   async getPropertiesForLead() {
     const { data, error } = await supabase
@@ -436,10 +468,7 @@ export const crmService = {
         title,
         listing_code,
         status,
-        price:property_price(
-          selling_price,
-          rental_price
-        )
+        price:property_price(selling_price, rental_price)
       `)
       .in("status", ["published", "active"])
       .order("title", { ascending: true });
@@ -448,8 +477,24 @@ export const crmService = {
     return data || [];
   },
 
+  async getPropertyById(id: string) {
+    const { data, error } = await supabase
+      .from("properties")
+      .select(`
+        *,
+        address:property_address(*),
+        price:property_price(*),
+        media:property_media(*)
+      `)
+      .eq("id", id)
+      .maybeSingle();
+
+    if (error) throw new Error(error.message);
+    return data;
+  },
+
   // ============================================================
-  // FOLLOW-UPS
+  // FOLLOW-UPS (dengan fallback untuk relasi)
   // ============================================================
   async getFollowups(filters: {
     lead_id?: string;
@@ -468,16 +513,12 @@ export const crmService = {
 
     const offset = (page - 1) * limit;
 
-    // Coba ambil dengan relasi users
     let query = supabase
       .from("crm_followups")
       .select(
         `
           *,
-          lead:crm_leads(
-            id,
-            contact:crm_contacts(full_name, phone)
-          ),
+          lead:crm_leads(id, contact:crm_contacts(full_name, phone)),
           assigned_user:users!assigned_to(id, full_name, avatar_url)
         `,
         { count: "exact" }
@@ -492,17 +533,14 @@ export const crmService = {
     const { data, error, count } = await query;
 
     if (error) {
-      // Fallback jika relasi ke users tidak ada
+      // Fallback: query tanpa assigned_user
       console.warn("Followups join to users failed, falling back to basic query");
       const basicQuery = supabase
         .from("crm_followups")
         .select(
           `
             *,
-            lead:crm_leads(
-              id,
-              contact:crm_contacts(full_name, phone)
-            )
+            lead:crm_leads(id, contact:crm_contacts(full_name, phone))
           `,
           { count: "exact" }
         )
@@ -537,10 +575,7 @@ export const crmService = {
       .from("crm_followups")
       .select(`
         *,
-        lead:crm_leads(
-          id,
-          contact:crm_contacts(*)
-        ),
+        lead:crm_leads(id, contact:crm_contacts(*)),
         assigned_user:users!assigned_to(id, full_name, email, avatar_url)
       `)
       .eq("id", id)
@@ -552,10 +587,7 @@ export const crmService = {
         .from("crm_followups")
         .select(`
           *,
-          lead:crm_leads(
-            id,
-            contact:crm_contacts(*)
-          )
+          lead:crm_leads(id, contact:crm_contacts(*))
         `)
         .eq("id", id)
         .single();
@@ -596,10 +628,12 @@ export const crmService = {
     return followup;
   },
 
+  // ✅ FIX: tambahkan assigned_to opsional
   async updateFollowup(id: string, data: {
     followup_date?: string;
     notes?: string;
     status?: "pending" | "completed" | "cancelled";
+    assigned_to?: string; // tambahkan ini
   }) {
     const updateData: any = {
       ...data,
@@ -647,7 +681,7 @@ export const crmService = {
   },
 
   // ============================================================
-  // CRM STATISTICS
+  // STATISTICS
   // ============================================================
   async getCRMStats() {
     const { data: totalLeads, error: totalError } = await supabase
@@ -703,5 +737,116 @@ export const crmService = {
       todayLeads: todayLeads || 0,
       pendingFollowups: pendingFollowups || 0,
     };
+  },
+
+  // ============================================================
+  // SEARCH & BULK
+  // ============================================================
+  async searchLeads(query: string) {
+    if (!query || query.length < 2) {
+      return { data: [], count: 0 };
+    }
+
+    const { data, error, count } = await supabase
+      .from("crm_leads")
+      .select(`
+        *,
+        contact:crm_contacts(*)
+      `, { count: "exact" })
+      .or(
+        `contact.full_name.ilike.%${query}%,
+         contact.phone.ilike.%${query}%,
+         contact.email.ilike.%${query}%,
+         contact.city.ilike.%${query}%`
+      )
+      .order("created_at", { ascending: false })
+      .limit(20);
+
+    if (error) throw new Error(error.message);
+    return { data: data || [], count: count || 0 };
+  },
+
+  async bulkUpdateStatus(leadIds: string[], status: LeadStatus) {
+    const { error } = await supabase
+      .from("crm_leads")
+      .update({
+        status,
+        updated_at: new Date().toISOString()
+      })
+      .in("id", leadIds);
+
+    if (error) throw new Error(error.message);
+
+    for (const leadId of leadIds) {
+      await this.logActivity({
+        lead_id: leadId,
+        activity_type: "status_change",
+        notes: `Status berubah menjadi ${status} (bulk update)`,
+      });
+    }
+
+    return true;
+  },
+
+  async bulkAssign(leadIds: string[], assignedTo: string) {
+    const { error } = await supabase
+      .from("crm_leads")
+      .update({
+        assigned_to: assignedTo,
+        updated_at: new Date().toISOString()
+      })
+      .in("id", leadIds);
+
+    if (error) throw new Error(error.message);
+    return true;
+  },
+
+  // ============================================================
+  // REPORTING
+  // ============================================================
+  async getLeadsReport(startDate: string, endDate: string) {
+    const { data, error } = await supabase
+      .from("crm_leads")
+      .select(`
+        *,
+        contact:crm_contacts(*)
+      `)
+      .gte("created_at", startDate)
+      .lte("created_at", endDate)
+      .order("created_at", { ascending: false });
+
+    if (error) throw new Error(error.message);
+    return data || [];
+  },
+
+  async getFollowupReport(startDate: string, endDate: string) {
+    const { data, error } = await supabase
+      .from("crm_followups")
+      .select(`
+        *,
+        lead:crm_leads(contact:crm_contacts(full_name, phone)),
+        assigned_user:users!assigned_to(full_name)
+      `)
+      .gte("followup_date", startDate)
+      .lte("followup_date", endDate)
+      .order("followup_date", { ascending: true });
+
+    if (error) {
+      // Fallback
+      const { data: basicData, error: basicError } = await supabase
+        .from("crm_followups")
+        .select(`
+          *,
+          lead:crm_leads(contact:crm_contacts(full_name, phone))
+        `)
+        .gte("followup_date", startDate)
+        .lte("followup_date", endDate)
+        .order("followup_date", { ascending: true });
+
+      if (basicError) throw new Error(basicError.message);
+      return basicData || [];
+    }
+
+    return data || [];
   },
 };

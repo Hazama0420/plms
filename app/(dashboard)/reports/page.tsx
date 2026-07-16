@@ -182,7 +182,7 @@ export default function ReportsPage() {
           <div className="flex items-center gap-3">
             <Select
               value={selectedYear.toString()}
-              onValueChange={(val) => setSelectedYear(parseInt(val))}
+              onValueChange={(val) => setSelectedYear(parseInt(val || "0"))}
             >
               <SelectTrigger className="w-[120px] bg-white/20 text-white border-0">
                 <SelectValue placeholder="Tahun" />
@@ -286,7 +286,7 @@ export default function ReportsPage() {
                     cx="50%"
                     cy="50%"
                     outerRadius={80}
-                    label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                    label={({ name, percent }) => `${name}: ${((percent ?? 0) * 100).toFixed(0)}%`}
                   >
                     {statusData.map((entry, index) => (
                       <Cell key={entry.status} fill={COLORS[index % COLORS.length]} />
@@ -319,7 +319,7 @@ export default function ReportsPage() {
                     cx="50%"
                     cy="50%"
                     outerRadius={80}
-                    label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                    label={({ name, percent }) => `${name}: ${((percent ?? 0) * 100).toFixed(0)}%`}
                   >
                     {typeData.map((entry, index) => (
                       <Cell key={entry.type} fill={COLORS[(index + 2) % COLORS.length]} />

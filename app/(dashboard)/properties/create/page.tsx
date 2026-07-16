@@ -44,7 +44,7 @@ interface LocationData {
   countries: { id: string; name: string }[];
   provinces: { id: string; name: string }[];
   cities: { id: string; name: string }[];
-  districts: { id: string; name: string }[];
+  districts: { id: string; name: string; city_id: string }[]; // ✅ tambah city_id
   villages: { id: string; name: string }[];
 }
 
@@ -295,13 +295,14 @@ export default function CreatePropertyPage() {
     }
   };
 
+  // ✅ FIX: fetch districts with city_id
   const fetchDistricts = async (cityId: string) => {
     if (!cityId) return;
     setLoadingLocation((prev) => ({ ...prev, districts: true }));
     try {
       const { data, error } = await supabase
         .from("districts")
-        .select("id, name")
+        .select("id, name, city_id") // ✅ tambah city_id
         .eq("city_id", cityId)
         .order("name");
       if (error) throw error;
@@ -427,7 +428,7 @@ export default function CreatePropertyPage() {
     try {
       const areaList = locationData.districts
         .map((d) => {
-          const city = locationData.cities.find((c) => c.id === d.city_id);
+          const city = locationData.cities.find((c) => c.id === d.city_id); // ✅ sekarang d.city_id ada
           return `${d.name} - ${city?.name || "Unknown"}`;
         })
         .join("\n");
@@ -610,13 +611,13 @@ export default function CreatePropertyPage() {
   };
 
   // ============================================================
-  // SUBMIT (FIXED)
+  // SUBMIT
   // ============================================================
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (loading) return;
 
-    // Validasi dasar
+    // Validasi
     if (!form.title) {
       toast.error("Judul property wajib diisi.");
       setActiveTab("basic");
@@ -644,12 +645,11 @@ export default function CreatePropertyPage() {
       return;
     }
 
-    // Validasi UUID untuk lokasi (jika diisi)
+    // Validasi UUID
     const locationFields = ['country_id', 'province_id', 'city_id', 'district_id', 'village_id'] as const;
     for (const field of locationFields) {
       const val = form[field];
       if (val && !UUID_REGEX.test(val)) {
-        // Jika tidak valid, set null
         handleChange(field, '');
         console.warn(`Invalid UUID for ${field}, reset to null`);
       }
@@ -662,7 +662,7 @@ export default function CreatePropertyPage() {
       if (userError) throw new Error("Sesi login tidak valid. Silakan login ulang.");
       if (!user) throw new Error("Anda belum login.");
 
-      // Owner (opsional)
+      // Owner
       let ownerId = null;
       if (form.owner_name) {
         const { data: owner, error: ownerError } = await supabase
@@ -1108,7 +1108,7 @@ export default function CreatePropertyPage() {
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
                           <Label htmlFor="property_category" className="font-medium">Jenis Properti</Label>
-                          {/* FIX: value="" diganti sentinel "none" — Radix Select gak boleh punya SelectItem value kosong */}
+                          {/* ✅ FIX: pakai sentinel "none" */}
                           <Select
                             value={form.property_category || "none"}
                             onValueChange={(val) =>
@@ -1212,11 +1212,12 @@ export default function CreatePropertyPage() {
                         </div>
                       </div>
 
+                      {/* Rental Period + Service Charge */}
                       <div className="grid grid-cols-2 gap-4">
                         {form.listing_type === "sewa" && (
                           <div className="space-y-2">
                             <Label htmlFor="rental_period" className="font-medium">Periode Sewa</Label>
-                            {/* FIX: value="" diganti sentinel "none", sama seperti property_category di atas */}
+                            {/* ✅ FIX: pakai sentinel "none" */}
                             <Select
                               value={form.rental_period || "none"}
                               onValueChange={(val) =>
@@ -1289,7 +1290,7 @@ export default function CreatePropertyPage() {
                         <Label htmlFor="country_id">Negara</Label>
                         <Select
                           value={form.country_id}
-                          onValueChange={(val) => handleLocationChange("country_id", val)}
+                          onValueChange={(val) => handleLocationChange("country_id", val || "")}
                           disabled={loadingLocation.countries}
                         >
                           <SelectTrigger className="border-emerald-200 focus:ring-emerald-500 dark:bg-slate-900 dark:border-slate-700 dark:text-slate-200">
@@ -1316,7 +1317,7 @@ export default function CreatePropertyPage() {
                         <Label htmlFor="province_id">Provinsi</Label>
                         <Select
                           value={form.province_id}
-                          onValueChange={(val) => handleLocationChange("province_id", val)}
+                          onValueChange={(val) => handleLocationChange("province_id", val || "")}
                           disabled={!form.country_id || loadingLocation.provinces}
                         >
                           <SelectTrigger className="border-emerald-200 focus:ring-emerald-500 dark:bg-slate-900 dark:border-slate-700 dark:text-slate-200">
@@ -1343,7 +1344,7 @@ export default function CreatePropertyPage() {
                         <Label htmlFor="city_id">Kota / Kabupaten</Label>
                         <Select
                           value={form.city_id}
-                          onValueChange={(val) => handleLocationChange("city_id", val)}
+                          onValueChange={(val) => handleLocationChange("city_id", val || "")}
                           disabled={!form.province_id || loadingLocation.cities}
                         >
                           <SelectTrigger className="border-emerald-200 focus:ring-emerald-500 dark:bg-slate-900 dark:border-slate-700 dark:text-slate-200">
@@ -1370,7 +1371,7 @@ export default function CreatePropertyPage() {
                         <Label htmlFor="district_id">Kecamatan</Label>
                         <Select
                           value={form.district_id}
-                          onValueChange={(val) => handleLocationChange("district_id", val)}
+                          onValueChange={(val) => handleLocationChange("district_id", val || "")}
                           disabled={!form.city_id || loadingLocation.districts}
                         >
                           <SelectTrigger className="border-emerald-200 focus:ring-emerald-500 dark:bg-slate-900 dark:border-slate-700 dark:text-slate-200">
@@ -1397,7 +1398,7 @@ export default function CreatePropertyPage() {
                         <Label htmlFor="village_id">Kelurahan / Desa</Label>
                         <Select
                           value={form.village_id}
-                          onValueChange={(val) => handleLocationChange("village_id", val)}
+                          onValueChange={(val) => handleLocationChange("village_id", val || "")}
                           disabled={!form.district_id || loadingLocation.villages}
                         >
                           <SelectTrigger className="border-emerald-200 focus:ring-emerald-500 dark:bg-slate-900 dark:border-slate-700 dark:text-slate-200">

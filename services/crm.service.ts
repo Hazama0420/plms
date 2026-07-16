@@ -142,34 +142,44 @@ export const crmService = {
     };
   },
 
-  async getLeadById(id: string) {
-    // Ambil lead dengan contact, interests, dan assigned_user secara terpisah
-    const { data, error } = await supabase
-      .from("crm_leads")
-      .select(`
-        *,
-        contact:crm_contacts(*),
-        interests:crm_interests(
-          id,
-          property_id,
-          interest_level,
-          notes,
-          property:properties(
-            id,
-            title,
-            listing_code,
-            status,
-            price:property_price(
-              selling_price,
-              rental_price
-            )
-          )
-        )
-      `)
-      .eq("id", id)
-      .single();
+  async getLeadById(id: string): Promise<LeadWithRelations> {
+  const { data, error } = await supabase
+    .from("crm_leads")
+    .select(`
+      *,
+      contact:crm_contacts(*),
+      assigned_user:users!assigned_to(id, full_name, email, avatar_url),
+      interests:crm_interests(
+        id,
+        property_id,
+        interest_level,
+        notes,
+        property:properties(id, title, listing_code, status, price:property_price(selling_price, rental_price))
+      )
+    `)
+    .eq("id", id)
+    .single();
 
-    if (error) throw new Error(error.message);
+  if (error) throw new Error(error.message);
+  
+ // ✅ Pastikan contact ada
+  if (!data.contact) {
+    // Coba fetch contact secara terpisah
+    const { data: contactData } = await supabase
+      .from("crm_contacts")
+      .select("*")
+      .eq("id", data.contact_id)
+      .single();
+    
+    if (contactData) {
+      data.contact = contactData;
+    } else {
+      throw new Error("Contact not found for lead " + id);
+    }
+  }
+
+  return data as LeadWithRelations;
+}
 
     // Ambil assigned_user secara terpisah
     let assignedUser = null;

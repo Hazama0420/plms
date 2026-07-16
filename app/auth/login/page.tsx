@@ -1,4 +1,3 @@
-// app/auth/login/page.tsx
 "use client";
 
 import { useState } from "react";
@@ -6,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
 import { toast } from "sonner";
-import { Eye, EyeOff, Mail, Lock, LogIn } from "lucide-react"; // ✅ Hanya ini
+import { Eye, EyeOff, Mail, Lock, LogIn } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

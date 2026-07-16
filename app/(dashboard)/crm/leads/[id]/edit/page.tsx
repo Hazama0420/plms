@@ -1,4 +1,3 @@
-// app/(dashboard)/crm/leads/[id]/edit/page.tsx
 "use client";
 
 import { useState, useEffect } from "react";
@@ -7,8 +6,7 @@ import { toast } from "sonner";
 import { ArrowLeft, Save, Loader2 } from "lucide-react";
 
 import { crmService } from "@/services/crm.service";
-import { usePermissions } from "@/hooks/use-permissions";
-import type { LeadStatus } from "@/types/crm.types";
+import { type LeadStatus } from "@/types/crm.types";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -37,7 +35,6 @@ export default function EditLeadPage() {
   const router = useRouter();
   const params = useParams();
   const leadId = params.id as string;
-  const { userRole } = usePermissions();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -66,7 +63,7 @@ export default function EditLeadPage() {
           status: lead.status || "new",
           interest_type: lead.interest_type || "",
           budget: lead.budget ? String(lead.budget) : "",
-          notes: lead.notes || "",
+          notes: (lead as any).notes || "", // notes sekarang sudah ada di tipe
         });
 
         setAgents(agentsData || []);
@@ -123,7 +120,6 @@ export default function EditLeadPage() {
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
-      {/* Header */}
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="icon" onClick={() => router.back()}>
           <ArrowLeft className="h-5 w-5" />
@@ -136,7 +132,6 @@ export default function EditLeadPage() {
         </div>
       </div>
 
-      {/* Form */}
       <form onSubmit={handleSubmit}>
         <Card className="border-0 shadow-md">
           <CardHeader className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-t-xl dark:from-blue-950/30 dark:to-purple-950/30">
@@ -148,7 +143,7 @@ export default function EditLeadPage() {
               <Label htmlFor="status">Status</Label>
               <Select
                 value={form.status}
-                onValueChange={(val) => handleChange("status", val)}
+                onValueChange={(val) => handleChange("status", val || "")}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Pilih status" />
@@ -163,12 +158,12 @@ export default function EditLeadPage() {
               </Select>
             </div>
 
-            {/* Assigned To */}
+            {/* Assign ke Agent */}
             <div className="space-y-2">
               <Label htmlFor="assigned_to">Assign ke Agent</Label>
               <Select
                 value={form.assigned_to}
-                onValueChange={(val) => handleChange("assigned_to", val)}
+                onValueChange={(val) => handleChange("assigned_to", val || "")}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Pilih agent" />
@@ -230,7 +225,6 @@ export default function EditLeadPage() {
               />
             </div>
 
-            {/* Submit */}
             <div className="flex gap-3 pt-4">
               <Button
                 type="submit"

@@ -1,9 +1,8 @@
-// app/(dashboard)/crm/followups/[id]/page.tsx
 "use client";
 
 import { useState, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { ArrowLeft, Calendar, User, Phone, Mail, MessageSquare, Loader2, Edit, Trash2, CheckCircle, XCircle, Clock } from "lucide-react";
+import { ArrowLeft, Calendar, User, Mail, MessageSquare, Loader2, Edit, Trash2, CheckCircle, XCircle, Clock } from "lucide-react";
 import { toast } from "sonner";
 
 import { crmService } from "@/services/crm.service";
@@ -14,6 +13,8 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Label } from "@/components/ui/label"; // ✅ IMPORT LABEL
+import { Textarea } from "@/components/ui/textarea"; // ✅ IMPORT TEXTAREA
 import {
   Dialog,
   DialogContent,
@@ -29,9 +30,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
+// ===== STATUS CONFIG =====
 const statusConfig: Record<string, { label: string; color: string; bg: string; icon: React.ReactNode }> = {
   pending: { label: "Pending", color: "text-amber-600", bg: "bg-amber-100", icon: <Clock size={18} /> },
   completed: { label: "Selesai", color: "text-emerald-600", bg: "bg-emerald-100", icon: <CheckCircle size={18} /> },

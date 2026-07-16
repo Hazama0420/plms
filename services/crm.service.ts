@@ -92,7 +92,7 @@ export const crmService = {
   },
 
   // ============================================================
-  // LEADS (DENGAN HANDLER UNTUK RELASI YANG BELUM ADA)
+  // LEADS
   // ============================================================
   async getLeads(filters: LeadFilter = {}) {
     const {
@@ -143,7 +143,7 @@ export const crmService = {
   },
 
   async getLeadById(id: string) {
-    // Ambil lead dengan contact dan interests (tanpa assigned_user dulu)
+    // Ambil lead dengan contact, interests, dan assigned_user secara terpisah
     const { data, error } = await supabase
       .from("crm_leads")
       .select(`
@@ -171,12 +171,12 @@ export const crmService = {
 
     if (error) throw new Error(error.message);
 
-    // Ambil assigned_user secara terpisah jika ada assigned_to
+    // Ambil assigned_user secara terpisah
     let assignedUser = null;
     if (data.assigned_to) {
       const { data: userData, error: userError } = await supabase
         .from("users")
-        .select("id, full_name, email, avatar_url")
+        .select("full_name, email, avatar_url")
         .eq("id", data.assigned_to)
         .maybeSingle();
 
@@ -299,7 +299,7 @@ export const crmService = {
       .order("created_at", { ascending: false });
 
     if (error) {
-      // Jika relasi ke users belum ada, fallback ke query tanpa relasi
+      // Fallback jika relasi ke users belum ada
       console.warn("Activities join to users failed, falling back to basic query");
       const { data: basicData, error: basicError } = await supabase
         .from("crm_activities")
@@ -335,7 +335,7 @@ export const crmService = {
   },
 
   // ============================================================
-  // INTERESTS (Property Interests)
+  // INTERESTS
   // ============================================================
   async addInterest(data: {
     lead_id: string;
@@ -386,7 +386,7 @@ export const crmService = {
   },
 
   // ============================================================
-  // USERS (untuk assign agent)
+  // USERS (agents)
   // ============================================================
   async getAgents() {
     try {
@@ -415,19 +415,8 @@ export const crmService = {
     }
   },
 
-  async getAgentById(id: string) {
-    const { data, error } = await supabase
-      .from("users")
-      .select("id, full_name, email, avatar_url")
-      .eq("id", id)
-      .maybeSingle();
-
-    if (error) throw new Error(error.message);
-    return data;
-  },
-
   // ============================================================
-  // PROPERTIES (untuk interest selection)
+  // PROPERTIES (for interests)
   // ============================================================
   async getPropertiesForLead() {
     const { data, error } = await supabase
@@ -449,24 +438,8 @@ export const crmService = {
     return data || [];
   },
 
-  async getPropertyById(id: string) {
-    const { data, error } = await supabase
-      .from("properties")
-      .select(`
-        *,
-        address:property_address(*),
-        price:property_price(*),
-        media:property_media(*)
-      `)
-      .eq("id", id)
-      .maybeSingle();
-
-    if (error) throw new Error(error.message);
-    return data;
-  },
-
   // ============================================================
-  // FOLLOW-UPS (dengan fallback untuk relasi yang belum ada)
+  // FOLLOW-UPS
   // ============================================================
   async getFollowups(filters: {
     lead_id?: string;
@@ -502,22 +475,14 @@ export const crmService = {
       .order("followup_date", { ascending: true })
       .range(offset, offset + limit - 1);
 
-    if (lead_id) {
-      query = query.eq("lead_id", lead_id);
-    }
-
-    if (assigned_to) {
-      query = query.eq("assigned_to", assigned_to);
-    }
-
-    if (status) {
-      query = query.eq("status", status);
-    }
+    if (lead_id) query = query.eq("lead_id", lead_id);
+    if (assigned_to) query = query.eq("assigned_to", assigned_to);
+    if (status) query = query.eq("status", status);
 
     const { data, error, count } = await query;
 
     if (error) {
-      // Fallback: query tanpa relasi assigned_user
+      // Fallback jika relasi ke users tidak ada
       console.warn("Followups join to users failed, falling back to basic query");
       const basicQuery = supabase
         .from("crm_followups")
@@ -672,7 +637,7 @@ export const crmService = {
   },
 
   // ============================================================
-  // DASHBOARD / STATISTICS
+  // CRM STATISTICS
   // ============================================================
   async getCRMStats() {
     const { data: totalLeads, error: totalError } = await supabase
@@ -728,123 +693,5 @@ export const crmService = {
       todayLeads: todayLeads || 0,
       pendingFollowups: pendingFollowups || 0,
     };
-  },
-
-  // ============================================================
-  // SEARCH / FILTER HELPERS
-  // ============================================================
-  async searchLeads(query: string) {
-    if (!query || query.length < 2) {
-      return { data: [], count: 0 };
-    }
-
-    const { data, error, count } = await supabase
-      .from("crm_leads")
-      .select(`
-        *,
-        contact:crm_contacts(*)
-      `, { count: "exact" })
-      .or(
-        `contact.full_name.ilike.%${query}%,
-         contact.phone.ilike.%${query}%,
-         contact.email.ilike.%${query}%,
-         contact.city.ilike.%${query}%`
-      )
-      .order("created_at", { ascending: false })
-      .limit(20);
-
-    if (error) throw new Error(error.message);
-    return { data: data || [], count: count || 0 };
-  },
-
-  // ============================================================
-  // BULK OPERATIONS
-  // ============================================================
-  async bulkUpdateStatus(leadIds: string[], status: LeadStatus) {
-    const { error } = await supabase
-      .from("crm_leads")
-      .update({
-        status,
-        updated_at: new Date().toISOString()
-      })
-      .in("id", leadIds);
-
-    if (error) throw new Error(error.message);
-
-    for (const leadId of leadIds) {
-      await this.logActivity({
-        lead_id: leadId,
-        activity_type: "status_change",
-        notes: `Status berubah menjadi ${status} (bulk update)`,
-      });
-    }
-
-    return true;
-  },
-
-  async bulkAssign(leadIds: string[], assignedTo: string) {
-    const { error } = await supabase
-      .from("crm_leads")
-      .update({
-        assigned_to: assignedTo,
-        updated_at: new Date().toISOString()
-      })
-      .in("id", leadIds);
-
-    if (error) throw new Error(error.message);
-    return true;
-  },
-
-  // ============================================================
-  // REPORTING / EXPORT
-  // ============================================================
-  async getLeadsReport(startDate: string, endDate: string) {
-    const { data, error } = await supabase
-      .from("crm_leads")
-      .select(`
-        *,
-        contact:crm_contacts(*)
-      `)
-      .gte("created_at", startDate)
-      .lte("created_at", endDate)
-      .order("created_at", { ascending: false });
-
-    if (error) throw new Error(error.message);
-    return data || [];
-  },
-
-  async getFollowupReport(startDate: string, endDate: string) {
-    const { data, error } = await supabase
-      .from("crm_followups")
-      .select(`
-        *,
-        lead:crm_leads(
-          contact:crm_contacts(full_name, phone)
-        ),
-        assigned_user:users!assigned_to(full_name)
-      `)
-      .gte("followup_date", startDate)
-      .lte("followup_date", endDate)
-      .order("followup_date", { ascending: true });
-
-    if (error) {
-      // Fallback
-      const { data: basicData, error: basicError } = await supabase
-        .from("crm_followups")
-        .select(`
-          *,
-          lead:crm_leads(
-            contact:crm_contacts(full_name, phone)
-          )
-        `)
-        .gte("followup_date", startDate)
-        .lte("followup_date", endDate)
-        .order("followup_date", { ascending: true });
-
-      if (basicError) throw new Error(basicError.message);
-      return basicData || [];
-    }
-
-    return data || [];
   },
 };

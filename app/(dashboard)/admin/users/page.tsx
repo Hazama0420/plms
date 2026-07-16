@@ -1,4 +1,3 @@
-// app/(dashboard)/admin/users/page.tsx
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
@@ -56,6 +55,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
+// ---------- IKON & BADGE ----------
 const ROLE_ICONS: Record<UserRole, React.ReactNode> = {
   super_admin: <ShieldAlert className="h-4 w-4 text-red-500" />,
   admin: <ShieldCheck className="h-4 w-4 text-blue-500" />,
@@ -64,14 +64,16 @@ const ROLE_ICONS: Record<UserRole, React.ReactNode> = {
   viewer: <Eye className="h-4 w-4 text-gray-500" />,
 };
 
-const ROLE_BADGE: Record<UserRole, "default" | "success" | "warning" | "destructive" | "secondary"> = {
+// ✅ FIX: gunakan variant yang valid (tanpa "success" atau "warning")
+const ROLE_BADGE: Record<UserRole, "default" | "secondary" | "destructive" | "outline"> = {
   super_admin: "destructive",
   admin: "default",
-  agent: "success",
-  marketing: "warning",
+  agent: "secondary",
+  marketing: "outline",
   viewer: "secondary",
 };
 
+// ---------- KOMPONEN UTAMA ----------
 export default function AdminUsersPage() {
   const { userRole, isLoading: roleLoading } = usePermissions();
   const [users, setUsers] = useState<UserWithRole[]>([]);
@@ -161,6 +163,7 @@ export default function AdminUsersPage() {
 
   const getRoleLabel = (role: UserRole) => USER_ROLES[role]?.label || role;
 
+  // ---------- LOADING & AKSES ----------
   if (roleLoading) {
     return (
       <div className="flex h-[calc(100vh-4rem)] items-center justify-center">
@@ -185,8 +188,10 @@ export default function AdminUsersPage() {
     );
   }
 
+  // ---------- RENDER ----------
   return (
     <div className="container mx-auto py-6 space-y-6 max-w-7xl">
+      {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
@@ -198,6 +203,7 @@ export default function AdminUsersPage() {
         <Badge variant="outline" className="px-3 py-1">Total {users.length} user</Badge>
       </div>
 
+      {/* Search */}
       <Card>
         <CardContent className="pt-6">
           <div className="relative">
@@ -212,6 +218,7 @@ export default function AdminUsersPage() {
         </CardContent>
       </Card>
 
+      {/* Table */}
       <Card>
         <CardHeader>
           <CardTitle>Daftar User</CardTitle>
@@ -261,8 +268,8 @@ export default function AdminUsersPage() {
                       </TableCell>
                       <TableCell className="text-right">
                         <DropdownMenu>
-                          <DropdownMenuTrigger className="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 hover:bg-accent hover:text-accent-foreground h-10 w-10">
-                            <MoreHorizontal className="h-4 w-4" />
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon"><MoreHorizontal className="h-4 w-4" /></Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem onClick={() => handleEdit(user)}>
@@ -285,6 +292,7 @@ export default function AdminUsersPage() {
         </CardContent>
       </Card>
 
+      {/* Dialog Edit Role */}
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
         <DialogContent>
           <DialogHeader>
@@ -319,6 +327,7 @@ export default function AdminUsersPage() {
         </DialogContent>
       </Dialog>
 
+      {/* Dialog Delete */}
       <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <DialogContent>
           <DialogHeader>

@@ -8,40 +8,45 @@ import { supabase } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { Eye, EyeOff, Mail, Lock, User, ArrowLeft } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Loader2, Mail, Lock, User, CheckCircle } from "lucide-react";
 
 export default function RegisterPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [registeredEmail, setRegisteredEmail] = useState("");
   const [form, setForm] = useState({
     full_name: "",
     email: "",
     password: "",
     confirm_password: "",
   });
+  const [errorDetail, setErrorDetail] = useState<string | null>(null);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setForm({ ...form, [e.target.name]: e.target.value });
+    if (errorDetail) setErrorDetail(null);
   };
 
-  const handleRegister = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (form.password !== form.confirm_password) {
-      toast.error("Password dan konfirmasi password tidak cocok");
+      toast.error("Password dan konfirmasi password tidak sama");
+      setErrorDetail("Password dan konfirmasi tidak sama");
       return;
     }
 
     if (form.password.length < 6) {
       toast.error("Password minimal 6 karakter");
+      setErrorDetail("Password minimal 6 karakter");
       return;
     }
 
     setLoading(true);
+    setErrorDetail(null);
 
     try {
       const { data, error } = await supabase.auth.signUp({
@@ -51,170 +56,210 @@ export default function RegisterPage() {
           data: {
             full_name: form.full_name,
           },
+          emailRedirectTo: `${window.location.origin}/login`,
         },
       });
 
       if (error) throw error;
 
-      if (data?.user) {
-        toast.success("Registrasi berhasil! Silakan login.");
-        router.push("/?registered=true");
+      setRegisteredEmail(form.email);
+      setSuccess(true);
+      toast.success("Pendaftaran berhasil! Cek email Anda untuk verifikasi.");
+      
+      if (data.user) {
+        try {
+          await supabase.from("users").insert({
+            id: data.user.id,
+            email: data.user.email,
+            full_name: form.full_name,
+            role: "viewer",
+          });
+        } catch (insertErr) {
+          console.warn("Insert user failed:", insertErr);
+        }
       }
     } catch (error: any) {
       console.error("Register error:", error);
-      if (error.message.includes("User already registered")) {
-        toast.error("Email sudah terdaftar. Silakan login.");
-      } else {
-        toast.error("Registrasi gagal", {
-          description: error.message || "Silakan coba lagi.",
-        });
+      console.error("Error message:", error.message);
+      console.error("Error details:", error.details);
+      console.error("Error hint:", error.hint);
+      
+      let errorMsg = error.message || "Gagal mendaftar";
+      
+      // Handle berbagai error
+      if (errorMsg.includes("User already registered")) {
+        errorMsg = "Email sudah terdaftar. Silakan login.";
+      } else if (errorMsg.includes("password")) {
+        errorMsg = "Password terlalu lemah. Gunakan minimal 6 karakter.";
+      } else if (errorMsg.includes("rate limit") || errorMsg.includes("rate_limit")) {
+        errorMsg = "Terlalu banyak percobaan. Silakan tunggu beberapa menit sebelum mencoba lagi.";
+        toast.error("Terlalu banyak percobaan. Tunggu beberapa saat.");
       }
+      
+      setErrorDetail(errorMsg);
+      toast.error(errorMsg);
     } finally {
       setLoading(false);
     }
   };
 
-  return (
-    <div 
-      className="relative min-h-screen flex items-center justify-center p-4 bg-cover bg-center bg-no-repeat"
-      style={{
-        backgroundImage: "url('/bg-login.webp')",
-        backgroundAttachment: "fixed",
-      }}
-    >
-      <div className="absolute inset-0 bg-black/30 backdrop-blur-[2px]" />
+  if (success) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-50 to-white dark:from-emerald-950/20 dark:to-slate-950 p-4">
+        <Card className="max-w-md w-full border-0 shadow-xl">
+          <CardContent className="pt-8 text-center">
+            <div className="mx-auto w-16 h-16 bg-emerald-100 dark:bg-emerald-900/30 rounded-full flex items-center justify-center mb-4">
+              <CheckCircle className="h-8 w-8 text-emerald-600 dark:text-emerald-400" />
+            </div>
+            <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-2">
+              Verifikasi Email
+            </h2>
+            <p className="text-slate-500 dark:text-slate-400 mb-6">
+              Kami telah mengirimkan email verifikasi ke <br />
+              <span className="font-semibold text-slate-700 dark:text-slate-300">{registeredEmail}</span>
+            </p>
+            <p className="text-sm text-slate-400 dark:text-slate-500">
+              Silakan klik link di email tersebut untuk mengaktifkan akun Anda.
+              Setelah diverifikasi, Anda bisa login ke sistem.
+            </p>
+            <div className="mt-6 space-y-3">
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => router.push("/login")}
+              >
+                Kembali ke Login
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full text-sm text-slate-400"
+                onClick={async () => {
+                  try {
+                    await supabase.auth.resend({
+                      type: "signup",
+                      email: registeredEmail,
+                    });
+                    toast.success("Email verifikasi dikirim ulang. Cek inbox/spam Anda.");
+                  } catch (err: any) {
+                    toast.error(err.message || "Gagal mengirim ulang");
+                  }
+                }}
+              >
+                Kirim ulang email verifikasi
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
-      <Card className="relative z-10 w-full max-w-md border-0 bg-white/10 backdrop-blur-xl backdrop-saturate-150 shadow-2xl rounded-2xl overflow-hidden">
-        <CardHeader className="space-y-1 text-center pt-8">
-          <Link href="/" className="absolute left-4 top-4 text-white/70 hover:text-white transition">
-            <ArrowLeft size={20} />
-          </Link>
-          <div className="mx-auto w-16 h-16 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl flex items-center justify-center shadow-lg shadow-emerald-500/30 mb-4">
-            <span className="text-2xl font-bold text-white">P</span>
-          </div>
-          <CardTitle className="text-2xl font-bold text-white tracking-tight">
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-50 to-white dark:from-emerald-950/20 dark:to-slate-950 p-4">
+      <Card className="max-w-md w-full border-0 shadow-xl">
+        <CardHeader className="text-center">
+          <CardTitle className="text-2xl font-bold text-slate-800 dark:text-white">
             Daftar Akun
           </CardTitle>
-          <p className="text-sm text-white/70">
-            Buat akun baru untuk mulai mengelola properti
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            Buat akun untuk mulai menggunakan Inland Property
           </p>
         </CardHeader>
-
-        <CardContent className="px-8 pb-8">
-          <form onSubmit={handleRegister} className="space-y-4">
-            {/* Nama Lengkap */}
+        <CardContent>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {errorDetail && (
+              <div className="p-3 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800/50 rounded-lg text-sm text-rose-600 dark:text-rose-400">
+                {errorDetail}
+              </div>
+            )}
             <div className="space-y-2">
-              <Label htmlFor="full_name" className="text-sm font-medium text-white/80">
-                Nama Lengkap
-              </Label>
+              <Label htmlFor="full_name">Nama Lengkap</Label>
               <div className="relative">
-                <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/50" />
+                <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                 <Input
                   id="full_name"
                   name="full_name"
-                  type="text"
                   placeholder="Masukkan nama lengkap"
                   value={form.full_name}
                   onChange={handleChange}
-                  className="pl-10 h-11 bg-white/10 border-white/20 text-white placeholder:text-white/40 focus:ring-white/30 focus:border-white/40"
+                  className="pl-9"
                   required
                 />
               </div>
             </div>
 
-            {/* Email */}
             <div className="space-y-2">
-              <Label htmlFor="email" className="text-sm font-medium text-white/80">
-                Email
-              </Label>
+              <Label htmlFor="email">Email</Label>
               <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/50" />
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                 <Input
                   id="email"
                   name="email"
                   type="email"
-                  placeholder="admin@plms.com"
+                  placeholder="email@anda.com"
                   value={form.email}
                   onChange={handleChange}
-                  className="pl-10 h-11 bg-white/10 border-white/20 text-white placeholder:text-white/40 focus:ring-white/30 focus:border-white/40"
+                  className="pl-9"
                   required
                 />
               </div>
             </div>
 
-            {/* Password */}
             <div className="space-y-2">
-              <Label htmlFor="password" className="text-sm font-medium text-white/80">
-                Password
-              </Label>
+              <Label htmlFor="password">Password</Label>
               <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/50" />
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                 <Input
                   id="password"
                   name="password"
-                  type={showPassword ? "text" : "password"}
+                  type="password"
                   placeholder="Minimal 6 karakter"
                   value={form.password}
                   onChange={handleChange}
-                  className="pl-10 pr-10 h-11 bg-white/10 border-white/20 text-white placeholder:text-white/40 focus:ring-white/30 focus:border-white/40"
+                  className="pl-9"
                   required
                   minLength={6}
                 />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-white/50 hover:text-white/80 transition"
-                >
-                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                </button>
               </div>
             </div>
 
-            {/* Konfirmasi Password */}
             <div className="space-y-2">
-              <Label htmlFor="confirm_password" className="text-sm font-medium text-white/80">
-                Konfirmasi Password
-              </Label>
+              <Label htmlFor="confirm_password">Konfirmasi Password</Label>
               <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/50" />
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                 <Input
                   id="confirm_password"
                   name="confirm_password"
-                  type={showConfirmPassword ? "text" : "password"}
+                  type="password"
                   placeholder="Ulangi password"
                   value={form.confirm_password}
                   onChange={handleChange}
-                  className="pl-10 pr-10 h-11 bg-white/10 border-white/20 text-white placeholder:text-white/40 focus:ring-white/30 focus:border-white/40"
+                  className="pl-9"
                   required
+                  minLength={6}
                 />
-                <button
-                  type="button"
-                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-white/50 hover:text-white/80 transition"
-                >
-                  {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                </button>
               </div>
             </div>
 
             <Button
               type="submit"
-              className="w-full h-11 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-semibold shadow-lg shadow-emerald-500/25 transition-all duration-300 hover:shadow-xl hover:shadow-emerald-500/30"
+              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white"
               disabled={loading}
             >
               {loading ? (
-                <span className="flex items-center gap-2">
-                  <span className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
-                  Memproses...
-                </span>
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Mendaftar...
+                </>
               ) : (
                 "Daftar"
               )}
             </Button>
 
-            <p className="text-center text-sm text-white/60">
+            <p className="text-center text-sm text-slate-500">
               Sudah punya akun?{" "}
-              <Link href="/" className="text-white font-semibold hover:underline transition">
+              <Link href="/login" className="text-emerald-600 hover:underline font-medium">
                 Login
               </Link>
             </p>

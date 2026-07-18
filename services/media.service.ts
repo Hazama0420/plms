@@ -3,50 +3,45 @@ import { supabase } from "@/lib/supabase/client";
 
 export const mediaService = {
   /**
-   * Upload gambar ke bucket property-media
+   * Upload images via API route (with watermark)
    */
   async uploadImages(propertyId: string, files: File[]): Promise<any[]> {
+    // Hitung jumlah foto yang sudah ada SEBELUM upload
+    const { count: countBefore } = await supabase
+      .from("property_media")
+      .select("*", { count: "exact", head: true })
+      .eq("property_id", propertyId);
+
     const uploaded = [];
 
     for (const file of files) {
-      const fileExt = file.name.split(".").pop();
-      const fileName = `${propertyId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${fileExt}`;
-      const filePath = `properties/${fileName}`;
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("propertyId", propertyId);
 
-      const { error: uploadError } = await supabase.storage
-        .from("property-media")
-        .upload(filePath, file);
+      const response = await fetch("/api/media/upload", {
+        method: "POST",
+        body: formData,
+      });
 
-      if (uploadError) throw uploadError;
+      let result;
+      try {
+        result = await response.json();
+      } catch (_) {
+        const text = await response.text();
+        throw new Error(`Server error: ${text.substring(0, 100)}`);
+      }
 
-      const { data: urlData } = supabase.storage
-        .from("property-media")
-        .getPublicUrl(filePath);
+      if (!response.ok) {
+        throw new Error(result.error || "Upload failed");
+      }
 
-      const { data: mediaData, error: insertError } = await supabase
-        .from("property_media")
-        .insert({
-          property_id: propertyId,
-          url: urlData.publicUrl,
-          is_primary: false,
-        })
-        .select()
-        .single();
-
-      if (insertError) throw insertError;
-      uploaded.push(mediaData);
+      uploaded.push(result.media);
     }
 
-    // Jika tidak ada primary, set pertama sebagai primary
-    if (uploaded.length > 0) {
-      const { count } = await supabase
-        .from("property_media")
-        .select("*", { count: "exact", head: true })
-        .eq("property_id", propertyId);
-
-      if (count === 1) {
-        await this.setPrimary(propertyId, uploaded[0].id);
-      }
+    // Set foto pertama jadi primary HANYA jika belum ada foto sama sekali
+    if ((countBefore ?? 0) === 0 && uploaded.length > 0) {
+      await this.setPrimary(propertyId, uploaded[0].id);
     }
 
     return uploaded;
@@ -56,13 +51,11 @@ export const mediaService = {
    * Set primary image
    */
   async setPrimary(propertyId: string, mediaId: string) {
-    // Reset semua primary untuk property ini
     await supabase
       .from("property_media")
       .update({ is_primary: false })
       .eq("property_id", propertyId);
 
-    // Set primary yang baru
     const { error } = await supabase
       .from("property_media")
       .update({ is_primary: true })
@@ -72,19 +65,17 @@ export const mediaService = {
   },
 
   /**
-   * Delete media
+   * Delete media – pakai storage_path (bukan url)
    */
   async deleteMedia(mediaId: string) {
-    // Ambil url untuk delete dari storage
     const { data, error: getError } = await supabase
       .from("property_media")
-      .select("url")
+      .select("storage_path")
       .eq("id", mediaId)
       .single();
 
     if (getError) throw getError;
 
-    // Delete dari database
     const { error: deleteError } = await supabase
       .from("property_media")
       .delete()
@@ -92,14 +83,13 @@ export const mediaService = {
 
     if (deleteError) throw deleteError;
 
-    // Delete dari storage (opsional)
+    // Delete dari storage
     try {
-      const path = data.url.split("/").pop();
-      if (path) {
-        await supabase.storage.from("property-media").remove([path]);
+      if (data?.storage_path) {
+        await supabase.storage.from("property-media").remove([data.storage_path]);
       }
     } catch (_) {
-      // Abaikan error storage
+      // Ignore storage errors
     }
   },
 
@@ -112,6 +102,7 @@ export const mediaService = {
       .select("*")
       .eq("property_id", propertyId)
       .order("is_primary", { ascending: false })
+      .order("sort_order", { ascending: true })
       .order("created_at", { ascending: true });
 
     if (error) throw error;

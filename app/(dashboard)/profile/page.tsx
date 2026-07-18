@@ -1,4 +1,3 @@
-// app/(dashboard)/profile/page.tsx
 "use client";
 
 import { useState, useEffect, useRef } from "react";
@@ -29,60 +28,78 @@ export default function ProfilePage() {
     avatar_url: "",
   });
 
-  // ===== FETCH PROFILE (langsung dari Supabase) =====
-useEffect(() => {
-  const fetchProfile = async () => {
-    setLoading(true);
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Not authenticated");
+  // ===== FETCH PROFILE (dengan fallback) =====
+  useEffect(() => {
+    const fetchProfile = async () => {
+      setLoading(true);
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error("Not authenticated");
 
-      let { data, error } = await supabase
-        .from("users")
-        .select("*")
-        .eq("id", user.id)
-        .maybeSingle();
-
-      // Jika data tidak ada, buat baris baru
-      if (!data && !error) {
-        const { data: newUser, error: insertError } = await supabase
+        let { data, error } = await supabase
           .from("users")
-          .insert({
+          .select("*")
+          .eq("id", user.id)
+          .maybeSingle();
+
+        if (!data && !error) {
+          const { data: newUser, error: insertError } = await supabase
+            .from("users")
+            .insert({
+              id: user.id,
+              email: user.email,
+              full_name: user.user_metadata?.full_name || "",
+              avatar_url: user.user_metadata?.avatar_url || "",
+              role: "viewer",
+              phone: "",
+              company: "",
+            })
+            .select()
+            .single();
+
+          if (insertError) {
+            console.warn("Insert user failed, using fallback:", insertError);
+            data = {
+              id: user.id,
+              full_name: user.user_metadata?.full_name || "",
+              email: user.email,
+              phone: "",
+              company: "",
+              avatar_url: user.user_metadata?.avatar_url || "",
+            };
+          } else {
+            data = newUser;
+          }
+        } else if (error) {
+          console.warn("Error fetching user, using fallback:", error);
+          data = {
             id: user.id,
-            email: user.email,
             full_name: user.user_metadata?.full_name || "",
-            avatar_url: user.user_metadata?.avatar_url || "",
-            role: "viewer",
+            email: user.email,
             phone: "",
             company: "",
-          })
-          .select()
-          .single();
+            avatar_url: user.user_metadata?.avatar_url || "",
+          };
+        }
 
-        if (insertError) throw insertError;
-        data = newUser;
-      } else if (error) {
-        throw error;
+        setProfile({
+          id: user.id,
+          full_name: data?.full_name || user.user_metadata?.full_name || "",
+          email: user.email || "",
+          phone: data?.phone || "",
+          company: data?.company || "",
+          avatar_url: data?.avatar_url || "",
+        });
+      } catch (error: any) {
+        console.error("Error fetching profile:", error);
+        toast.error("Gagal memuat profil", { description: error.message || "Coba refresh halaman" });
+      } finally {
+        setLoading(false);
       }
+    };
 
-      setProfile({
-        id: user.id,
-        full_name: data?.full_name || user.user_metadata?.full_name || "",
-        email: user.email || "",
-        phone: data?.phone || "",
-        company: data?.company || "",
-        avatar_url: data?.avatar_url || "",
-      });
-    } catch (error: any) {
-      console.error("Error fetching profile:", error);
-      toast.error("Gagal memuat profil", { description: error.message || "Coba refresh halaman" });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  fetchProfile();
-}, []);
+    fetchProfile();
+  }, []);
 
   // ===== HANDLE CHANGE =====
   const handleChange = (field: string, value: string) => {
@@ -104,26 +121,21 @@ useEffect(() => {
       if (!user) throw new Error("Not authenticated");
 
       const fileExt = file.name.split(".").pop();
-      // ✅ Perbaiki: gunakan backtick untuk template string
       const fileName = `${user.id}-${Date.now()}.${fileExt}`;
-      // ✅ Path langsung di dalam bucket "avatars"
       const filePath = fileName;
 
-      // Upload ke bucket "avatars"
       const { error: uploadError } = await supabase.storage
         .from("avatars")
         .upload(filePath, file, { upsert: true });
 
       if (uploadError) throw uploadError;
 
-      // Dapatkan public URL
       const { data: urlData } = supabase.storage
         .from("avatars")
         .getPublicUrl(filePath);
 
       const avatarUrl = urlData.publicUrl;
 
-      // Update di tabel users
       const { error: updateError } = await supabase
         .from("users")
         .update({ avatar_url: avatarUrl })
@@ -133,8 +145,6 @@ useEffect(() => {
 
       setProfile((prev) => ({ ...prev, avatar_url: avatarUrl }));
       toast.success("Foto profil berhasil diupdate!");
-
-      // ✅ Refresh layout agar sidebar ikut update
       router.refresh();
     } catch (error: any) {
       toast.error("Gagal upload foto", { description: error.message });
@@ -152,21 +162,43 @@ useEffect(() => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Not authenticated");
 
-      const { error } = await supabase
+      // Cek apakah user punya row di users, jika tidak insert dulu
+      const { data: existing } = await supabase
         .from("users")
-        .update({
-          full_name: profile.full_name,
-          phone: profile.phone || null,
-          company: profile.company || null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", user.id);
+        .select("id")
+        .eq("id", user.id)
+        .maybeSingle();
 
-      if (error) throw error;
+      if (!existing) {
+        const { error: insertError } = await supabase
+          .from("users")
+          .insert({
+            id: user.id,
+            email: user.email,
+            full_name: profile.full_name,
+            phone: profile.phone || null,
+            company: profile.company || null,
+            avatar_url: profile.avatar_url || null,
+            role: "viewer",
+          });
+        if (insertError) throw insertError;
+      } else {
+        const { error } = await supabase
+          .from("users")
+          .update({
+            full_name: profile.full_name,
+            phone: profile.phone || null,
+            company: profile.company || null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", user.id);
+        if (error) throw error;
+      }
 
       toast.success("Profil berhasil diperbarui!");
-      router.refresh(); // refresh layout
+      router.refresh();
     } catch (error: any) {
+      console.error("Error updating profile:", error);
       toast.error("Gagal update profil", { description: error.message });
     } finally {
       setSaving(false);
@@ -240,7 +272,7 @@ useEffect(() => {
                         width={128}
                         height={128}
                         className="w-full h-full object-cover"
-                        unoptimized // opsional jika ada error dengan domain supabase
+                        unoptimized
                       />
                     ) : (
                       <span className="text-5xl text-white font-bold">
@@ -281,7 +313,7 @@ useEffect(() => {
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-6 space-y-4">
-                {/* Email (readonly) */}
+                {/* Email */}
                 <div className="space-y-2">
                   <Label className="font-medium flex items-center gap-2">
                     <Mail size={16} className="text-slate-400" />

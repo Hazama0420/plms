@@ -1,46 +1,29 @@
-// components/ui/checkbox.tsx
+"use client"
 
-import * as React from "react";
-import { cn } from "@/lib/utils";
-import { Check } from "lucide-react";
+import { Checkbox as CheckboxPrimitive } from "@base-ui/react/checkbox"
 
-export interface CheckboxProps extends React.InputHTMLAttributes<HTMLInputElement> {
-  checked?: boolean;
-  onCheckedChange?: (checked: boolean) => void;
+import { cn } from "@/lib/utils"
+import { CheckIcon } from "lucide-react"
+
+function Checkbox({ className, ...props }: CheckboxPrimitive.Root.Props) {
+  return (
+    <CheckboxPrimitive.Root
+      data-slot="checkbox"
+      className={cn(
+        "peer relative flex size-4 shrink-0 items-center justify-center rounded-[4px] border border-input transition-colors outline-none group-has-disabled/field:opacity-50 after:absolute after:-inset-x-3 after:-inset-y-2 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 aria-invalid:aria-checked:border-primary dark:bg-input/30 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 data-checked:border-primary data-checked:bg-primary data-checked:text-primary-foreground dark:data-checked:bg-primary",
+        className
+      )}
+      {...props}
+    >
+      <CheckboxPrimitive.Indicator
+        data-slot="checkbox-indicator"
+        className="grid place-content-center text-current transition-none [&>svg]:size-3.5"
+      >
+        <CheckIcon
+        />
+      </CheckboxPrimitive.Indicator>
+    </CheckboxPrimitive.Root>
+  )
 }
 
-const Checkbox = React.forwardRef<HTMLInputElement, CheckboxProps>(
-  ({ className, checked, onCheckedChange, ...props }, ref) => {
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-      onCheckedChange?.(e.target.checked);
-    };
-
-    return (
-      <div className="relative inline-flex items-center">
-        <input
-          type="checkbox"
-          ref={ref}
-          checked={checked}
-          onChange={handleChange}
-          className={cn(
-            "peer h-4 w-4 shrink-0 rounded-sm border border-slate-300 bg-white",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2",
-            "disabled:cursor-not-allowed disabled:opacity-50",
-            "checked:bg-blue-600 checked:border-blue-600",
-            className
-          )}
-          {...props}
-        />
-        <Check
-          className={cn(
-            "absolute left-0.5 top-0.5 h-3 w-3 text-white pointer-events-none",
-            "opacity-0 transition-opacity peer-checked:opacity-100"
-          )}
-        />
-      </div>
-    );
-  }
-);
-Checkbox.displayName = "Checkbox";
-
-export { Checkbox };
+export { Checkbox }

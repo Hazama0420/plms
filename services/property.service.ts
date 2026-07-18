@@ -1,29 +1,33 @@
 // services/property.service.ts
-
 import { supabase } from "@/lib/supabase/client";
-import type { Property, PropertyStatus } from "@/types/property.types";
+import type {
+  Property,
+  PropertyStatus,
+  AdvancedFilter,
+  PropertyFilter,
+} from "@/types/property.types";
 
-export interface PropertyFilter {
-  search?: string;
-  status?: PropertyStatus | "all";
-  listing_type?: "jual" | "sewa" | "all";
-  page?: number;
-  limit?: number;
-  sort_by?: "created_at" | "title" | "listing_code" | "updated_at";
-  sort_order?: "asc" | "desc";
-}
+// Ekspor tipe untuk digunakan di tempat lain
+export type { PropertyFilter };
 
-export const propertyService = {
-  // ===== GET LIST =====
+// ============================================================
+// SERVICE OBJECT (tanpa duplikasi)
+// ============================================================
+const propertyService = {
+  // ============================================================
+  // GET LIST – Daftar Properti (dengan Advanced Filter)
+  // ============================================================
   async getList(filters: PropertyFilter = {}) {
     const {
       search = "",
       status = "all",
       listing_type = "all",
+      property_type = "all",
       page = 1,
-      limit = 10,
+      limit = 12,
       sort_by = "created_at",
       sort_order = "desc",
+      advanced = {},
     } = filters;
 
     const offset = (page - 1) * limit;
@@ -41,6 +45,8 @@ export const propertyService = {
           ),
           price:property_price(*),
           specifications:property_specifications(*),
+          land:property_land(*),
+          building:property_building(*),
           media:property_media(*)
         `,
         { count: "exact" }
@@ -48,18 +54,75 @@ export const propertyService = {
       .order(sort_by, { ascending: sort_order === "asc" })
       .range(offset, offset + limit - 1);
 
+    // ===== SEARCH =====
     if (search) {
       query = query.or(
         `title.ilike.%${search}%,listing_code.ilike.%${search}%`
       );
     }
 
-    if (status !== "all") {
+    // ===== BASIC FILTERS =====
+    if (status && status !== "all") {
       query = query.eq("status", status);
     }
 
-    if (listing_type !== "all") {
+    if (listing_type && listing_type !== "all") {
       query = query.eq("listing_type", listing_type);
+    }
+
+    // 🔍 PROPERTY TYPE (CHIPS)
+    if (property_type && property_type !== "all") {
+      query = query.eq("property_type", property_type);
+    }
+
+    // ===== ADVANCED FILTERS =====
+    if (advanced?.priceMin !== null && advanced?.priceMin !== undefined) {
+      query = query.gte("price.selling_price", advanced.priceMin);
+    }
+    if (advanced?.priceMax !== null && advanced?.priceMax !== undefined) {
+      query = query.lte("price.selling_price", advanced.priceMax);
+    }
+
+    if (advanced?.landAreaMin !== null && advanced?.landAreaMin !== undefined) {
+      query = query.gte("land.land_area", advanced.landAreaMin);
+    }
+    if (advanced?.landAreaMax !== null && advanced?.landAreaMax !== undefined) {
+      query = query.lte("land.land_area", advanced.landAreaMax);
+    }
+
+    if (advanced?.buildingAreaMin !== null && advanced?.buildingAreaMin !== undefined) {
+      query = query.gte("building.building_area", advanced.buildingAreaMin);
+    }
+    if (advanced?.buildingAreaMax !== null && advanced?.buildingAreaMax !== undefined) {
+      query = query.lte("building.building_area", advanced.buildingAreaMax);
+    }
+
+    if (advanced?.bedroom !== null && advanced?.bedroom !== undefined) {
+      query = query.gte("specifications.bedroom", advanced.bedroom);
+    }
+
+    if (advanced?.bathroom !== null && advanced?.bathroom !== undefined) {
+      query = query.gte("specifications.bathroom", advanced.bathroom);
+    }
+
+    if (advanced?.city_id) {
+      query = query.eq("address.city_id", advanced.city_id);
+    }
+
+    if (advanced?.property_type) {
+      query = query.eq("property_type", advanced.property_type);
+    }
+
+    if (advanced?.year_built !== null && advanced?.year_built !== undefined) {
+      query = query.gte("specifications.year_built", advanced.year_built);
+    }
+
+    if (advanced?.certificate) {
+      query = query.eq("specifications.certificate", advanced.certificate);
+    }
+
+    if (advanced?.furnishing) {
+      query = query.eq("specifications.furnishing", advanced.furnishing);
     }
 
     const { data, error, count } = await query;
@@ -77,7 +140,9 @@ export const propertyService = {
     };
   },
 
-  // ===== GET BY ID (menggunakan maybeSingle) =====
+  // ============================================================
+  // GET BY ID – Detail Properti
+  // ============================================================
   async getById(id: string) {
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     let query = supabase
@@ -98,7 +163,8 @@ export const propertyService = {
           specifications:property_specifications(*),
           land:property_land(*),
           building:property_building(*),
-          media:property_media(*)
+          media:property_media(*),
+          assigned_user:users!assigned_to(id, full_name, email, avatar_url)
         `
       );
 
@@ -120,14 +186,18 @@ export const propertyService = {
     return data as Property;
   },
 
-  // ===== DELETE =====
+  // ============================================================
+  // DELETE
+  // ============================================================
   async delete(id: string) {
     const { error } = await supabase.from("properties").delete().eq("id", id);
     if (error) throw new Error(error.message);
     return true;
   },
 
-  // ===== UPDATE STATUS =====
+  // ============================================================
+  // UPDATE STATUS
+  // ============================================================
   async updateStatus(id: string, status: PropertyStatus) {
     const { data, error } = await supabase
       .from("properties")
@@ -140,7 +210,9 @@ export const propertyService = {
     return data as Property;
   },
 
-  // ===== DUPLICATE =====
+  // ============================================================
+  // DUPLICATE
+  // ============================================================
   async duplicate(id: string) {
     const original = await this.getById(id);
     if (!original) throw new Error("Property not found");
@@ -168,7 +240,9 @@ export const propertyService = {
     return data as Property;
   },
 
-  // ===== GET MEDIA =====
+  // ============================================================
+  // GET MEDIA
+  // ============================================================
   async getMedia(propertyId: string) {
     const { data, error } = await supabase
       .from("property_media")
@@ -181,7 +255,9 @@ export const propertyService = {
     return data || [];
   },
 
-  // ===== UPDATE PROPERTY (for edit page) =====
+  // ============================================================
+  // UPDATE
+  // ============================================================
   async update(id: string, data: Partial<Property>) {
     const { error } = await supabase
       .from("properties")
@@ -194,4 +270,27 @@ export const propertyService = {
     if (error) throw new Error(error.message);
     return await this.getById(id);
   },
+
+  // ============================================================
+  // UPDATE ASSIGNED TO
+  // ============================================================
+  async updateAssignedTo(id: string, assignedTo: string | null) {
+    const { data, error } = await supabase
+      .from("properties")
+      .update({
+        assigned_to: assignedTo,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", id)
+      .select()
+      .single();
+
+    if (error) throw new Error(error.message);
+    return data as Property;
+  },
 };
+
+// ============================================================
+// HANYA SATU EKSPOR : EKSPOR DEFAULT
+// ============================================================
+export default propertyService;

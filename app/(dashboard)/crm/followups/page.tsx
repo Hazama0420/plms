@@ -1,241 +1,258 @@
+// app/(dashboard)/crm/followups/page.tsx
 "use client";
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { Plus, Search, Calendar, User, Clock, MoreHorizontal, Eye, Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { ArrowLeft, Save, Loader2 } from "lucide-react";
-
-import { crmService } from "@/services/crm.service";
-import type { CRMLead } from "@/types/crm.types";
-
+import { supabase } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Skeleton } from "@/components/ui/skeleton";
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { cn } from "@/lib/utils";
+import { format } from "date-fns";
+import { id } from "date-fns/locale";
 
-export default function CreateFollowupPage() {
+// ============================================================
+// TIPE DATA — DISESUAIKAN DENGAN SKEMA
+// ============================================================
+interface FollowUp {
+  id: string;
+  lead_id: string;
+  notes: string | null;
+  followup_date: string;
+  status: string;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+  lead?: {
+    id: string;
+    name: string;        // ✅ kolom di crm_leads adalah "name", bukan "full_name"
+    email: string;
+    phone: string;
+  };
+  assigned_user?: {
+    id: string;
+    full_name: string;
+    email: string;
+  };
+}
+
+const statusConfig: Record<string, { label: string; color: string }> = {
+  pending: { label: "Pending", color: "bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400" },
+  completed: { label: "Selesai", color: "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400" },
+  cancelled: { label: "Dibatalkan", color: "bg-rose-100 text-rose-600 dark:bg-rose-900/30 dark:text-rose-400" },
+};
+
+export default function FollowupsPage() {
   const router = useRouter();
-  const [loading, setLoading] = useState(false);
-  const [loadingData, setLoadingData] = useState(true);
-  const [leads, setLeads] = useState<CRMLead[]>([]); // ✅ gunakan tipe CRMLead
-  const [agents, setAgents] = useState<any[]>([]);
-  const [leadsError, setLeadsError] = useState(false);
-  const [form, setForm] = useState({
-    lead_id: "",
-    assigned_to: "",
-    followup_date: "",
-    notes: "",
-  });
+  const [followups, setFollowups] = useState<FollowUp[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
-    const fetchData = async () => {
-      setLoadingData(true);
-      try {
-        const [leadsData, agentsData] = await Promise.all([
-          crmService.getLeads({ limit: 100 }),
-          crmService.getAgents(),
-        ]);
-        setLeads(leadsData.data);
-        setAgents(agentsData || []);
-      } catch (error) {
-        console.error("Error fetching data:", error);
-        setLeadsError(true);
-        toast.error("Gagal memuat data");
-      } finally {
-        setLoadingData(false);
-      }
-    };
-
-    fetchData();
+    fetchFollowups();
   }, []);
 
-  const handleChange = (field: string, value: string) => {
-    setForm((prev) => ({ ...prev, [field]: value }));
-  };
+  const fetchFollowups = async () => {
+  setLoading(true);
+  try {
+    const { data, error } = await supabase
+      .from("crm_followups")
+      .select(`
+        *,
+        lead:crm_leads(*),
+        assigned_user:users!fk_crm_followups_assigned_to(id, full_name, email)
+      `)
+      .order("followup_date", { ascending: true });
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+    if (error) throw error;
 
-    if (!form.lead_id) {
-      toast.error("Pilih lead terlebih dahulu");
-      return;
-    }
-    if (!form.assigned_to) {
-      toast.error("Pilih agent yang ditugaskan");
-      return;
-    }
-    if (!form.followup_date) {
-      toast.error("Tanggal follow-up wajib diisi");
-      return;
-    }
+    const mapped = (data || []).map((item: any) => {
+      // Cari field nama yang tersedia di crm_leads
+      const leadData = item.lead || {};
+      const leadName = leadData.full_name || leadData.name || leadData.lead_name || leadData.contact_name || "Unknown";
 
-    setLoading(true);
-    try {
-      await crmService.createFollowup({
-        lead_id: form.lead_id,
-        assigned_to: form.assigned_to,
-        followup_date: form.followup_date,
-        notes: form.notes || undefined,
-      });
+      return {
+        ...item,
+        lead: item.lead ? {
+          id: leadData.id,
+          full_name: leadName,
+          email: leadData.email || "",
+          phone: leadData.phone || "",
+        } : undefined,
+        assigned_user: item.assigned_user || undefined,
+      };
+    });
 
-      toast.success("Follow-up berhasil dibuat!");
-      router.push("/crm/followups");
-      router.refresh();
-    } catch (error: any) {
-      console.error("Error creating followup:", error);
-      toast.error("Gagal membuat follow-up", {
-        description: error.message || "Silakan coba lagi.",
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (loadingData) {
-    return (
-      <div className="space-y-6 max-w-2xl mx-auto">
-        <Skeleton className="h-10 w-40" />
-        <Skeleton className="h-96 w-full rounded-xl" />
-      </div>
-    );
+    setFollowups(mapped);
+  } catch (error: any) {
+    console.error("Error fetching followups:", error?.message || error);
+    toast.error(error?.message || "Gagal memuat data follow-up");
+  } finally {
+    setLoading(false);
   }
+};
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Yakin ingin menghapus follow-up ini?")) return;
+    try {
+      const { error } = await supabase.from("crm_followups").delete().eq("id", id);
+      if (error) throw error;
+      toast.success("Follow-up berhasil dihapus");
+      fetchFollowups();
+    } catch (error: any) {
+      console.error("Error deleting followup:", error?.message || error);
+      toast.error(error?.message || "Gagal menghapus follow-up");
+    }
+  };
+
+  const filtered = followups.filter((f) =>
+    f.notes?.toLowerCase().includes(search.toLowerCase()) ||
+    f.lead?.name?.toLowerCase().includes(search.toLowerCase())
+  );
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
+    <div className="space-y-6">
       {/* HEADER */}
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={() => router.back()}>
-          <ArrowLeft className="h-5 w-5" />
-        </Button>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">📅 Buat Follow-up</h1>
-          <p className="text-sm text-muted-foreground">
-            Jadwalkan follow-up dengan prospek
+          <h1 className="text-2xl font-bold tracking-tight text-slate-800 dark:text-slate-100">
+            📅 Follow-up
+          </h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            Kelola jadwal follow-up dengan leads
           </p>
         </div>
+        <Button
+          onClick={() => router.push("/crm/followups/create")}
+          className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/30"
+        >
+          <Plus className="h-4 w-4 mr-2" />
+          Tambah Follow-up
+        </Button>
       </div>
 
-      {/* FORM */}
-      <form onSubmit={handleSubmit}>
-        <Card className="border-0 shadow-md">
-          <CardHeader className="bg-gradient-to-r from-amber-50 to-orange-50 rounded-t-xl dark:from-amber-950/30 dark:to-orange-950/30">
-            <CardTitle className="text-base">Informasi Follow-up</CardTitle>
-          </CardHeader>
-          <CardContent className="p-6 space-y-4">
-            {/* Pilih Lead */}
-            <div className="space-y-2">
-              <Label htmlFor="lead_id">Pilih Lead</Label>
-              <Select
-                value={form.lead_id}
-                onValueChange={(val) => handleChange("lead_id", val || "")}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Pilih lead" />
-                </SelectTrigger>
-                <SelectContent>
-                  {leadsError ? (
-                    <SelectItem value="error" disabled>
-                      Gagal memuat lead
-                    </SelectItem>
-                  ) : leads.length === 0 ? (
-                    <SelectItem value="empty" disabled>
-                      Tidak ada lead tersedia
-                    </SelectItem>
-                  ) : (
-                    leads.map((lead) => (
-                      <SelectItem key={lead.id} value={lead.id}>
-                        {lead.contact?.full_name || "Tanpa Nama"} ({lead.contact?.phone || "No phone"})
-                      </SelectItem>
-                    ))
-                  )}
-                </SelectContent>
-              </Select>
-            </div>
+      {/* SEARCH */}
+      <div className="relative max-w-sm">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+        <Input
+          placeholder="Cari catatan atau lead..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="pl-9"
+        />
+      </div>
 
-            {/* Assign Agent */}
-            <div className="space-y-2">
-              <Label htmlFor="assigned_to">Assign ke Agent</Label>
-              <Select
-                value={form.assigned_to}
-                onValueChange={(val) => handleChange("assigned_to", val || "")}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Pilih agent" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="">Tidak diassign</SelectItem>
-                  {agents.map((agent) => (
-                    <SelectItem key={agent.id} value={agent.id}>
-                      {agent.full_name || agent.email}
-                    </SelectItem>
+      {/* TABLE */}
+      <Card className="border-0 shadow-sm">
+        <CardContent className="p-0">
+          {loading ? (
+            <div className="flex h-64 items-center justify-center">
+              <div className="animate-spin rounded-full h-8 w-8 border-4 border-emerald-500 border-t-transparent" />
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="flex h-64 flex-col items-center justify-center text-slate-400">
+              <Calendar className="h-12 w-12 mb-3" />
+              <p className="text-lg font-medium">Belum ada follow-up</p>
+              <p className="text-sm">Klik "Tambah Follow-up" untuk mulai</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader className="bg-slate-50 dark:bg-slate-800/50">
+                  <TableRow>
+                    <TableHead>Lead</TableHead>
+                    <TableHead>Catatan</TableHead>
+                    <TableHead>Tanggal</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Ditugaskan</TableHead>
+                    <TableHead className="text-right">Aksi</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filtered.map((followup) => (
+                    <TableRow key={followup.id}>
+                      <TableCell className="font-medium">
+                        {followup.lead?.name || "-"}
+                      </TableCell>
+                      <TableCell className="max-w-xs truncate text-slate-500">
+                        {followup.notes || "-"}
+                      </TableCell>
+                      <TableCell>
+                        {followup.followup_date
+                          ? format(new Date(followup.followup_date), "dd MMM yyyy HH:mm", { locale: id })
+                          : "-"}
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          className={cn(
+                            "text-xs border-0",
+                            statusConfig[followup.status]?.color || "bg-slate-100"
+                          )}
+                        >
+                          {statusConfig[followup.status]?.label || followup.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {followup.assigned_user?.full_name || "-"}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-slate-400 hover:text-blue-600"
+                            onClick={() => router.push(`/crm/followups/${followup.id}`)}
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-slate-400 hover:text-amber-600"
+                            onClick={() => router.push(`/crm/followups/${followup.id}/edit`)}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-slate-300 dark:hover:bg-slate-700 transition-colors">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onClick={() => handleDelete(followup.id)}
+                                className="text-rose-600 cursor-pointer"
+                              >
+                                <Trash2 className="h-4 w-4 mr-2" /> Hapus
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </SelectContent>
-              </Select>
+                </TableBody>
+              </Table>
             </div>
-
-            {/* Tanggal & Waktu */}
-            <div className="space-y-2">
-              <Label htmlFor="followup_date">Tanggal & Waktu</Label>
-              <Input
-                id="followup_date"
-                type="datetime-local"
-                value={form.followup_date}
-                onChange={(e) => handleChange("followup_date", e.target.value)}
-                required
-              />
-            </div>
-
-            {/* Catatan */}
-            <div className="space-y-2">
-              <Label htmlFor="notes">Catatan</Label>
-              <Textarea
-                id="notes"
-                placeholder="Catatan follow-up..."
-                value={form.notes}
-                onChange={(e) => handleChange("notes", e.target.value)}
-                rows={3}
-              />
-            </div>
-
-            {/* Submit */}
-            <div className="flex gap-3 pt-4">
-              <Button
-                type="submit"
-                className="bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white shadow-md"
-                disabled={loading}
-              >
-                {loading ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                    Menyimpan...
-                  </>
-                ) : (
-                  <>
-                    <Save className="h-4 w-4 mr-2" />
-                    Simpan
-                  </>
-                )}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => router.back()}
-              >
-                Batal
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </form>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { usePermissions } from "@/hooks/use-permissions";
 import { userService } from "@/services/user.service";
+import { notificationService } from "@/services/notification.service";
 import { USER_ROLES, type UserRole, type UserWithRole } from "@/types/user.types";
 import { toast } from "sonner";
 import {
@@ -17,6 +18,7 @@ import {
   UserCog,
   Trash2,
   Eye,
+  Bell,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -54,6 +56,7 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Textarea } from "@/components/ui/textarea";
 
 // ---------- IKON & BADGE ----------
 const ROLE_ICONS: Record<UserRole, React.ReactNode> = {
@@ -64,7 +67,6 @@ const ROLE_ICONS: Record<UserRole, React.ReactNode> = {
   viewer: <Eye className="h-4 w-4 text-gray-500" />,
 };
 
-// ✅ FIX: gunakan variant yang valid (tanpa "success" atau "warning")
 const ROLE_BADGE: Record<UserRole, "default" | "secondary" | "destructive" | "outline"> = {
   super_admin: "destructive",
   admin: "default",
@@ -85,6 +87,18 @@ export default function AdminUsersPage() {
   const [editingRole, setEditingRole] = useState<UserRole>("viewer");
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  // Notification states
+  const [showSendNotification, setShowSendNotification] = useState(false);
+  const [notificationForm, setNotificationForm] = useState({
+    recipient_type: "all_agents" as "specific" | "all_agents" | "all_admins" | "all_users",
+    user_ids: [] as string[],
+    type: "announcement" as "task" | "reminder" | "announcement" | "assignment" | "property_update",
+    title: "",
+    message: "",
+    link: "",
+  });
+  const [sendingNotification, setSendingNotification] = useState(false);
 
   const isSuperAdmin = userRole === "super_admin";
 
@@ -153,6 +167,40 @@ export default function AdminUsersPage() {
     }
   };
 
+  // ---------- HANDLE SEND NOTIFICATION ----------
+  const handleSendNotification = async () => {
+    if (!notificationForm.title || !notificationForm.message) {
+      toast.error("Judul dan pesan wajib diisi");
+      return;
+    }
+
+    setSendingNotification(true);
+    try {
+      await notificationService.sendNotification({
+        recipient_type: notificationForm.recipient_type,
+        user_ids: notificationForm.recipient_type === "specific" ? notificationForm.user_ids : undefined,
+        type: notificationForm.type,
+        title: notificationForm.title,
+        message: notificationForm.message,
+        link: notificationForm.link || undefined,
+      });
+      toast.success("Notifikasi berhasil dikirim!");
+      setShowSendNotification(false);
+      setNotificationForm({
+        recipient_type: "all_agents",
+        user_ids: [],
+        type: "announcement",
+        title: "",
+        message: "",
+        link: "",
+      });
+    } catch (error: any) {
+      toast.error("Gagal mengirim notifikasi", { description: error.message });
+    } finally {
+      setSendingNotification(false);
+    }
+  };
+
   const getInitials = (name: string) =>
     name
       .split(" ")
@@ -200,7 +248,20 @@ export default function AdminUsersPage() {
           </h1>
           <p className="text-muted-foreground mt-1">Kelola user dan role akses di PLMS</p>
         </div>
-        <Badge variant="outline" className="px-3 py-1">Total {users.length} user</Badge>
+        <div className="flex items-center gap-3 flex-wrap">
+          <Badge variant="outline" className="px-3 py-1">Total {users.length} user</Badge>
+          {isSuperAdmin && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowSendNotification(true)}
+              className="gap-2 border-blue-200 text-blue-600 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-400 dark:hover:bg-blue-950"
+            >
+              <Bell className="h-4 w-4 mr-2" />
+              Kirim Notifikasi
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Search */}
@@ -268,7 +329,6 @@ export default function AdminUsersPage() {
                       </TableCell>
                       <TableCell className="text-right">
                         <DropdownMenu>
-                          {/* ✅ FIX: tanpa asChild, styling manual */}
                           <DropdownMenuTrigger className="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 hover:bg-accent hover:text-accent-foreground h-10 w-10">
                             <MoreHorizontal className="h-4 w-4" />
                           </DropdownMenuTrigger>
@@ -341,6 +401,158 @@ export default function AdminUsersPage() {
             <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>Batal</Button>
             <Button variant="destructive" onClick={handleConfirmDelete} disabled={deleting}>
               {deleting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null} Hapus
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog Kirim Notifikasi */}
+      <Dialog open={showSendNotification} onOpenChange={setShowSendNotification}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Bell className="h-5 w-5 text-blue-500" />
+              Kirim Notifikasi
+            </DialogTitle>
+            <DialogDescription>
+              Kirim pengumuman atau instruksi ke agen atau semua user
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            {/* Penerima */}
+            <div className="space-y-2">
+              <Label>Penerima</Label>
+              <Select
+                value={notificationForm.recipient_type}
+                onValueChange={(val) =>
+                  setNotificationForm((prev) => ({
+                    ...prev,
+                    recipient_type: val as any,
+                    user_ids: [],
+                  }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Pilih penerima" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all_agents">Semua Agen</SelectItem>
+                  <SelectItem value="all_admins">Semua Admin</SelectItem>
+                  <SelectItem value="all_users">Semua User</SelectItem>
+                  <SelectItem value="specific">Pilih User Spesifik</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Pilih User Spesifik */}
+            {notificationForm.recipient_type === "specific" && (
+              <div className="space-y-2">
+                <Label>Pilih User</Label>
+                <Select
+                  value={notificationForm.user_ids[0] || ""}
+                  onValueChange={(val) =>
+                    setNotificationForm((prev) => ({
+                      ...prev,
+                      user_ids: val ? [val] : [],
+                    }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Pilih user" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {users.map((u) => (
+                      <SelectItem key={u.id} value={u.id}>
+                        {u.full_name || u.email}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* Tipe Notifikasi */}
+            <div className="space-y-2">
+              <Label>Tipe Notifikasi</Label>
+              <Select
+                value={notificationForm.type}
+                onValueChange={(val) =>
+                  setNotificationForm((prev) => ({ ...prev, type: val as any }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Pilih tipe" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="announcement">📢 Pengumuman</SelectItem>
+                  <SelectItem value="task">📋 Tugas</SelectItem>
+                  <SelectItem value="reminder">⏰ Pengingat</SelectItem>
+                  <SelectItem value="assignment">👤 Penugasan</SelectItem>
+                  <SelectItem value="property_update">🏠 Update Properti</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Judul */}
+            <div className="space-y-2">
+              <Label htmlFor="notif-title">Judul <span className="text-rose-500">*</span></Label>
+              <Input
+                id="notif-title"
+                placeholder="Contoh: Meeting Agen Besok"
+                value={notificationForm.title}
+                onChange={(e) =>
+                  setNotificationForm((prev) => ({ ...prev, title: e.target.value }))
+                }
+              />
+            </div>
+
+            {/* Pesan */}
+            <div className="space-y-2">
+              <Label htmlFor="notif-message">Pesan <span className="text-rose-500">*</span></Label>
+              <Textarea
+                id="notif-message"
+                placeholder="Tulis pesan notifikasi..."
+                value={notificationForm.message}
+                onChange={(e) =>
+                  setNotificationForm((prev) => ({ ...prev, message: e.target.value }))
+                }
+                rows={4}
+              />
+            </div>
+
+            {/* Link (opsional) */}
+            <div className="space-y-2">
+              <Label htmlFor="notif-link">Link (opsional)</Label>
+              <Input
+                id="notif-link"
+                placeholder="/properties atau /crm/leads/123"
+                value={notificationForm.link}
+                onChange={(e) =>
+                  setNotificationForm((prev) => ({ ...prev, link: e.target.value }))
+                }
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowSendNotification(false)}>
+              Batal
+            </Button>
+            <Button
+              onClick={handleSendNotification}
+              disabled={sendingNotification || !notificationForm.title || !notificationForm.message}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              {sendingNotification ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Mengirim...
+                </>
+              ) : (
+                <>
+                  <Bell className="h-4 w-4 mr-2" />
+                  Kirim Notifikasi
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

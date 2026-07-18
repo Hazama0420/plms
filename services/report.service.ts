@@ -305,7 +305,7 @@ export const reportService = {
 
     const counts: Record<string, { name: string; count: number }> = {};
     data.forEach((item) => {
-      const cityName = item.cities?.[0].name || "Unknown";
+      const cityName = item.cities?.[0]?.name || "Unknown";
       if (!counts[item.city_id]) {
         counts[item.city_id] = { name: cityName, count: 0 };
       }

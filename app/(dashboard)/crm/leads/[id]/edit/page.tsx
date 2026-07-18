@@ -1,3 +1,4 @@
+// app/(dashboard)/crm/leads/[id]/edit/page.tsx
 "use client";
 
 import { useState, useEffect } from "react";
@@ -27,6 +28,7 @@ const STATUS_OPTIONS: { value: LeadStatus; label: string }[] = [
   { value: "contacted", label: "Dihubungi" },
   { value: "qualified", label: "Kualifikasi" },
   { value: "negotiation", label: "Negosiasi" },
+  { value: "proposal", label: "Proposal" },
   { value: "won", label: "Menang" },
   { value: "lost", label: "Hilang" },
 ];
@@ -63,20 +65,21 @@ export default function EditLeadPage() {
           status: lead.status || "new",
           interest_type: lead.interest_type || "",
           budget: lead.budget ? String(lead.budget) : "",
-          notes: (lead as any).notes || "", // notes sekarang sudah ada di tipe
+          notes: (lead as any).notes || "",
         });
 
         setAgents(agentsData || []);
       } catch (error) {
         console.error("Error fetching lead:", error);
         toast.error("Gagal memuat data lead");
+        router.push(`/crm/leads/${leadId}`);
       } finally {
         setLoading(false);
       }
     };
 
     fetchData();
-  }, [leadId]);
+  }, [leadId, router]);
 
   const handleChange = (field: string, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }));

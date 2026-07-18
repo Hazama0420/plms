@@ -1,23 +1,38 @@
 // types/property.types.ts
 
+// ============================================================
+// ENUMS / UNION TYPES
+// ============================================================
+
 export type PropertyStatus = "draft" | "review" | "published" | "sold" | "rented" | "archived";
 export type ListingType = "jual" | "sewa";
-export type PropertyType = "rumah" | "apartemen" | "tanah" | "villa" | "ruko" | "kantor" | "pabrik" | "gudang" | "hotel" | "ruang_usaha";
+export type PropertyType =
+  | "rumah"
+  | "apartemen"
+  | "tanah"
+  | "villa"
+  | "ruko"
+  | "kantor"
+  | "pabrik"
+  | "gudang"
+  | "hotel"
+  | "ruang_usaha";
 
 // ============================================================
 // PROPERTY OWNER
 // ============================================================
+
 export interface PropertyOwner {
   id: string;
   owner_code: string;
   full_name: string;
   phone?: string | null;
-  whatsapp?: string | null; // ✅ TAMBAHKAN
+  whatsapp?: string | null;
   email?: string | null;
-  identity_type?: string | null; // ✅ TAMBAHKAN
-  identity_number?: string | null; // ✅ TAMBAHKAN
-  address?: string | null; // ✅ TAMBAHKAN
-  notes?: string | null; // ✅ TAMBAHKAN
+  identity_type?: string | null;
+  identity_number?: string | null;
+  address?: string | null;
+  notes?: string | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -25,6 +40,7 @@ export interface PropertyOwner {
 // ============================================================
 // PROPERTY ADDRESS
 // ============================================================
+
 export interface PropertyAddress {
   id: string;
   property_id: string;
@@ -50,6 +66,7 @@ export interface PropertyAddress {
 // ============================================================
 // PROPERTY PRICE
 // ============================================================
+
 export interface PropertyPrice {
   id: string;
   property_id: string;
@@ -65,6 +82,7 @@ export interface PropertyPrice {
 // ============================================================
 // PROPERTY SPECIFICATIONS
 // ============================================================
+
 export interface PropertySpecifications {
   id: string;
   property_id: string;
@@ -87,6 +105,7 @@ export interface PropertySpecifications {
 // ============================================================
 // PROPERTY LAND
 // ============================================================
+
 export interface PropertyLand {
   id: string;
   property_id: string;
@@ -101,6 +120,7 @@ export interface PropertyLand {
 // ============================================================
 // PROPERTY BUILDING
 // ============================================================
+
 export interface PropertyBuilding {
   id: string;
   property_id: string;
@@ -114,6 +134,7 @@ export interface PropertyBuilding {
 // ============================================================
 // PROPERTY MEDIA
 // ============================================================
+
 export interface PropertyMedia {
   id: string;
   property_id: string;
@@ -134,6 +155,7 @@ export interface PropertyMedia {
 // ============================================================
 // PROPERTY (MAIN)
 // ============================================================
+
 export interface Property {
   id: string;
   listing_code: string;
@@ -141,18 +163,27 @@ export interface Property {
   slug: string;
   property_type: string;
   listing_type: ListingType;
-  property_category?: string | null; // ✅ TAMBAHKAN
+  property_category?: string | null;
   status: PropertyStatus;
   description?: string | null;
-  selling_point?: string | null; // ✅ TAMBAHKAN
-  rental_period?: string | null; // ✅ TAMBAHKAN
+  selling_point?: string | null;
+  rental_period?: string | null;
   owner_id?: string | null;
   created_by: string;
   published_at?: string | null;
   created_at: string;
   updated_at: string;
 
-  // Relasi
+  // ===== AGENT ASSIGN =====
+  assigned_to?: string | null;
+  assigned_user?: {
+    id: string;
+    full_name: string;
+    email: string;
+    avatar_url?: string | null;
+  } | null;
+
+  // ===== RELASI =====
   owner?: PropertyOwner | null;
   address?: PropertyAddress | null;
   price?: PropertyPrice | null;
@@ -163,14 +194,46 @@ export interface Property {
 }
 
 // ============================================================
-// PROPERTY FILTERS
+// ADVANCED FILTER
 // ============================================================
+
+export interface AdvancedFilter {
+  // Harga
+  priceMin?: number | null;
+  priceMax?: number | null;
+
+  // Spesifikasi
+  bedroom?: number | null;
+  bathroom?: number | null;
+
+  // Ukuran
+  landAreaMin?: number | null;
+  landAreaMax?: number | null;
+  buildingAreaMin?: number | null;
+  buildingAreaMax?: number | null;
+
+  // Lokasi & Tipe
+  city_id?: string | null;
+  property_type?: string | null;
+
+  // Lainnya
+  year_built?: number | null;
+  certificate?: string | null;
+  furnishing?: string | null;
+}
+
+// ============================================================
+// PROPERTY FILTERS (untuk query list)
+// ============================================================
+
 export interface PropertyFilter {
   search?: string;
   status?: PropertyStatus | "all";
   listing_type?: ListingType | "all";
+  property_type?: string;
   page?: number;
   limit?: number;
   sort_by?: "created_at" | "title" | "listing_code" | "updated_at";
   sort_order?: "asc" | "desc";
+  advanced?: AdvancedFilter;
 }

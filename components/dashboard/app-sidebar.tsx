@@ -16,7 +16,8 @@ import {
   Home,
   Building2,
   Users,
-  CalendarCheck,
+  Calendar,
+  FileText,
   FileBarChart,
   Settings,
   User,
@@ -29,6 +30,8 @@ import {
   ChevronDown,
   ChevronUp,
   Loader2,
+  Bell,
+  CalendarCheck,
 } from "lucide-react";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -76,10 +79,6 @@ const NAV_ITEMS: NavItem[] = [
     label: "Properties",
     icon: Home,
     href: "/properties",
-    children: [
-      { label: "All Properties", icon: Building2, href: "/properties" },
-      { label: "Add Property", icon: Building2, href: "/properties/create" },
-    ],
   },
   {
     label: "CRM",
@@ -89,6 +88,24 @@ const NAV_ITEMS: NavItem[] = [
       { label: "Leads", icon: Users, href: "/crm/leads" },
       { label: "Follow-ups", icon: CalendarCheck, href: "/crm/followups" },
     ],
+  },
+  {
+    label: "Proyek Konstruksi",
+    icon: Building2,
+    href: "/projects",
+    roles: ["super_admin", "admin", "agent", "marketing"],
+  },
+  {
+    label: "Jadwal Survei",
+    icon: Calendar,
+    href: "/surveys",
+    roles: ["super_admin", "admin", "agent", "marketing"],
+  },
+  {
+    label: "Invoice",
+    icon: FileText,
+    href: "/invoices",
+    roles: ["super_admin", "admin"],
   },
   {
     label: "Reports",
@@ -102,6 +119,12 @@ const NAV_ITEMS: NavItem[] = [
     href: "/admin",
     roles: ["super_admin", "admin"],
     children: [{ label: "User Management", icon: Users, href: "/admin/users" }],
+  },
+  {
+    label: "Notifikasi",
+    icon: Bell,
+    href: "/notifications",
+    roles: ["super_admin", "admin", "agent", "marketing", "viewer"],
   },
   {
     label: "Profile",
@@ -130,7 +153,6 @@ export function AppSidebar() {
   const [userFullName, setUserFullName] = useState("");
   const [userAvatar, setUserAvatar] = useState("");
   const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({
-    properties: true,
     crm: true,
     admin: false,
   });
@@ -210,7 +232,6 @@ export function AppSidebar() {
   // Check if user can see this nav item
   const canSeeItem = (item: NavItem) => {
     if (!item.roles) return true;
-    // Jika role masih null (loading), tampilkan semua (akan di-render ulang setelah loading)
     if (!userRole) return true;
     return item.roles.includes(userRole as any);
   };
@@ -238,7 +259,8 @@ export function AppSidebar() {
   const renderNavItem = (item: NavItem) => {
     const active = isActive(item);
     const hasChildren = item.children && item.children.length > 0;
-    const isExpanded = expandedItems[item.label.toLowerCase()] ?? false;
+    const key = item.label.toLowerCase().replace(/\s/g, "_");
+    const isExpanded = expandedItems[key] ?? false;
     const hasChildActive = hasActiveChild(item);
 
     const visibleChildren = hasChildren
@@ -246,40 +268,37 @@ export function AppSidebar() {
       : [];
 
     if (collapsed) {
-      // Collapsed mode - tooltip only
       return (
-       <TooltipProvider key={item.href}>
-  <Tooltip>
-    <TooltipTrigger
-      render={
-        <Link
-          href={item.href}
-          className={cn(
-            "flex items-center justify-center w-full h-10 rounded-lg transition-all duration-200",
-            active || hasChildActive
-              ? "bg-primary text-primary-foreground"
-              : "hover:bg-muted text-muted-foreground hover:text-foreground"
-          )}
-        >
-          <item.icon size={20} />
-        </Link>
-      }
-    />
-    <TooltipContent side="right" className="font-medium">
-      {item.label}
-    </TooltipContent>
-  </Tooltip>
-</TooltipProvider>
+        <TooltipProvider key={item.href}>
+          <Tooltip>
+            {/* @ts-ignore */}
+            <TooltipTrigger asChild>
+              <Link
+                href={item.href}
+                className={cn(
+                  "flex items-center justify-center w-full h-10 rounded-lg transition-all duration-200",
+                  active || hasChildActive
+                    ? "bg-primary text-primary-foreground"
+                    : "hover:bg-muted text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <item.icon size={20} />
+              </Link>
+            </TooltipTrigger>
+            <TooltipContent side="right" className="font-medium">
+              {item.label}
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
       );
     }
 
-    // Expanded mode - with children
     if (visibleChildren.length > 0) {
       return (
         <Collapsible
           key={item.href}
           open={isExpanded}
-          onOpenChange={() => toggleExpand(item.label.toLowerCase())}
+          onOpenChange={() => toggleExpand(key)}
           className="space-y-1"
         >
           <CollapsibleTrigger
@@ -324,7 +343,6 @@ export function AppSidebar() {
       );
     }
 
-    // Single item (no children)
     return (
       <Link
         key={item.href}
@@ -392,18 +410,18 @@ export function AppSidebar() {
       >
         {!collapsed && (
           <Link href="/dashboard" className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-              <span className="text-primary-foreground font-bold text-sm">P</span>
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-r from-emerald-500 to-emerald-400 flex items-center justify-center">
+              <span className="text-white font-bold text-sm">IP</span>
             </div>
-            <span className="font-bold text-lg">PLMS</span>
+            <span className="font-bold text-lg">Inland Property</span>
             <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4">
               v2
             </Badge>
           </Link>
         )}
         {collapsed && (
-          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-            <span className="text-primary-foreground font-bold text-sm">P</span>
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-r from-emerald-500 to-emerald-400 flex items-center justify-center">
+            <span className="text-white font-bold text-sm">IP</span>
           </div>
         )}
         <Button
@@ -429,7 +447,6 @@ export function AppSidebar() {
 
       {/* Bottom Section */}
       <div className="border-t p-3 space-y-3">
-        {/* Dark/Light Toggle */}
         <Button
           variant="ghost"
           size={collapsed ? "icon" : "default"}
@@ -445,7 +462,6 @@ export function AppSidebar() {
           )}
         </Button>
 
-        {/* User Profile */}
         <div
           className={cn(
             "flex items-center gap-3 p-2 rounded-lg hover:bg-muted transition-colors cursor-pointer",
@@ -455,7 +471,7 @@ export function AppSidebar() {
         >
           <Avatar className="h-8 w-8">
             <AvatarImage src={userAvatar || undefined} />
-            <AvatarFallback className="bg-primary/10 text-primary text-xs font-medium">
+            <AvatarFallback className="bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400 text-xs font-medium">
               {getInitials(userFullName)}
             </AvatarFallback>
           </Avatar>
@@ -469,7 +485,6 @@ export function AppSidebar() {
           )}
         </div>
 
-        {/* Logout */}
         <Button
           variant="ghost"
           size={collapsed ? "icon" : "default"}

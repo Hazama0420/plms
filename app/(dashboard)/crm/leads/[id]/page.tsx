@@ -24,6 +24,8 @@ import {
   Users,
   MessageSquare,
   Loader2,
+  Download,
+  Filter,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { id } from "date-fns/locale";
@@ -58,6 +60,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { cn } from "@/lib/utils";
 
 // ============================================================
 // TYPES
@@ -88,7 +91,7 @@ interface Followup {
 }
 
 // ============================================================
-// STATUS CONFIG (FIX: valid badge variants)
+// STATUS CONFIG
 // ============================================================
 const STATUS_OPTIONS: { value: LeadStatus; label: string; color: string }[] = [
   { value: "new", label: "Baru", color: "bg-blue-500" },
@@ -100,7 +103,6 @@ const STATUS_OPTIONS: { value: LeadStatus; label: string; color: string }[] = [
   { value: "lost", label: "Hilang", color: "bg-rose-500" },
 ];
 
-// ✅ FIX: Gunakan varian yang valid (tanpa "success" dan "warning")
 const STATUS_BADGE_VARIANTS: Record<
   LeadStatus,
   { variant: "default" | "secondary" | "destructive" | "outline"; className: string }
@@ -133,13 +135,16 @@ export default function LeadDetailPage() {
   const leadId = params.id as string;
   const { userRole } = usePermissions();
 
+  // State utama
   const [lead, setLead] = useState<LeadWithRelations | null>(null);
   const [activities, setActivities] = useState<Activity[]>([]);
+  const [filteredActivities, setFilteredActivities] = useState<Activity[]>([]);
   const [followups, setFollowups] = useState<Followup[]>([]);
   const [loading, setLoading] = useState(true);
   const [properties, setProperties] = useState<any[]>([]);
+  const [activityFilter, setActivityFilter] = useState<string>("all");
 
-  // Tabs state (controlled)
+  // ✅ FIX: Controlled Tabs
   const [activeTab, setActiveTab] = useState("timeline");
 
   // Dialog states
@@ -147,6 +152,7 @@ export default function LeadDetailPage() {
   const [showAddNote, setShowAddNote] = useState(false);
   const [showAddInterest, setShowAddInterest] = useState(false);
   const [showEditLead, setShowEditLead] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [saving, setSaving] = useState(false);
 
   // Form states
@@ -177,6 +183,7 @@ export default function LeadDetailPage() {
 
       const activitiesData = await crmService.getActivities(leadId);
       setActivities(activitiesData || []);
+      setFilteredActivities(activitiesData || []);
 
       const followupsData = await crmService.getFollowups({ lead_id: leadId, status: undefined, limit: 50 });
       setFollowups(followupsData.data || []);
@@ -195,7 +202,16 @@ export default function LeadDetailPage() {
     fetchData();
   }, [fetchData]);
 
-  // ===== HANDLERS =====
+  // ===== FILTER ACTIVITIES =====
+  useEffect(() => {
+    if (activityFilter === "all") {
+      setFilteredActivities(activities);
+    } else {
+      setFilteredActivities(activities.filter((a) => a.activity_type === activityFilter));
+    }
+  }, [activityFilter, activities]);
+
+  // ===== HANDLE UPDATE STATUS =====
   const handleUpdateStatus = async (status: LeadStatus) => {
     if (!lead) return;
     setSaving(true);
@@ -210,6 +226,7 @@ export default function LeadDetailPage() {
     }
   };
 
+  // ===== HANDLE ADD FOLLOWUP =====
   const handleAddFollowup = async () => {
     if (!lead) return;
     if (!newFollowup.followup_date) {
@@ -236,6 +253,7 @@ export default function LeadDetailPage() {
     }
   };
 
+  // ===== HANDLE ADD NOTE =====
   const handleAddNote = async () => {
     if (!lead) return;
     if (!newNote.trim()) {
@@ -261,6 +279,7 @@ export default function LeadDetailPage() {
     }
   };
 
+  // ===== HANDLE ADD INTEREST =====
   const handleAddInterest = async () => {
     if (!lead) return;
     if (!newInterest.property_id) {
@@ -287,6 +306,7 @@ export default function LeadDetailPage() {
     }
   };
 
+  // ===== HANDLE UPDATE FOLLOWUP STATUS =====
   const handleUpdateFollowupStatus = async (followupId: string, status: "completed" | "cancelled") => {
     setSaving(true);
     try {
@@ -300,6 +320,7 @@ export default function LeadDetailPage() {
     }
   };
 
+  // ===== HANDLE DELETE FOLLOWUP =====
   const handleDeleteFollowup = async (followupId: string) => {
     if (!confirm("Yakin ingin menghapus follow-up ini?")) return;
     setSaving(true);
@@ -312,6 +333,55 @@ export default function LeadDetailPage() {
     } finally {
       setSaving(false);
     }
+  };
+
+  // ===== HANDLE DELETE LEAD =====
+  const handleDeleteLead = async () => {
+    if (!lead) return;
+    setSaving(true);
+    try {
+      await crmService.deleteLead(lead.id);
+      toast.success("Lead berhasil dihapus");
+      router.push("/crm/leads");
+      router.refresh();
+    } catch (error) {
+      toast.error("Gagal hapus lead");
+    } finally {
+      setSaving(false);
+      setShowDeleteDialog(false);
+    }
+  };
+
+  // ===== HANDLE EXPORT LEAD =====
+  const handleExportLead = () => {
+    if (!lead) return;
+
+    const csvData = [
+      ["Field", "Value"],
+      ["ID", lead.id],
+      ["Nama", lead.contact?.full_name || ""],
+      ["Email", lead.contact?.email || ""],
+      ["Telepon", lead.contact?.phone || ""],
+      ["WhatsApp", lead.contact?.whatsapp || ""],
+      ["Pekerjaan", lead.contact?.occupation || ""],
+      ["Kota", lead.contact?.city || ""],
+      ["Sumber", lead.source || ""],
+      ["Status", STATUS_OPTIONS.find(s => s.value === lead.status)?.label || lead.status],
+      ["Tipe Minat", lead.interest_type || ""],
+      ["Budget", lead.budget ? `Rp ${lead.budget.toLocaleString("id-ID")}` : ""],
+      ["Dibuat", new Date(lead.created_at).toLocaleString("id-ID")],
+      ["Terakhir Update", new Date(lead.updated_at).toLocaleString("id-ID")],
+    ];
+
+    const csvContent = csvData.map(row => row.join(",")).join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv" });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `lead-${lead.contact?.full_name || lead.id}-${new Date().toISOString().split("T")[0]}.csv`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+    toast.success("Lead berhasil diekspor!");
   };
 
   // ===== HELPERS =====
@@ -335,6 +405,22 @@ export default function LeadDetailPage() {
   const formatRelativeTime = (date: string) => {
     return formatDistanceToNow(new Date(date), { addSuffix: true, locale: id });
   };
+
+  const getActivityTypeLabel = (type: string) => {
+    const map: Record<string, string> = {
+      created: "Dibuat",
+      status_change: "Status Berubah",
+      followup_scheduled: "Follow-up Dijadwalkan",
+      followup_completed: "Follow-up Selesai",
+      note: "Catatan",
+      call: "Telepon",
+      meeting: "Meeting",
+    };
+    return map[type] || type;
+  };
+
+  // ===== UNIQUE ACTIVITY TYPES FOR FILTER =====
+  const activityTypes = Array.from(new Set(activities.map((a) => a.activity_type)));
 
   // ============================================================
   // LOADING & ERROR
@@ -398,6 +484,10 @@ export default function LeadDetailPage() {
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <Button variant="outline" size="sm" onClick={handleExportLead}>
+            <Download className="h-4 w-4 mr-2" />
+            Export
+          </Button>
           <Button variant="outline" size="sm" onClick={() => setShowEditLead(true)}>
             <Edit className="h-4 w-4 mr-2" />
             Edit
@@ -405,6 +495,10 @@ export default function LeadDetailPage() {
           <Button variant="default" size="sm" onClick={() => setShowAddFollowup(true)}>
             <Plus className="h-4 w-4 mr-2" />
             Follow-up
+          </Button>
+          <Button variant="destructive" size="sm" onClick={() => setShowDeleteDialog(true)}>
+            <Trash2 className="h-4 w-4 mr-2" />
+            Hapus
           </Button>
         </div>
       </div>
@@ -448,10 +542,16 @@ export default function LeadDetailPage() {
                     <Phone className="h-4 w-4 text-muted-foreground" />
                     <span>{lead.contact.phone}</span>
                     <a
+                      href={`tel:${lead.contact.phone.replace(/\D/g, '')}`}
+                      className="ml-auto text-blue-500 hover:text-blue-600"
+                    >
+                      <PhoneCall className="h-4 w-4" />
+                    </a>
+                    <a
                       href={`https://wa.me/${lead.contact.phone.replace(/\D/g, '')}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="ml-auto text-emerald-500 hover:text-emerald-600"
+                      className="text-emerald-500 hover:text-emerald-600"
                     >
                       <MessageCircle className="h-4 w-4" />
                     </a>
@@ -558,30 +658,53 @@ export default function LeadDetailPage() {
               <CardTitle className="text-sm font-medium">Aksi Cepat</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              <Button variant="outline" className="w-full justify-start" onClick={() => setShowAddFollowup(true)}>
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                onClick={() => setShowAddFollowup(true)}
+              >
                 <Calendar className="h-4 w-4 mr-2" />
                 Jadwalkan Follow-up
               </Button>
-              <Button variant="outline" className="w-full justify-start" onClick={() => setShowAddNote(true)}>
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                onClick={() => setShowAddNote(true)}
+              >
                 <MessageSquare className="h-4 w-4 mr-2" />
                 Tambah Catatan
               </Button>
-              <Button variant="outline" className="w-full justify-start" onClick={() => setShowAddInterest(true)}>
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                onClick={() => setShowAddInterest(true)}
+              >
                 <Building2 className="h-4 w-4 mr-2" />
                 Tambah Minat Properti
               </Button>
               {lead.contact?.phone && (
-                <a
-                  href={`https://wa.me/${lead.contact.phone.replace(/\D/g, '')}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-full"
-                >
-                  <Button variant="default" className="w-full bg-emerald-500 hover:bg-emerald-600">
-                    <MessageCircle className="h-4 w-4 mr-2" />
-                    WhatsApp
-                  </Button>
-                </a>
+                <div className="grid grid-cols-2 gap-2">
+                  <a
+                    href={`tel:${lead.contact.phone.replace(/\D/g, '')}`}
+                    className="w-full"
+                  >
+                    <Button variant="default" className="w-full bg-blue-500 hover:bg-blue-600">
+                      <PhoneCall className="h-4 w-4 mr-2" />
+                      Telepon
+                    </Button>
+                  </a>
+                  <a
+                    href={`https://wa.me/${lead.contact.phone.replace(/\D/g, '')}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full"
+                  >
+                    <Button variant="default" className="w-full bg-emerald-500 hover:bg-emerald-600">
+                      <MessageCircle className="h-4 w-4 mr-2" />
+                      WhatsApp
+                    </Button>
+                  </a>
+                </div>
               )}
             </CardContent>
           </Card>
@@ -589,10 +712,10 @@ export default function LeadDetailPage() {
 
         {/* RIGHT COLUMN - Timeline & Followups */}
         <div className="lg:col-span-2 space-y-6">
-          {/* ✅ FIX: Tabs controlled */}
+          {/* ✅ FIX: Controlled Tabs */}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="timeline">⏱️ Timeline</TabsTrigger>
+              <TabsTrigger value="timeline">⏱️ Timeline ({filteredActivities.length})</TabsTrigger>
               <TabsTrigger value="followups">📅 Follow-up ({followups.length})</TabsTrigger>
               <TabsTrigger value="interests">🏠 Minat ({lead.interests?.length || 0})</TabsTrigger>
             </TabsList>
@@ -601,31 +724,56 @@ export default function LeadDetailPage() {
             <TabsContent value="timeline" className="mt-4">
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-base">Riwayat Aktivitas</CardTitle>
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-base">Riwayat Aktivitas</CardTitle>
+                    <div className="flex items-center gap-2">
+                      <Filter className="h-4 w-4 text-muted-foreground" />
+                      <Select
+                        value={activityFilter}
+                        onValueChange={(val) => setActivityFilter(val || "all")}
+                      >
+                        <SelectTrigger className="w-[140px] h-8 text-xs">
+                          <SelectValue placeholder="Filter" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Semua</SelectItem>
+                          {activityTypes.map((type) => (
+                            <SelectItem key={type} value={type}>
+                              {getActivityTypeLabel(type)}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
                   <CardDescription>Semua interaksi dengan lead ini</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  {activities.length === 0 ? (
+                  {filteredActivities.length === 0 ? (
                     <p className="text-sm text-muted-foreground text-center py-8">
-                      Belum ada aktivitas. Mulai dengan menambahkan catatan atau follow-up.
+                      {activityFilter !== "all"
+                        ? `Tidak ada aktivitas dengan tipe "${getActivityTypeLabel(activityFilter)}"`
+                        : "Belum ada aktivitas. Mulai dengan menambahkan catatan atau follow-up."}
                     </p>
                   ) : (
                     <ScrollArea className="h-[500px] pr-4">
                       <div className="relative pl-6 border-l-2 border-muted space-y-6">
-                        {activities.map((activity) => (
+                        {filteredActivities.map((activity) => (
                           <div key={activity.id} className="relative">
                             <div className="absolute -left-[22px] p-1 rounded-full bg-background border-2 border-muted">
                               {ACTIVITY_ICONS[activity.activity_type] || <Clock className="h-4 w-4 text-muted-foreground" />}
                             </div>
                             <div className="space-y-1">
                               <div className="flex items-start justify-between gap-4">
-                                <p className="text-sm font-medium">{activity.notes || activity.activity_type}</p>
+                                <p className="text-sm font-medium">
+                                  {activity.notes || activity.activity_type}
+                                </p>
                                 <span className="text-xs text-muted-foreground whitespace-nowrap">
                                   {formatRelativeTime(activity.created_at)}
                                 </span>
                               </div>
                               <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                <span className="capitalize">{activity.activity_type.replace(/_/g, " ")}</span>
+                                <span className="capitalize">{getActivityTypeLabel(activity.activity_type)}</span>
                                 {activity.user?.full_name && (
                                   <>
                                     <span>·</span>
@@ -639,7 +787,11 @@ export default function LeadDetailPage() {
                       </div>
                     </ScrollArea>
                   )}
-                  <Button variant="outline" className="w-full mt-4" onClick={() => setShowAddNote(true)}>
+                  <Button
+                    variant="outline"
+                    className="w-full mt-4"
+                    onClick={() => setShowAddNote(true)}
+                  >
                     <Plus className="h-4 w-4 mr-2" />
                     Tambah Aktivitas
                   </Button>
@@ -669,21 +821,26 @@ export default function LeadDetailPage() {
                           <div className="space-y-1">
                             <div className="flex items-center gap-2">
                               <Badge
-                                variant={
-                                  followup.status === "completed"
-                                    ? "success"
-                                    : followup.status === "cancelled"
-                                    ? "destructive"
-                                    : "warning"
-                                }
-                                className="text-xs"
-                              >
-                                {followup.status === "pending"
-                                  ? "⏳ Pending"
-                                  : followup.status === "completed"
-                                  ? "✅ Selesai"
-                                  : "❌ Dibatalkan"}
-                              </Badge>
+  variant={
+    followup.status === "completed"
+      ? "default"
+      : followup.status === "cancelled"
+      ? "destructive"
+      : "secondary"
+  }
+  className={cn(
+    "text-xs",
+    followup.status === "pending" && "bg-amber-100 text-amber-700 border-amber-200",
+    followup.status === "completed" && "bg-emerald-100 text-emerald-700 border-emerald-200",
+    followup.status === "cancelled" && "bg-rose-100 text-rose-700 border-rose-200"
+  )}
+>
+  {followup.status === "pending"
+    ? "⏳ Pending"
+    : followup.status === "completed"
+    ? "✅ Selesai"
+    : "❌ Dibatalkan"}
+</Badge>
                               <span className="text-sm font-medium">{formatDate(followup.followup_date)}</span>
                             </div>
                             {followup.notes && <p className="text-sm text-muted-foreground">{followup.notes}</p>}
@@ -730,7 +887,11 @@ export default function LeadDetailPage() {
                       ))}
                     </div>
                   )}
-                  <Button variant="outline" className="w-full mt-4" onClick={() => setShowAddFollowup(true)}>
+                  <Button
+                    variant="outline"
+                    className="w-full mt-4"
+                    onClick={() => setShowAddFollowup(true)}
+                  >
                     <Plus className="h-4 w-4 mr-2" />
                     Tambah Follow-up
                   </Button>
@@ -796,7 +957,11 @@ export default function LeadDetailPage() {
                       ))}
                     </div>
                   )}
-                  <Button variant="outline" className="w-full mt-4" onClick={() => setShowAddInterest(true)}>
+                  <Button
+                    variant="outline"
+                    className="w-full mt-4"
+                    onClick={() => setShowAddInterest(true)}
+                  >
                     <Plus className="h-4 w-4 mr-2" />
                     Tambah Minat Properti
                   </Button>
@@ -1004,6 +1169,26 @@ export default function LeadDetailPage() {
             >
               {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
               Simpan
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Lead Dialog */}
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>⚠️ Hapus Lead</DialogTitle>
+            <DialogDescription>
+              Apakah Anda yakin ingin menghapus lead "{lead.contact?.full_name || "ini"}"?
+              Tindakan ini tidak dapat dibatalkan.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>Batal</Button>
+            <Button variant="destructive" onClick={handleDeleteLead} disabled={saving}>
+              {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Hapus
             </Button>
           </DialogFooter>
         </DialogContent>

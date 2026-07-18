@@ -5,6 +5,7 @@ import { useState, useEffect } from "react";
 import { Menu } from "lucide-react";
 import { AppSidebar } from "@/components/dashboard/app-sidebar";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { NotificationBell } from "@/components/notification-bell";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 
@@ -37,7 +38,7 @@ export default function DashboardLayout({
 
   return (
     <div className="flex h-screen">
-      {/* Desktop Sidebar - hidden on mobile */}
+      {/* Desktop Sidebar */}
       <div className="hidden md:block">
         <AppSidebar />
       </div>
@@ -66,11 +67,15 @@ export default function DashboardLayout({
             <h2 className="text-lg font-semibold">Dashboard</h2>
           </div>
           <div className="flex items-center gap-4">
+            {/* Date & Time - hidden on small mobile */}
             <div className="hidden sm:flex items-center gap-3 text-sm text-muted-foreground">
               <span>{dateStr}</span>
               <span className="w-px h-4 bg-slate-300 dark:bg-slate-600" />
               <span>{timeStr}</span>
             </div>
+            {/* Notification Bell */}
+            <NotificationBell />
+            {/* Theme Toggle */}
             <ThemeToggle />
           </div>
         </header>

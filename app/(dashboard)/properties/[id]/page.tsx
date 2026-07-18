@@ -19,13 +19,13 @@ import {
   XCircle,
   Clock,
   Loader2,
+  Users,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { id } from "date-fns/locale";
 
 import { supabase } from "@/lib/supabase/client";
-import { propertyService } from "@/services/property.service";
-import type { Property, PropertyStatus } from "@/types/property.types";
+import propertyService from "@/services/property.service";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -54,7 +54,40 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 
 // ============================================================
-// STATUS CONFIG (FIXED: added bg)
+// TIPE LOKAL (menggantikan import dari types)
+// ============================================================
+type PropertyStatus = "draft" | "review" | "published" | "sold" | "rented" | "archived";
+
+interface PropertyDetail {
+  id: string;
+  listing_code: string;
+  title: string;
+  slug: string;
+  property_type: string;
+  listing_type: "jual" | "sewa";
+  property_category?: string | null;
+  status: PropertyStatus;
+  description?: string | null;
+  selling_point?: string | null;
+  rental_period?: string | null;
+  owner_id?: string | null;
+  created_by: string;
+  published_at?: string | null;
+  created_at: string;
+  updated_at: string;
+  assigned_to?: string | null;
+  owner?: any;
+  address?: any;
+  price?: any;
+  specifications?: any;
+  land?: any;
+  building?: any;
+  media?: any[];
+  assigned_user?: any;
+}
+
+// ============================================================
+// STATUS CONFIG
 // ============================================================
 const statusConfig: Record<string, { label: string; color: string; bg: string }> = {
   draft: { label: "Draft", color: "text-gray-600", bg: "bg-gray-100" },
@@ -79,19 +112,24 @@ interface LocationData {
 // ============================================================
 // MAIN COMPONENT
 // ============================================================
+
 export default function PropertyDetailPage() {
   const router = useRouter();
   const params = useParams();
   const propertyId = params.id as string;
 
-  const [property, setProperty] = useState<Property | null>(null);
+  const [property, setProperty] = useState<PropertyDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showStatusDialog, setShowStatusDialog] = useState(false);
   const [newStatus, setNewStatus] = useState<PropertyStatus>("draft");
   const [updating, setUpdating] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [activeTab, setActiveTab] = useState("details"); // ✅ controlled tab
+  const [activeTab, setActiveTab] = useState("details");
+
+  // Assign Agent states
+  const [agents, setAgents] = useState<any[]>([]);
+  const [assignLoading, setAssignLoading] = useState(false);
 
   // Location data (for display names)
   const [locationData, setLocationData] = useState<LocationData>({
@@ -101,6 +139,18 @@ export default function PropertyDetailPage() {
     districts: [],
     villages: [],
   });
+
+  // ===== FETCH AGENTS =====
+  useEffect(() => {
+    const fetchAgents = async () => {
+      const { data, error } = await supabase
+        .from("users")
+        .select("id, full_name, email, avatar_url")
+        .order("full_name");
+      if (!error) setAgents(data || []);
+    };
+    fetchAgents();
+  }, []);
 
   // ===== FETCH PROPERTY =====
   useEffect(() => {
@@ -144,6 +194,25 @@ export default function PropertyDetailPage() {
     fetchProperty();
     fetchLocationData();
   }, [propertyId, router]);
+
+  // ===== HANDLE ASSIGN AGENT =====
+  const handleAssignAgent = async (agentId: string | null) => {
+    if (!property) return;
+    setAssignLoading(true);
+    try {
+      const updated = await propertyService.updateAssignedTo(
+        property.id,
+        agentId || null
+      );
+      setProperty(updated);
+      toast.success(agentId ? "Agen berhasil ditugaskan!" : "Agen berhasil dilepas!");
+    } catch (error: any) {
+      console.error("Error assigning agent:", error);
+      toast.error("Gagal tugaskan agen", { description: error.message });
+    } finally {
+      setAssignLoading(false);
+    }
+  };
 
   // ===== HANDLE STATUS UPDATE =====
   const handleUpdateStatus = async () => {
@@ -219,6 +288,15 @@ export default function PropertyDetailPage() {
 
   const getLocationName = (id: string, list: { id: string; name: string }[]) => {
     return list.find((item) => item.id === id)?.name || "-";
+  };
+
+  const getInitials = (name: string) => {
+    return name
+      .split(" ")
+      .map((n) => n[0])
+      .join("")
+      .toUpperCase()
+      .slice(0, 2);
   };
 
   // ============================================================
@@ -308,7 +386,6 @@ export default function PropertyDetailPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* LEFT COLUMN - Details */}
         <div className="lg:col-span-2 space-y-6">
-          {/* ✅ FIX: Tabs controlled */}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="details">📋 Detail</TabsTrigger>
@@ -591,20 +668,23 @@ export default function PropertyDetailPage() {
                 <CardContent>
                   {property.media && property.media.length > 0 ? (
                     <div className="grid grid-cols-3 gap-4">
-                      {property.media.map((media) => (
-                        <div key={media.id} className="relative group aspect-square rounded-lg border overflow-hidden">
-                          <img
-                            src={media.public_url}
-                            alt={media.file_name}
-                            className="w-full h-full object-cover"
-                          />
-                          {media.is_primary && (
-                            <div className="absolute top-2 left-2 px-2 py-0.5 bg-blue-500 text-white text-xs rounded">
-                              Primary
-                            </div>
-                          )}
-                        </div>
-                      ))}
+                      {property.media.map((media) => {
+                        const imageUrl = media.public_url || media.url;
+                        return (
+                          <div key={media.id} className="relative group aspect-square rounded-lg border overflow-hidden">
+                            <img
+                              src={imageUrl}
+                              alt={media.file_name || media.original_name || "Foto"}
+                              className="w-full h-full object-cover"
+                            />
+                            {media.is_primary && (
+                              <div className="absolute top-2 left-2 px-2 py-0.5 bg-blue-500 text-white text-xs rounded">
+                                Primary
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   ) : (
                     <p className="text-muted-foreground text-center py-8">Belum ada foto</p>
@@ -617,6 +697,59 @@ export default function PropertyDetailPage() {
 
         {/* RIGHT COLUMN - Sidebar */}
         <div className="lg:col-span-1 space-y-6">
+          {/* Tugaskan Agen Card */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Users className="h-4 w-4 text-blue-500" />
+                Tugaskan Agen
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Select
+                  value={property?.assigned_to || ""}
+                  onValueChange={(val) => {
+                    handleAssignAgent(val || null);
+                  }}
+                  disabled={assignLoading}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Pilih agen penanggung jawab" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Tidak diassign</SelectItem>
+                    {agents.map((agent) => (
+                      <SelectItem key={agent.id} value={agent.id}>
+                        <div className="flex items-center gap-2">
+                          <Avatar className="h-6 w-6">
+                            <AvatarImage src={agent.avatar_url || undefined} />
+                            <AvatarFallback className="text-[10px]">
+                              {getInitials(agent.full_name || agent.email)}
+                            </AvatarFallback>
+                          </Avatar>
+                          {agent.full_name || agent.email}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {assignLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+              </div>
+              {property?.assigned_user && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground p-2 bg-slate-50 dark:bg-slate-800 rounded-lg">
+                  <Avatar className="h-6 w-6">
+                    <AvatarImage src={property.assigned_user.avatar_url || undefined} />
+                    <AvatarFallback className="text-[10px]">
+                      {getInitials(property.assigned_user.full_name)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <span>Agen: {property.assigned_user.full_name}</span>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           {/* Owner Card */}
           {property.owner && (
             <Card>

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { usePermissions } from "@/hooks/use-permissions";
 import { userService } from "@/services/user.service";
 import { notificationService } from "@/services/notification.service";
+import { supabase } from "@/lib/supabase/client"; // ✅ tambahkan import supabase
 import { USER_ROLES, type UserRole, type UserWithRole } from "@/types/user.types";
 import { toast } from "sonner";
 import {
@@ -101,6 +102,16 @@ export default function AdminUsersPage() {
   const [sendingNotification, setSendingNotification] = useState(false);
 
   const isSuperAdmin = userRole === "super_admin";
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
+  // Ambil current user ID
+  useEffect(() => {
+    const getCurrentUser = async () => {
+      const { data } = await supabase.auth.getUser();
+      setCurrentUserId(data?.user?.id || null);
+    };
+    getCurrentUser();
+  }, []);
 
   const fetchUsers = useCallback(async () => {
     setLoading(true);
@@ -147,21 +158,66 @@ export default function AdminUsersPage() {
     }
   };
 
+  // ✅ PERBAIKAN: HANDLE DELETE
   const handleDelete = (user: UserWithRole) => {
+    // 1. Jangan izinkan hapus Super Admin
+    if (user.role === "super_admin") {
+      toast.error("Tidak dapat menghapus Super Admin!");
+      return;
+    }
+
+    // 2. Jangan izinkan hapus diri sendiri
+    if (currentUserId && user.id === currentUserId) {
+      toast.error("Anda tidak dapat menghapus akun sendiri!");
+      return;
+    }
+
     setSelectedUser(user);
     setShowDeleteDialog(true);
   };
 
+  // ✅ PERBAIKAN: KONFIRMASI HAPUS
   const handleConfirmDelete = async () => {
     if (!selectedUser) return;
+
+    // Validasi ulang
+    if (selectedUser.role === "super_admin") {
+      toast.error("Tidak dapat menghapus Super Admin!");
+      setShowDeleteDialog(false);
+      return;
+    }
+
+    if (currentUserId && selectedUser.id === currentUserId) {
+      toast.error("Anda tidak dapat menghapus akun sendiri!");
+      setShowDeleteDialog(false);
+      return;
+    }
+
     setDeleting(true);
     try {
-      await userService.deleteUser(selectedUser.id);
+      // ✅ Gunakan supabase langsung (bukan userService)
+      const { error } = await supabase
+        .from("users")
+        .delete()
+        .eq("id", selectedUser.id);
+
+      if (error) throw error;
+
       toast.success(`User ${selectedUser.full_name} berhasil dihapus`);
       setShowDeleteDialog(false);
-      fetchUsers();
-    } catch {
-      toast.error("Gagal hapus user");
+      fetchUsers(); // refresh list
+    } catch (error: any) {
+      console.error("Delete error:", error);
+      
+      // Jika error karena RLS
+      if (error.message?.includes("row-level security policy")) {
+        toast.error(
+          "Gagal hapus user karena kebijakan keamanan (RLS). " +
+          "Hubungi administrator untuk menambahkan policy DELETE di Supabase."
+        );
+      } else {
+        toast.error(error.message || "Gagal menghapus user");
+      }
     } finally {
       setDeleting(false);
     }
@@ -306,46 +362,56 @@ export default function AdminUsersPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredUsers.map((user) => (
-                    <TableRow key={user.id}>
-                      <TableCell>
-                        <div className="flex items-center gap-3">
-                          <Avatar className="h-8 w-8">
-                            <AvatarImage src={user.avatar_url || undefined} />
-                            <AvatarFallback>{getInitials(user.full_name || user.email)}</AvatarFallback>
-                          </Avatar>
-                          <span className="font-medium">{user.full_name || "Tanpa Nama"}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">{user.email}</TableCell>
-                      <TableCell>
-                        <Badge variant={ROLE_BADGE[user.role] || "secondary"} className="gap-1">
-                          {ROLE_ICONS[user.role]}
-                          {getRoleLabel(user.role)}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {new Date(user.created_at).toLocaleDateString("id-ID")}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger className="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 hover:bg-accent hover:text-accent-foreground h-10 w-10">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => handleEdit(user)}>
-                              <UserCog className="h-4 w-4 mr-2" /> Edit Role
-                            </DropdownMenuItem>
-                            {user.id !== users.find(u => u.role === 'super_admin')?.id && (
-                              <DropdownMenuItem onClick={() => handleDelete(user)} className="text-destructive">
-                                <Trash2 className="h-4 w-4 mr-2" /> Hapus User
+                  {filteredUsers.map((user) => {
+                    // Cek apakah user ini super_admin (jangan tampilkan tombol hapus)
+                    const isSuperAdminUser = user.role === "super_admin";
+                    const isCurrentUser = currentUserId === user.id;
+                    const canDelete = isSuperAdmin && !isSuperAdminUser && !isCurrentUser;
+
+                    return (
+                      <TableRow key={user.id}>
+                        <TableCell>
+                          <div className="flex items-center gap-3">
+                            <Avatar className="h-8 w-8">
+                              <AvatarImage src={user.avatar_url || undefined} />
+                              <AvatarFallback>{getInitials(user.full_name || user.email)}</AvatarFallback>
+                            </Avatar>
+                            <span className="font-medium">{user.full_name || "Tanpa Nama"}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">{user.email}</TableCell>
+                        <TableCell>
+                          <Badge variant={ROLE_BADGE[user.role] || "secondary"} className="gap-1">
+                            {ROLE_ICONS[user.role]}
+                            {getRoleLabel(user.role)}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {new Date(user.created_at).toLocaleDateString("id-ID")}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger className="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 hover:bg-accent hover:text-accent-foreground h-10 w-10">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => handleEdit(user)}>
+                                <UserCog className="h-4 w-4 mr-2" /> Edit Role
                               </DropdownMenuItem>
-                            )}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                              {canDelete && (
+                                <DropdownMenuItem
+                                  onClick={() => handleDelete(user)}
+                                  className="text-destructive"
+                                >
+                                  <Trash2 className="h-4 w-4 mr-2" /> Hapus User
+                                </DropdownMenuItem>
+                              )}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>

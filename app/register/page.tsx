@@ -1,4 +1,4 @@
-// app/register/page.tsx
+// app/register/page.tsx (atau app/(auth)/register/page.tsx)
 "use client";
 
 import { useState } from "react";
@@ -126,7 +126,7 @@ export default function RegisterPage() {
               <Button
                 variant="outline"
                 className="w-full"
-                onClick={() => router.push("/login")}
+                onClick={() => router.push("/")} // ✅ arahkan ke root
               >
                 Kembali ke Login
               </Button>
@@ -259,7 +259,7 @@ export default function RegisterPage() {
 
             <p className="text-center text-sm text-slate-500">
               Sudah punya akun?{" "}
-              <Link href="/login" className="text-emerald-600 hover:underline font-medium">
+              <Link href="/" className="text-emerald-600 hover:underline font-medium">
                 Login
               </Link>
             </p>

@@ -1,7 +1,6 @@
-// components/dashboard/overview-chart.tsx
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   BarChart,
   Bar,
@@ -13,6 +12,7 @@ import {
   Cell,
 } from "recharts";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { cn } from "@/lib/utils";
 
 interface OverviewChartProps {
   data: {
@@ -20,36 +20,77 @@ interface OverviewChartProps {
     properties: number;
     sold: number;
   }[];
+  onYearChange?: (year: number) => void;
+  className?: string;
 }
 
 const COLORS = ["#3b82f6", "#60a5fa", "#93c5fd", "#bfdbfe", "#dbeafe", "#eff6ff"];
-const YEARS = [2024, 2025, 2026, 2027]; // bisa dibuat dinamis dari data
+const SOLD_COLORS = ["#8b5cf6", "#a78bfa", "#c4b5fd", "#ddd6fe", "#ede9fe", "#f5f3ff"];
 
-export function OverviewChart({ data }: OverviewChartProps) {
+export function OverviewChart({ data, onYearChange, className }: OverviewChartProps) {
   const [year, setYear] = useState(new Date().getFullYear());
+  const [isMobile, setIsMobile] = useState(false);
 
-  // Filter data based on year (jika data sudah per tahun, kita filter)
-  // Karena data dikembalikan per bulan tanpa tahun, kita asumsikan data untuk tahun yang dipilih
-  // Tapi service kita mengembalikan data tahun berjalan. Untuk demo, kita pakai data yang ada.
-  // Untuk tahun lain, kita bisa fetch ulang atau filter. Kita akan implementasikan dengan year selector.
+  // Deteksi ukuran layar untuk penyesuaian tampilan
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 640);
+    };
+    checkMobile();
+    window.addEventListener("resize", checkMobile);
+    return () => window.removeEventListener("resize", checkMobile);
+  }, []);
 
-  // Untuk saat ini, karena data dari service hanya untuk tahun berjalan, kita tidak filter.
-  // Tapi jika nanti kita perlu, kita bisa ubah service untuk menerima tahun.
-  // Kita tetap tampilkan selector dan kita bisa trigger refetch dengan year.
-  // Dalam implementasi nyata, kita bisa memanggil dashboardService dengan parameter year.
-  // Untuk sekarang, kita hanya tampilkan selector visual.
+  const handleYearChange = (val: string) => {
+    const newYear = Number(val);
+    setYear(newYear);
+    onYearChange?.(newYear);
+  };
 
-  // Kita akan menggunakan data yang diberikan.
+  // Jika data kosong, tampilkan pesan
+  if (!data || data.length === 0) {
+    return (
+      <div className={cn("w-full h-[280px] flex items-center justify-center text-muted-foreground text-sm", className)}>
+        Tidak ada data untuk tahun ini
+      </div>
+    );
+  }
+
+  // Custom tooltip yang lebih mobile-friendly
+  const CustomTooltip = ({ active, payload, label }: any) => {
+    if (!active || !payload || payload.length === 0) return null;
+
+    const total = payload.reduce((sum: number, entry: any) => sum + (entry.value || 0), 0);
+
+    return (
+      <div className="bg-white dark:bg-slate-900 border border-border rounded-xl shadow-lg p-3 min-w-[140px]">
+        <p className="text-sm font-semibold text-foreground mb-2">{label}</p>
+        {payload.map((entry: any, index: number) => (
+          <div key={index} className="flex items-center justify-between text-sm gap-4">
+            <span className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded-full" style={{ backgroundColor: entry.color }} />
+              <span className="text-muted-foreground">{entry.name === "properties" ? "Total" : "Terjual"}</span>
+            </span>
+            <span className="font-medium text-foreground">{entry.value}</span>
+          </div>
+        ))}
+        <div className="border-t border-border mt-2 pt-2 flex justify-between text-sm font-semibold">
+          <span>Total</span>
+          <span>{total}</span>
+        </div>
+      </div>
+    );
+  };
 
   return (
-    <div className="w-full h-[280px]">
-      <div className="flex justify-end mb-2">
-        <Select value={String(year)} onValueChange={(val) => setYear(Number(val))}>
-          <SelectTrigger className="w-[120px] h-8 text-xs">
+    <div className={cn("w-full", className)}>
+      <div className="flex justify-end mb-3">
+        <Select value={String(year)} onValueChange={(val) => handleYearChange(val || "")}>
+          <SelectTrigger className="w-[110px] h-8 text-xs">
             <SelectValue placeholder="Tahun" />
           </SelectTrigger>
           <SelectContent>
-            {YEARS.map((y) => (
+            {[2023, 2024, 2025, 2026, 2027].map((y) => (
               <SelectItem key={y} value={String(y)}>
                 {y}
               </SelectItem>
@@ -57,48 +98,41 @@ export function OverviewChart({ data }: OverviewChartProps) {
           </SelectContent>
         </Select>
       </div>
-      <ResponsiveContainer width="100%" height="100%">
+
+      <ResponsiveContainer width="100%" height={isMobile ? 220 : 280}>
         <BarChart
           data={data}
-          margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
-          barGap={8}
+          margin={{ top: 10, right: isMobile ? 5 : 10, left: isMobile ? -5 : 0, bottom: 0 }}
+          barGap={isMobile ? 4 : 8}
+          barSize={isMobile ? 16 : 24}
         >
-          <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+          <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} strokeOpacity={0.5} />
           <XAxis
             dataKey="month"
             axisLine={false}
             tickLine={false}
-            tick={{ fill: "#94a3b8", fontSize: 12 }}
+            tick={{ fill: "#94a3b8", fontSize: isMobile ? 10 : 12 }}
+            interval={isMobile ? 1 : 0}
+            angle={isMobile ? -30 : 0}
+            textAnchor={isMobile ? "end" : "middle"}
+            height={isMobile ? 40 : 30}
           />
           <YAxis
             axisLine={false}
             tickLine={false}
-            tick={{ fill: "#94a3b8", fontSize: 12 }}
+            tick={{ fill: "#94a3b8", fontSize: isMobile ? 10 : 12 }}
             tickFormatter={(value) => `${value}`}
+            width={isMobile ? 20 : 30}
           />
-          <Tooltip
-            cursor={{ fill: "rgba(59, 130, 246, 0.05)" }}
-            contentStyle={{
-              borderRadius: "12px",
-              border: "1px solid #e2e8f0",
-              boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
-              fontSize: "13px",
-              background: "white",
-            }}
-            formatter={(value: any, name: any) => {
-              const numValue = typeof value === 'number' ? value : 0;
-              const label = name === "properties" ? "Total Properti" : "Terjual";
-              return [numValue, label];
-            }}
-          />
-          <Bar dataKey="properties" radius={[6, 6, 0, 0]} fill="#3b82f6">
+          <Tooltip content={<CustomTooltip />} cursor={{ fill: "rgba(59, 130, 246, 0.05)" }} />
+          <Bar dataKey="properties" radius={[4, 4, 0, 0]} fill="#3b82f6">
             {data.map((_, index) => (
               <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
             ))}
           </Bar>
-          <Bar dataKey="sold" radius={[6, 6, 0, 0]} fill="#8b5cf6">
+          <Bar dataKey="sold" radius={[4, 4, 0, 0]} fill="#8b5cf6">
             {data.map((_, index) => (
-              <Cell key={`cell-sold-${index}`} fill={COLORS[(index + 3) % COLORS.length]} />
+              <Cell key={`cell-sold-${index}`} fill={SOLD_COLORS[index % SOLD_COLORS.length]} />
             ))}
           </Bar>
         </BarChart>

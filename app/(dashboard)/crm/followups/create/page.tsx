@@ -1,41 +1,72 @@
+// app/(dashboard)/crm/followups/create/page.tsx
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowLeft, Save, Loader2 } from "lucide-react";
+import {
+  ArrowLeft,
+  Save,
+  Loader2,
+  Search,
+  User,
+  UserCheck,
+  Calendar,
+  Clock,
+  ChevronDown,
+  Check,
+  Sparkles,
+  FileText,
+} from "lucide-react";
 
 import { crmService } from "@/services/crm.service";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
 
-type Lead = {
+// ============================================================
+// TYPES
+// ============================================================
+interface LeadItem {
   id: string;
-  contact: {
-    full_name?: string;
-    phone?: string | null;
-  } | null;
-};
+  lead_name: string;
+  phone: string | null;
+  status?: string;
+}
+
+interface AgentItem {
+  id: string;
+  full_name?: string;
+  email?: string;
+}
 
 export default function CreateFollowupPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [agents, setAgents] = useState<any[]>([]);
-  const [leads, setLeads] = useState<Lead[]>([]);
-  const [leadsError, setLeadsError] = useState(false);
+
+  // Data Options
+  const [agents, setAgents] = useState<AgentItem[]>([]);
+  const [leads, setLeads] = useState<LeadItem[]>([]);
+
+  // Search Filter States
+  const [leadSearch, setLeadSearch] = useState("");
+  const [agentSearch, setAgentSearch] = useState("");
+
+  // Dropdown Open States
+  const [isLeadOpen, setIsLeadOpen] = useState(false);
+  const [isAgentOpen, setIsAgentOpen] = useState(false);
+
+  // DOM Container Refs (Click Outside)
+  const leadRef = useRef<HTMLDivElement>(null);
+  const agentRef = useRef<HTMLDivElement>(null);
+
+  // Form State
   const [form, setForm] = useState({
     lead_id: "",
     assigned_to: "",
@@ -43,6 +74,24 @@ export default function CreateFollowupPage() {
     notes: "",
   });
 
+  // ===== CLICK OUTSIDE EVENT LISTENER =====
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (leadRef.current && !leadRef.current.contains(event.target as Node)) {
+        setIsLeadOpen(false);
+      }
+      if (agentRef.current && !agentRef.current.contains(event.target as Node)) {
+        setIsAgentOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
+  // ===== FETCH INITIAL DATA =====
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
@@ -53,20 +102,29 @@ export default function CreateFollowupPage() {
         ]);
 
         setAgents(agentsData || []);
-        const mappedLeads = leadsResult.data.map((lead: any) => ({
-          id: lead.id,
-          contact: lead.contact
-            ? {
-                full_name: lead.contact.full_name || "",
-                phone: lead.contact.phone || null,
-              }
-            : null,
-        }));
+
+        const mappedLeads: LeadItem[] = (leadsResult.data || []).map((lead: any) => {
+          const contactObj = lead.contact || {};
+          const name =
+            contactObj.full_name ||
+            lead.full_name ||
+            lead.name ||
+            lead.contact_name ||
+            "Prospek Tanpa Nama";
+          const phone = contactObj.phone || lead.phone || null;
+
+          return {
+            id: lead.id,
+            lead_name: name,
+            phone: phone,
+            status: lead.status || "new",
+          };
+        });
+
         setLeads(mappedLeads);
       } catch (error) {
         console.error("Error fetching data:", error);
-        setLeadsError(true);
-        toast.error("Gagal memuat data");
+        toast.error("Gagal memuat data pilihan");
       } finally {
         setLoading(false);
       }
@@ -75,14 +133,55 @@ export default function CreateFollowupPage() {
     fetchData();
   }, []);
 
+  // Selected Item Helpers (Mencegah UUID/Huruf Acak Tampil)
+  const selectedLead = useMemo(() => {
+    return leads.find((l) => l.id === form.lead_id);
+  }, [leads, form.lead_id]);
+
+  const selectedAgent = useMemo(() => {
+    return agents.find((a) => a.id === form.assigned_to);
+  }, [agents, form.assigned_to]);
+
+  // Filtered lists
+  const filteredLeads = useMemo(() => {
+    return leads.filter(
+      (l) =>
+        l.lead_name.toLowerCase().includes(leadSearch.toLowerCase()) ||
+        (l.phone && l.phone.includes(leadSearch))
+    );
+  }, [leads, leadSearch]);
+
+  const filteredAgents = useMemo(() => {
+    return agents.filter(
+      (a) =>
+        (a.full_name && a.full_name.toLowerCase().includes(agentSearch.toLowerCase())) ||
+        (a.email && a.email.toLowerCase().includes(agentSearch.toLowerCase()))
+    );
+  }, [agents, agentSearch]);
+
+  // ===== HANDLERS =====
   const handleChange = (field: string, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
+  // Quick Preset Tanggal
+  const setPresetDate = (daysAhead: number) => {
+    const target = new Date();
+    target.setDate(target.getDate() + daysAhead);
+    target.setHours(10, 0, 0, 0); // Default jam 10 pagi
+
+    const isoLocal = new Date(target.getTime() - target.getTimezoneOffset() * 60000)
+      .toISOString()
+      .slice(0, 16);
+
+    handleChange("followup_date", isoLocal);
+  };
+
+  // ===== SUBMIT =====
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.lead_id || !form.assigned_to || !form.followup_date) {
-      toast.error("Lead, Agent, dan Tanggal wajib diisi");
+      toast.error("Lead, Agent, dan Tanggal wajib diisi!");
       return;
     }
 
@@ -94,7 +193,8 @@ export default function CreateFollowupPage() {
         followup_date: form.followup_date,
         notes: form.notes || undefined,
       });
-      toast.success("Follow-up berhasil dibuat!");
+
+      toast.success("Jadwal follow-up berhasil dibuat!");
       router.push("/crm/followups");
       router.refresh();
     } catch (error: any) {
@@ -109,132 +209,280 @@ export default function CreateFollowupPage() {
 
   if (loading) {
     return (
-      <div className="space-y-6 max-w-2xl mx-auto">
-        <Skeleton className="h-10 w-40" />
-        <Skeleton className="h-96 w-full rounded-xl" />
+      <div className="space-y-6 max-w-2xl mx-auto pb-12">
+        <Skeleton className="h-10 w-48 rounded-xl" />
+        <Card className="p-6 space-y-4">
+          <Skeleton className="h-12 w-full rounded-xl" />
+          <Skeleton className="h-12 w-full rounded-xl" />
+          <Skeleton className="h-32 w-full rounded-xl" />
+        </Card>
       </div>
     );
   }
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={() => router.back()}>
-          <ArrowLeft className="h-5 w-5" />
+    <div className="max-w-2xl mx-auto space-y-6 pb-16">
+      {/* HEADER */}
+      <div className="flex items-center gap-3">
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={() => router.back()}
+          className="h-9 w-9 rounded-xl shrink-0"
+        >
+          <ArrowLeft className="h-4 w-4" />
         </Button>
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">📅 Tambah Follow-up</h1>
-          <p className="text-sm text-muted-foreground">
-            Jadwalkan follow-up untuk lead
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
+            📅 Tambah Jadwal Follow-up
+          </h1>
+          <p className="text-xs text-muted-foreground">
+            Jadwalkan kontak kembali dengan lead untuk memelihara minat prospek.
           </p>
         </div>
       </div>
 
+      {/* FORM */}
       <form onSubmit={handleSubmit}>
-        <Card className="border-0 shadow-md">
-          <CardHeader className="bg-gradient-to-r from-amber-50 to-orange-50 rounded-t-xl dark:from-amber-950/30 dark:to-orange-950/30">
-            <CardTitle className="text-base">Informasi Follow-up</CardTitle>
+        <Card className="border shadow-md bg-card overflow-hidden">
+          <CardHeader className="bg-muted/40 border-b pb-4">
+            <CardTitle className="text-sm font-bold flex items-center gap-2">
+              <Clock className="w-4 h-4 text-emerald-600" /> Rincian Agenda Follow-up
+            </CardTitle>
+            <CardDescription className="text-xs">
+              Pilih lead target, tentukan penanggung jawab, dan setel waktu pengingat.
+            </CardDescription>
           </CardHeader>
-          <CardContent className="p-6 space-y-4">
-            {/* Pilih Lead */}
-            <div className="space-y-2">
-              <Label htmlFor="lead_id">Pilih Lead <span className="text-rose-500">*</span></Label>
-              <Select
-                value={form.lead_id}
-                onValueChange={(val) => handleChange("lead_id", val || "")}
+
+          <CardContent className="p-5 sm:p-6 space-y-5">
+            {/* 1. PILIH LEAD (SEARCHABLE DROPDOWN - BEBAS BUG UUID) */}
+            <div className="space-y-2 relative" ref={leadRef}>
+              <Label className="text-xs font-bold text-foreground">
+                Pilih Lead Prospek <span className="text-rose-500">*</span>
+              </Label>
+
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => setIsLeadOpen(!isLeadOpen)}
+                onKeyDown={(e) => e.key === "Enter" && setIsLeadOpen(!isLeadOpen)}
+                className="w-full flex items-center justify-between h-10 px-3 rounded-md border border-input bg-background text-xs cursor-pointer hover:border-emerald-500 transition focus:outline-none focus:ring-2 focus:ring-emerald-500"
               >
-                <SelectTrigger>
-                  <SelectValue placeholder="Pilih lead" />
-                </SelectTrigger>
-                <SelectContent>
-                  {leadsError ? (
-                    <SelectItem value="error" disabled>
-                      Gagal memuat lead, refresh halaman
-                    </SelectItem>
-                  ) : leads.length === 0 ? (
-                    <SelectItem value="empty" disabled>
-                      Tidak ada lead tersedia
-                    </SelectItem>
-                  ) : (
-                    leads.map((lead) => (
-                      <SelectItem key={lead.id} value={lead.id}>
-                        {lead.contact?.full_name || "Tanpa Nama"} ({lead.contact?.phone || "no phone"})
-                      </SelectItem>
-                    ))
-                  )}
-                </SelectContent>
-              </Select>
+                {selectedLead ? (
+                  <span className="font-semibold text-foreground flex items-center gap-2 truncate">
+                    <User className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    {selectedLead.lead_name}
+                    {selectedLead.phone && (
+                      <span className="text-muted-foreground font-normal font-mono text-[11px]">
+                        ({selectedLead.phone})
+                      </span>
+                    )}
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground flex items-center gap-2">
+                    <Search className="w-3.5 h-3.5 text-muted-foreground" /> Cari atau pilih lead prospek...
+                  </span>
+                )}
+                <ChevronDown className="h-4 w-4 opacity-50 shrink-0" />
+              </div>
+
+              {/* Floating Dropdown */}
+              {isLeadOpen && (
+                <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-popover border border-border rounded-xl shadow-xl p-2 space-y-1">
+                  <div className="relative mb-2">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                    <Input
+                      placeholder="Ketik nama atau no HP..."
+                      value={leadSearch}
+                      onChange={(e) => setLeadSearch(e.target.value)}
+                      className="pl-8 h-8 text-xs"
+                      autoFocus
+                    />
+                  </div>
+
+                  <div className="max-h-52 overflow-y-auto space-y-1">
+                    {filteredLeads.length === 0 ? (
+                      <p className="p-3 text-center text-xs text-muted-foreground">
+                        Belum ada data lead yang cocok.
+                      </p>
+                    ) : (
+                      filteredLeads.map((item) => (
+                        <div
+                          key={item.id}
+                          onClick={() => {
+                            handleChange("lead_id", item.id);
+                            setIsLeadOpen(false);
+                          }}
+                          className={cn(
+                            "flex items-center justify-between p-2 rounded-lg cursor-pointer text-xs hover:bg-muted transition",
+                            form.lead_id === item.id &&
+                              "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 font-bold"
+                          )}
+                        >
+                          <div>
+                            <p className="font-medium text-foreground">{item.lead_name}</p>
+                            <p className="text-[10px] text-muted-foreground font-mono">
+                              {item.phone || "Tidak ada telepon"}
+                            </p>
+                          </div>
+                          {form.lead_id === item.id && (
+                            <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+                          )}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
-            {/* Assign ke Agent */}
-            <div className="space-y-2">
-              <Label htmlFor="assigned_to">Assign ke Agent <span className="text-rose-500">*</span></Label>
-              <Select
-                value={form.assigned_to}
-                onValueChange={(val) => handleChange("assigned_to", val || "")}
+            {/* 2. ASSIGN TO AGENT */}
+            <div className="space-y-2 relative" ref={agentRef}>
+              <Label className="text-xs font-bold text-foreground">
+                Assign ke Agent Penanggung Jawab <span className="text-rose-500">*</span>
+              </Label>
+
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => setIsAgentOpen(!isAgentOpen)}
+                onKeyDown={(e) => e.key === "Enter" && setIsAgentOpen(!isAgentOpen)}
+                className="w-full flex items-center justify-between h-10 px-3 rounded-md border border-input bg-background text-xs cursor-pointer hover:border-emerald-500 transition focus:outline-none focus:ring-2 focus:ring-emerald-500"
               >
-                <SelectTrigger>
-                  <SelectValue placeholder="Pilih agent" />
-                </SelectTrigger>
-                <SelectContent>
-                  {agents.length === 0 ? (
-                    <SelectItem value="no-agent" disabled>
-                      Tidak ada agent
-                    </SelectItem>
-                  ) : (
-                    agents.map((agent) => (
-                      <SelectItem key={agent.id} value={agent.id}>
-                        {agent.full_name || agent.email}
-                      </SelectItem>
-                    ))
-                  )}
-                </SelectContent>
-              </Select>
+                {selectedAgent ? (
+                  <span className="font-semibold text-foreground flex items-center gap-2 truncate">
+                    <UserCheck className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                    {selectedAgent.full_name || selectedAgent.email}
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground flex items-center gap-2">
+                    <Search className="w-3.5 h-3.5 text-muted-foreground" /> Pilih agent penanggung jawab...
+                  </span>
+                )}
+                <ChevronDown className="h-4 w-4 opacity-50 shrink-0" />
+              </div>
+
+              {/* Floating Agent Dropdown */}
+              {isAgentOpen && (
+                <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-popover border border-border rounded-xl shadow-xl p-2 space-y-1">
+                  <div className="relative mb-2">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                    <Input
+                      placeholder="Cari nama agent..."
+                      value={agentSearch}
+                      onChange={(e) => setAgentSearch(e.target.value)}
+                      className="pl-8 h-8 text-xs"
+                      autoFocus
+                    />
+                  </div>
+
+                  <div className="max-h-48 overflow-y-auto space-y-1">
+                    {filteredAgents.map((agent) => (
+                      <div
+                        key={agent.id}
+                        onClick={() => {
+                          handleChange("assigned_to", agent.id);
+                          setIsAgentOpen(false);
+                        }}
+                        className={cn(
+                          "flex items-center justify-between p-2 rounded-lg cursor-pointer text-xs hover:bg-muted transition",
+                          form.assigned_to === agent.id &&
+                            "bg-blue-50 dark:bg-blue-950/40 text-blue-700 font-bold"
+                        )}
+                      >
+                        <span className="font-medium text-foreground">
+                          {agent.full_name || agent.email}
+                        </span>
+                        {form.assigned_to === agent.id && (
+                          <Check className="w-4 h-4 text-blue-600 shrink-0" />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
-            {/* Tanggal & Waktu */}
+            {/* 3. TANGGAL & WAKTU FOLLOW-UP WITH PRESETS */}
             <div className="space-y-2">
-              <Label htmlFor="followup_date">Tanggal & Waktu <span className="text-rose-500">*</span></Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="followup_date" className="text-xs font-bold text-foreground">
+                  Tanggal & Waktu Follow-up <span className="text-rose-500">*</span>
+                </Label>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setPresetDate(1)}
+                    className="text-[10px] bg-muted hover:bg-emerald-50 hover:text-emerald-700 px-2 py-0.5 rounded-md transition"
+                  >
+                    Besok
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPresetDate(3)}
+                    className="text-[10px] bg-muted hover:bg-emerald-50 hover:text-emerald-700 px-2 py-0.5 rounded-md transition"
+                  >
+                    +3 Hari
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPresetDate(7)}
+                    className="text-[10px] bg-muted hover:bg-emerald-50 hover:text-emerald-700 px-2 py-0.5 rounded-md transition"
+                  >
+                    +1 Minggu
+                  </button>
+                </div>
+              </div>
+
               <Input
                 id="followup_date"
                 type="datetime-local"
                 value={form.followup_date}
                 onChange={(e) => handleChange("followup_date", e.target.value)}
+                className="h-10 text-xs font-mono"
                 required
               />
             </div>
 
-            {/* Catatan */}
+            {/* 4. CATATAN / PLAN ACTIVITY */}
             <div className="space-y-2">
-              <Label htmlFor="notes">Catatan</Label>
+              <Label htmlFor="notes" className="text-xs font-bold text-foreground">
+                Catatan Rencana Aktivitas
+              </Label>
               <Textarea
                 id="notes"
-                placeholder="Catatan follow-up..."
+                placeholder="Misal: Telepon via WhatsApp untuk menanyakan progres KPR, kirimkan brosur unit Tipe 36, atau atur janji survei lokasi..."
                 value={form.notes}
                 onChange={(e) => handleChange("notes", e.target.value)}
-                rows={3}
+                rows={4}
+                className="text-xs leading-relaxed"
               />
             </div>
 
-            <div className="flex gap-3 pt-4">
+            {/* SUBMIT BUTTONS */}
+            <div className="flex items-center gap-2 pt-4 border-t">
               <Button
                 type="submit"
-                className="bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white shadow-md"
                 disabled={saving}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20 text-xs gap-2 px-5 h-9"
               >
                 {saving ? (
                   <>
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                    Menyimpan...
+                    <Loader2 className="h-4 w-4 animate-spin" /> Menyimpan...
                   </>
                 ) : (
                   <>
-                    <Save className="h-4 w-4 mr-2" />
-                    Simpan
+                    <Save className="h-4 w-4" /> Simpan Follow-up
                   </>
                 )}
               </Button>
-              <Button type="button" variant="outline" onClick={() => router.back()}>
+
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => router.back()}
+                className="text-xs h-9"
+              >
                 Batal
               </Button>
             </div>

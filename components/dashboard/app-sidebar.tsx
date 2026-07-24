@@ -31,7 +31,7 @@ import {
   ChevronUp,
   Bell,
   CalendarCheck,
-  Plus, // ✅ tambahkan Plus
+  Plus,
 } from "lucide-react";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -60,7 +60,7 @@ interface NavItem {
   icon: React.ElementType;
   href: string;
   exact?: boolean;
-  createHref?: string; // ✅ tambahkan createHref
+  createHref?: string;
   roles?: ("super_admin" | "admin" | "agent" | "marketing" | "viewer")[];
   children?: NavItem[];
 }
@@ -80,7 +80,7 @@ const NAV_ITEMS: NavItem[] = [
     label: "Properties",
     icon: Home,
     href: "/properties",
-    createHref: "/properties/create", // ✅ tambahkan tombol "+"
+    createHref: "/properties/create",
   },
   {
     label: "CRM",
@@ -144,10 +144,14 @@ const NAV_ITEMS: NavItem[] = [
 ];
 
 // ============================================================
-// MAIN COMPONENT
+// MAIN COMPONENT - 🔥 TAMBAHKAN PROPS
 // ============================================================
 
-export function AppSidebar() {
+interface AppSidebarProps {
+  onClose?: () => void; // 🔥 Untuk menutup sheet mobile
+}
+
+export function AppSidebar({ onClose }: AppSidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const { theme, setTheme } = useTheme();
@@ -164,7 +168,13 @@ export function AppSidebar() {
 
   const isLoading = roleLoading || userLoading;
 
-  // Load user data from database
+  // 🔥 Fungsi untuk navigasi + tutup sheet
+  const navigateAndClose = (href: string) => {
+    router.push(href);
+    if (onClose) onClose();
+  };
+
+  // Load user data
   useEffect(() => {
     async function loadUserData() {
       if (!user) return;
@@ -198,12 +208,13 @@ export function AppSidebar() {
     loadUserData();
   }, [user]);
 
-  // Handle logout
+  // Logout
   const handleLogout = async () => {
     try {
       await supabase.auth.signOut();
       toast.success("Berhasil logout");
       router.push("/");
+      if (onClose) onClose();
     } catch (error) {
       toast.error("Gagal logout");
     }
@@ -212,7 +223,7 @@ export function AppSidebar() {
   // Toggle collapse
   const toggleCollapse = () => setCollapsed(!collapsed);
 
-  // Toggle expand item
+  // Toggle expand
   const toggleExpand = (key: string) => {
     setExpandedItems((prev) => ({
       ...prev,
@@ -220,7 +231,7 @@ export function AppSidebar() {
     }));
   };
 
-  // Check if nav item is active
+  // Check active
   const isActive = (item: NavItem) => {
     if (item.exact) {
       return pathname === item.href;
@@ -228,25 +239,21 @@ export function AppSidebar() {
     return pathname?.startsWith(item.href) ?? false;
   };
 
-  // Check if nav item has child active
   const hasActiveChild = (item: NavItem) => {
     if (!item.children) return false;
     return item.children.some((child) => pathname?.startsWith(child.href));
   };
 
-  // Check if user can see this nav item
   const canSeeItem = (item: NavItem) => {
     if (!item.roles) return true;
     if (!userRole) return true;
     return item.roles.includes(userRole as any);
   };
 
-  // Filter nav items based on role
   const filteredNavItems = useMemo(() => {
     return NAV_ITEMS.filter(canSeeItem);
   }, [userRole]);
 
-  // Get initials
   const getInitials = (name: string) => {
     if (!name) return "?";
     return name
@@ -274,36 +281,36 @@ export function AppSidebar() {
       : [];
 
     // ===== COLLAPSED STATE =====
-if (collapsed) {
-  return (
-    <TooltipProvider key={item.href}>
-      <Tooltip>
-        {/* @ts-ignore - asChild prop is supported by base-ui but types are not updated */}
-        <TooltipTrigger asChild>
-          <Link
-            href={item.href}
-            className={cn(
-              "flex items-center justify-center w-full h-10 rounded-lg transition-all duration-200 relative",
-              active || hasChildActive
-                ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400"
-                : "hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100"
-            )}
-          >
-            <item.icon size={20} />
-            {hasCreateButton && (
-              <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-emerald-500 text-white flex items-center justify-center text-[8px] font-bold">
-                +
-              </span>
-            )}
-          </Link>
-        </TooltipTrigger>
-        <TooltipContent side="right" className="font-medium">
-          {item.label}
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
-  );
-}
+    if (collapsed) {
+      return (
+        <TooltipProvider key={item.href}>
+          <Tooltip>
+            {/* @ts-ignore - asChild prop is supported by base-ui but types are not updated */}
+            <TooltipTrigger asChild>
+              <button
+                onClick={() => navigateAndClose(item.href)}
+                className={cn(
+                  "flex items-center justify-center w-full h-10 rounded-lg transition-all duration-200 relative",
+                  active || hasChildActive
+                    ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400"
+                    : "hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100"
+                )}
+              >
+                <item.icon size={20} />
+                {hasCreateButton && (
+                  <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-emerald-500 text-white flex items-center justify-center text-[8px] font-bold">
+                    +
+                  </span>
+                )}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right" className="font-medium">
+              {item.label}
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      );
+    }
 
     // ===== EXPANDED STATE WITH CHILDREN =====
     if (visibleChildren.length > 0) {
@@ -334,11 +341,11 @@ if (collapsed) {
           </CollapsibleTrigger>
           <CollapsibleContent className="space-y-1 ml-4 pl-2 border-l border-slate-200/60 dark:border-slate-700/60">
             {visibleChildren.map((child) => (
-              <Link
+              <button
                 key={child.href}
-                href={child.href}
+                onClick={() => navigateAndClose(child.href)}
                 className={cn(
-                  "flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 text-sm",
+                  "flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 text-sm w-full text-left",
                   isActive(child)
                     ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 font-medium"
                     : "hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100"
@@ -349,7 +356,7 @@ if (collapsed) {
                 {isActive(child) && (
                   <span className="ml-auto w-1.5 h-1.5 rounded-full bg-emerald-500" />
                 )}
-              </Link>
+              </button>
             ))}
           </CollapsibleContent>
         </Collapsible>
@@ -359,10 +366,10 @@ if (collapsed) {
     // ===== EXPANDED STATE WITHOUT CHILDREN =====
     return (
       <div key={item.href} className="relative flex items-center group">
-        <Link
-          href={item.href}
+        <button
+          onClick={() => navigateAndClose(item.href)}
           className={cn(
-            "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 text-sm font-medium flex-1",
+            "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 text-sm font-medium flex-1 w-full text-left",
             active
               ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
               : "hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100"
@@ -371,9 +378,8 @@ if (collapsed) {
           <item.icon size={18} />
           <span>{item.label}</span>
           {active && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-emerald-500" />}
-        </Link>
+        </button>
 
-        {/* ✅ Tombol "+" untuk tambah data (muncul saat hover) */}
         {hasCreateButton && (
           <Button
             variant="ghost"
@@ -381,7 +387,7 @@ if (collapsed) {
             className="h-7 w-7 absolute right-2 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-emerald-100 dark:hover:bg-emerald-900/30 rounded-lg"
             onClick={(e) => {
               e.stopPropagation();
-              router.push(item.createHref!);
+              navigateAndClose(item.createHref!);
             }}
             title={`Tambah ${item.label}`}
           >
@@ -440,7 +446,10 @@ if (collapsed) {
         )}
       >
         {!collapsed && (
-          <Link href="/dashboard" className="flex items-center gap-2.5">
+          <button
+            onClick={() => navigateAndClose("/dashboard")}
+            className="flex items-center gap-2.5"
+          >
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center shadow-md shadow-emerald-500/25">
               <span className="text-white font-bold text-sm">IP</span>
             </div>
@@ -453,12 +462,15 @@ if (collapsed) {
             >
               v2
             </Badge>
-          </Link>
+          </button>
         )}
         {collapsed && (
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center shadow-md shadow-emerald-500/25">
+          <button
+            onClick={() => navigateAndClose("/dashboard")}
+            className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center shadow-md shadow-emerald-500/25"
+          >
             <span className="text-white font-bold text-sm">IP</span>
-          </div>
+          </button>
         )}
         <Button
           variant="ghost"
@@ -498,12 +510,12 @@ if (collapsed) {
           )}
         </Button>
 
-        <div
+        <button
           className={cn(
-            "flex items-center gap-3 p-2 rounded-lg transition-colors cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 group",
+            "flex items-center gap-3 p-2 rounded-lg transition-colors w-full text-left hover:bg-slate-100 dark:hover:bg-slate-800 group",
             collapsed && "justify-center"
           )}
-          onClick={() => router.push("/profile")}
+          onClick={() => navigateAndClose("/profile")}
         >
           <Avatar className="h-8 w-8 ring-2 ring-emerald-200 dark:ring-emerald-800/60 ring-offset-1 ring-offset-white dark:ring-offset-slate-950">
             <AvatarImage src={userAvatar || undefined} />
@@ -521,7 +533,7 @@ if (collapsed) {
               </p>
             </div>
           )}
-        </div>
+        </button>
 
         <Button
           variant="ghost"

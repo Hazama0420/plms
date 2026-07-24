@@ -1,7 +1,7 @@
 // components/create-property/steps/StepCategory.tsx
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef } from "react";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { Label } from "@/components/ui/label";
@@ -90,7 +90,7 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ============================================================
-  // AI PARSE HANDLER
+  // AI PARSE HANDLER (TERINTEGRASI DENGAN LOKASI)
   // ============================================================
   const handleAIParse = async () => {
     if (!parseText.trim()) {
@@ -108,6 +108,11 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
         "property_category",
         "selling_point",
         "address",
+        "province_id",
+        "city_id",
+        "district_id",
+        "village_id",
+        "postal_code",
         "selling_price",
         "rental_price",
         "rental_period",
@@ -130,10 +135,6 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
         "building_area",
         "building_width",
         "building_length",
-        "owner_name",
-        "owner_phone",
-        "owner_whatsapp",
-        "owner_email",
       ].join(", ");
 
       const response = await fetch("/api/ai/generate", {
@@ -145,7 +146,7 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
             text: parseText,
             currentType: formData.property_type || "belum ditentukan",
             fieldNames,
-            areaList: "Daftar area tersedia (contoh: BSD, Serpong, Bintaro)",
+            areaList: "Daftar wilayah/area tersedia (contoh: DKI Jakarta, Tangerang Selatan, BSD, Serpong, Bintaro)",
           },
         }),
       });
@@ -155,6 +156,7 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
       if (result.success) {
         const parsed = result.data;
 
+        // Mapping lengkap mencakup properti, spesifikasi, dan lokasi database
         const mapping: Record<string, string> = {
           title: "title",
           property_type: "property_type",
@@ -162,6 +164,11 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
           property_category: "property_status",
           selling_point: "selling_point",
           address: "address",
+          province_id: "province_id",
+          city_id: "city_id",
+          district_id: "district_id",
+          village_id: "village_id",
+          postal_code: "postal_code",
           selling_price: "selling_price",
           rental_price: "rental_price",
           rental_period: "rental_period",
@@ -196,10 +203,10 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
           }
         });
 
+        // Kirim update ke state pusat wizard (otomatis mengisi StepLocation juga)
         updateFormData(updates);
 
-        // Jika ada city, nanti bisa dicari city_id
-        toast.success(`✅ Data berhasil diekstrak dengan AI (${result.provider || "AI"})!`);
+        toast.success(`✨ Data kategori, spesifikasi, & lokasi berhasil diekstrak AI!`);
       } else {
         toast.error(result.error || "Gagal parsing teks");
       }
@@ -305,7 +312,7 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
     updateFormData({ photos: updated });
   };
 
-  // ===== SIMULASI UPLOAD (nanti diintegrasikan dengan API) =====
+  // ===== SIMULASI UPLOAD =====
   const handleUpload = async () => {
     setUploading(true);
     for (let i = 0; i < photos.length; i++) {
@@ -341,7 +348,7 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
       <div>
         <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Kategori & Foto</h2>
         <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-          Pilih tipe properti, unggah foto, dan gunakan AI Parse untuk mengisi data otomatis
+          Pilih tipe properti, unggah foto, dan gunakan AI Parse untuk mengisi data otomatis (termasuk lokasi)
         </p>
       </div>
 
@@ -354,14 +361,14 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
           </Label>
         </div>
         <p className="text-xs text-slate-500 dark:text-slate-400">
-          Tempelkan teks listing (dari email, website, atau dokumen) lalu klik tombol AI Parse untuk mengisi semua field secara otomatis.
+          Tempelkan teks listing (dari WhatsApp, email, atau web) lalu klik AI Parse untuk mengisi kategori, spesifikasi, dan wilayah lokasi secara instan.
         </p>
         <Textarea
-          placeholder="Tempelkan teks listing di sini..."
+          placeholder="Tempelkan teks listing di sini... (contoh: Dijual Rumah BSD City Sektor 1.2, Serpong, Tangerang Selatan...)"
           value={parseText}
           onChange={(e) => setParseText(e.target.value)}
           rows={3}
-          className="border-blue-200 dark:border-blue-800 focus:ring-blue-500 dark:bg-slate-900 dark:text-slate-200"
+          className="border-blue-200 dark:border-blue-800 focus:ring-blue-500 dark:bg-slate-900 dark:text-slate-200 text-xs"
         />
         <Button
           type="button"
@@ -369,17 +376,17 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
           size="sm"
           onClick={handleAIParse}
           disabled={aiLoading}
-          className="bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white shadow-md"
+          className="bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white shadow-md text-xs"
         >
           {aiLoading ? (
             <>
               <span className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2" />
-              Parsing...
+              Parsing Data AI...
             </>
           ) : (
             <>
               <Wand2 size={16} className="mr-2" />
-              ✨ AI Parse
+              ✨ AI Parse & Auto-Fill Lokasi
             </>
           )}
         </Button>
@@ -396,6 +403,7 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
             {propertyTypes.map((type) => (
               <button
                 key={type.value}
+                type="button"
                 onClick={() => handlePropertyTypeSelect(type.value)}
                 className={cn(
                   "px-4 py-3 rounded-xl border-2 text-sm font-medium transition-all text-left",
@@ -419,6 +427,7 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
             {listingTypes.map((type) => (
               <button
                 key={type.value}
+                type="button"
                 onClick={() => handleListingTypeSelect(type.value)}
                 className={cn(
                   "flex-1 px-6 py-3 rounded-xl border-2 text-sm font-medium transition-all",
@@ -445,6 +454,7 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
             {statusOptions.map((status) => (
               <button
                 key={status.value}
+                type="button"
                 onClick={() => handleStatusSelect(status.value)}
                 className={cn(
                   "px-5 py-2 rounded-full border text-sm font-medium transition-all",
@@ -495,9 +505,10 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
               placeholder="https://www.youtube.com/watch?v=..."
               value={youtubeUrl}
               onChange={(e) => setYoutubeUrl(e.target.value)}
-              className="flex-1"
+              className="flex-1 text-xs"
             />
             <Button
+              type="button"
               variant="outline"
               size="sm"
               onClick={() => updateFormData({ youtube_url: youtubeUrl })}
@@ -572,10 +583,11 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
                 </Badge>
               </div>
               <Button
+                type="button"
                 size="sm"
                 onClick={handleUpload}
                 disabled={uploading || photos.every((p) => p.uploaded)}
-                className="gap-2"
+                className="gap-2 text-xs"
               >
                 {uploading ? "Mengupload..." : "Upload Semua"}
               </Button>
@@ -601,7 +613,7 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
                   />
                   {photo.isCover && (
                     <div className="absolute top-2 left-2">
-                      <Badge className="bg-blue-600 text-white border-0 gap-1">
+                      <Badge className="bg-blue-600 text-white border-0 gap-1 text-[10px]">
                         <Star className="h-3 w-3 fill-current" />
                         Cover
                       </Badge>
@@ -610,8 +622,8 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
                   {!photo.uploaded && photo.uploadProgress > 0 && (
                     <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
                       <div className="text-center">
-                        <div className="text-white text-sm font-medium">{photo.uploadProgress}%</div>
-                        <Progress value={photo.uploadProgress} className="h-1 w-20 mt-1 bg-white/20" indicatorClassName="bg-white" />
+                        <div className="text-white text-xs font-medium">{photo.uploadProgress}%</div>
+                        <Progress value={photo.uploadProgress} className="h-1 w-20 mt-1 bg-white/20" />
                       </div>
                     </div>
                   )}
@@ -622,6 +634,7 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
                   )}
                   <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 p-2">
                     <button
+                      type="button"
                       onClick={() => setCover(photo.id)}
                       className="p-1.5 bg-white/20 hover:bg-white/30 rounded-lg text-white transition"
                       title="Jadikan Cover"
@@ -629,6 +642,7 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
                       <Star className="h-4 w-4" />
                     </button>
                     <button
+                      type="button"
                       onClick={() => removePhoto(photo.id)}
                       className="p-1.5 bg-rose-500/80 hover:bg-rose-600 rounded-lg text-white transition"
                       title="Hapus"
@@ -640,28 +654,11 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
               ))}
             </div>
 
-            {photos.length >= 3 && (
-              <div className="bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-950/30 dark:to-pink-950/30 rounded-xl p-4 border border-purple-200 dark:border-purple-800/50 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <Sparkles className="h-5 w-5 text-purple-600 dark:text-purple-400" />
-                  <div>
-                    <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Coba Listing Photo Makeover</p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">Tingkatkan kualitas foto iklanmu dengan AI</p>
-                  </div>
-                </div>
-                <Button variant="outline" size="sm" className="border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-950/50">
-                  <Sparkles className="h-3.5 w-3.5 mr-1" />
-                  Coba Sekarang
-                </Button>
-              </div>
-            )}
-
             <div className="bg-amber-50/50 dark:bg-amber-950/20 rounded-xl p-4 border border-amber-200/50 dark:border-amber-800/50">
-              <p className="text-sm text-amber-700 dark:text-amber-300 flex items-start gap-2">
+              <p className="text-xs text-amber-700 dark:text-amber-300 flex items-start gap-2">
                 <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
                 <span>
-                  <strong>Tips:</strong> Gunakan foto dengan resolusi tinggi,
-                  pastikan pencahayaan baik, dan tampilkan semua sudut properti.
+                  <strong>Tips:</strong> Gunakan foto dengan resolusi tinggi, pastikan pencahayaan baik, dan tampilkan semua sudut properti.
                 </span>
               </p>
             </div>
@@ -672,8 +669,9 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
       {/* Next Button */}
       <div className="flex justify-end pt-4">
         <Button
+          type="button"
           onClick={nextStep}
-          className="gap-2 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+          className="gap-2 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-xs"
         >
           Lanjut ke Spesifikasi →
         </Button>

@@ -1,3 +1,4 @@
+// app/(dashboard)/crm/leads/[id]/page.tsx
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
@@ -5,11 +6,9 @@ import { useRouter, useParams } from "next/navigation";
 import { toast } from "sonner";
 import {
   ArrowLeft,
-  User,
   Phone,
   Mail,
   MapPin,
-  Briefcase,
   Calendar,
   Clock,
   MessageCircle,
@@ -18,26 +17,24 @@ import {
   Edit,
   Trash2,
   CheckCircle,
-  XCircle,
   Tag,
-  Building2,
   Users,
   MessageSquare,
   Loader2,
   Download,
-  Filter,
+  Calculator,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { id } from "date-fns/locale";
 
 import { crmService, type LeadWithRelations } from "@/services/crm.service";
-import { usePermissions } from "@/hooks/use-permissions";
-import type { LeadStatus, CRMContact } from "@/types/crm.types";
+import { supabase } from "@/lib/supabase/client";
+import type { LeadStatus } from "@/types/crm.types";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -63,7 +60,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 
 // ============================================================
-// TYPES
+// TYPES & CONFIG
 // ============================================================
 interface Activity {
   id: string;
@@ -72,9 +69,7 @@ interface Activity {
   activity_type: string;
   notes: string;
   created_at: string;
-  user?: {
-    full_name: string;
-  };
+  user?: { full_name: string };
 }
 
 interface Followup {
@@ -85,14 +80,8 @@ interface Followup {
   notes: string | null;
   status: "pending" | "completed" | "cancelled";
   completed_at: string | null;
-  assigned_user?: {
-    full_name: string;
-  };
 }
 
-// ============================================================
-// STATUS CONFIG
-// ============================================================
 const STATUS_OPTIONS: { value: LeadStatus; label: string; color: string }[] = [
   { value: "new", label: "Baru", color: "bg-blue-500" },
   { value: "contacted", label: "Dihubungi", color: "bg-amber-500" },
@@ -103,17 +92,14 @@ const STATUS_OPTIONS: { value: LeadStatus; label: string; color: string }[] = [
   { value: "lost", label: "Hilang", color: "bg-rose-500" },
 ];
 
-const STATUS_BADGE_VARIANTS: Record<
-  LeadStatus,
-  { variant: "default" | "secondary" | "destructive" | "outline"; className: string }
-> = {
-  new: { variant: "secondary", className: "bg-blue-100 text-blue-700 border-blue-200" },
-  contacted: { variant: "secondary", className: "bg-amber-100 text-amber-700 border-amber-200" },
-  qualified: { variant: "secondary", className: "bg-green-100 text-green-700 border-green-200" },
-  negotiation: { variant: "secondary", className: "bg-purple-100 text-purple-700 border-purple-200" },
-  proposal: { variant: "secondary", className: "bg-indigo-100 text-indigo-700 border-indigo-200" },
-  won: { variant: "secondary", className: "bg-emerald-100 text-emerald-700 border-emerald-200" },
-  lost: { variant: "secondary", className: "bg-rose-100 text-rose-700 border-rose-200" },
+const STATUS_BADGE_VARIANTS: Record<LeadStatus, { className: string }> = {
+  new: { className: "bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-950/60 dark:text-blue-400" },
+  contacted: { className: "bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-950/60 dark:text-amber-400" },
+  qualified: { className: "bg-green-100 text-green-700 border-green-200 dark:bg-green-950/60 dark:text-green-400" },
+  negotiation: { className: "bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-950/60 dark:text-purple-400" },
+  proposal: { className: "bg-indigo-100 text-indigo-700 border-indigo-200 dark:bg-indigo-950/60 dark:text-indigo-400" },
+  won: { className: "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-400" },
+  lost: { className: "bg-rose-100 text-rose-700 border-rose-200 dark:bg-rose-950/60 dark:text-rose-400" },
 };
 
 const ACTIVITY_ICONS: Record<string, React.ReactNode> = {
@@ -133,46 +119,68 @@ export default function LeadDetailPage() {
   const router = useRouter();
   const params = useParams();
   const leadId = params.id as string;
-  const { userRole } = usePermissions();
 
-  // State utama
+  // State User Login & Role
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [currentUserRole, setCurrentUserRole] = useState<string>("");
+
+  // State Utama
   const [lead, setLead] = useState<LeadWithRelations | null>(null);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [filteredActivities, setFilteredActivities] = useState<Activity[]>([]);
   const [followups, setFollowups] = useState<Followup[]>([]);
-  const [loading, setLoading] = useState(true);
   const [properties, setProperties] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [activityFilter, setActivityFilter] = useState<string>("all");
-
-  // ✅ FIX: Controlled Tabs
   const [activeTab, setActiveTab] = useState("timeline");
 
-  // Dialog states
+  // Dialog Visibility States
   const [showAddFollowup, setShowAddFollowup] = useState(false);
   const [showAddNote, setShowAddNote] = useState(false);
   const [showAddInterest, setShowAddInterest] = useState(false);
   const [showEditLead, setShowEditLead] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-  const [saving, setSaving] = useState(false);
 
-  // Form states
-  const [newFollowup, setNewFollowup] = useState({
-    followup_date: "",
-    notes: "",
-    assigned_to: "",
-  });
+  // Form States
+  const [newFollowup, setNewFollowup] = useState({ followup_date: "", notes: "", assigned_to: "" });
   const [newNote, setNewNote] = useState("");
-  const [newInterest, setNewInterest] = useState({
-    property_id: "",
-    interest_level: "",
-    notes: "",
-  });
+  const [newInterest, setNewInterest] = useState({ property_id: "", interest_level: "", notes: "" });
   const [editLeadData, setEditLeadData] = useState({
+    full_name: "",
+    phone: "",
+    whatsapp: "",
+    email: "",
+    occupation: "",
+    city: "",
     source: "",
     budget: "",
     interest_type: "",
     notes: "",
   });
+
+  // ===== FETCH USER SESSION & ROLE =====
+  useEffect(() => {
+    async function checkUserSession() {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        setCurrentUserId(user.id);
+
+        const { data: userData } = await supabase
+          .from("users")
+          .select("role")
+          .eq("id", user.id)
+          .maybeSingle();
+
+        const role = userData?.role || user.user_metadata?.role || "agent";
+        setCurrentUserRole(role.toLowerCase());
+      } catch (err) {
+        console.error("Gagal memeriksa sesi pengguna:", err);
+      }
+    }
+    checkUserSession();
+  }, []);
 
   // ===== FETCH DATA =====
   const fetchData = useCallback(async () => {
@@ -181,11 +189,26 @@ export default function LeadDetailPage() {
       const leadData = await crmService.getLeadById(leadId);
       setLead(leadData);
 
+      if (leadData) {
+        setEditLeadData({
+          full_name: leadData.contact?.full_name || "",
+          phone: leadData.contact?.phone || "",
+          whatsapp: leadData.contact?.whatsapp || "",
+          email: leadData.contact?.email || "",
+          occupation: leadData.contact?.occupation || "",
+          city: leadData.contact?.city || "",
+          source: leadData.source || "",
+          budget: leadData.budget ? String(leadData.budget) : "",
+          interest_type: leadData.interest_type || "",
+          notes: leadData.notes || "",
+        });
+      }
+
       const activitiesData = await crmService.getActivities(leadId);
       setActivities(activitiesData || []);
       setFilteredActivities(activitiesData || []);
 
-      const followupsData = await crmService.getFollowups({ lead_id: leadId, status: undefined, limit: 50 });
+      const followupsData = await crmService.getFollowups({ lead_id: leadId, limit: 50 });
       setFollowups(followupsData.data || []);
 
       const props = await crmService.getPropertiesForLead();
@@ -202,6 +225,15 @@ export default function LeadDetailPage() {
     fetchData();
   }, [fetchData]);
 
+  // ===== LOGIKA HAK AKSES MODIFIKASI =====
+  const isAdminOrSuperAdmin = currentUserRole === "super_admin" || currentUserRole === "admin";
+  const isOwner =
+    (lead as any)?.created_by === currentUserId ||
+    (lead as any)?.user_id === currentUserId ||
+    lead?.assigned_to === currentUserId;
+
+  const canModify = isAdminOrSuperAdmin || isOwner;
+
   // ===== FILTER ACTIVITIES =====
   useEffect(() => {
     if (activityFilter === "all") {
@@ -211,13 +243,27 @@ export default function LeadDetailPage() {
     }
   }, [activityFilter, activities]);
 
-  // ===== HANDLE UPDATE STATUS =====
+  // ===== HANDLERS =====
+  const handleOpenKprCalculator = () => {
+    if (!lead) return;
+    const clientName = lead.contact?.full_name || "Klien CRM";
+    let url = `/kpr-calculator?client_name=${encodeURIComponent(clientName)}`;
+    if (lead.interests && lead.interests.length > 0 && lead.interests[0].property_id) {
+      url += `&property_id=${lead.interests[0].property_id}`;
+    }
+    router.push(url);
+  };
+
   const handleUpdateStatus = async (status: LeadStatus) => {
     if (!lead) return;
+    if (!canModify) {
+      toast.error("Anda tidak memiliki hak akses untuk mengubah status lead ini.");
+      return;
+    }
     setSaving(true);
     try {
       await crmService.updateStatus(lead.id, status);
-      toast.success(`Status berhasil diubah menjadi ${STATUS_OPTIONS.find(s => s.value === status)?.label}`);
+      toast.success("Status prospek berhasil diperbarui");
       fetchData();
     } catch (error) {
       toast.error("Gagal update status");
@@ -226,14 +272,11 @@ export default function LeadDetailPage() {
     }
   };
 
-  // ===== HANDLE ADD FOLLOWUP =====
   const handleAddFollowup = async () => {
-    if (!lead) return;
-    if (!newFollowup.followup_date) {
+    if (!lead || !newFollowup.followup_date) {
       toast.error("Tanggal follow-up wajib diisi");
       return;
     }
-
     setSaving(true);
     try {
       await crmService.createFollowup({
@@ -242,32 +285,25 @@ export default function LeadDetailPage() {
         followup_date: newFollowup.followup_date,
         notes: newFollowup.notes,
       });
-      toast.success("Follow-up berhasil ditambahkan");
+      toast.success("Agenda follow-up berhasil dibuat");
       setShowAddFollowup(false);
       setNewFollowup({ followup_date: "", notes: "", assigned_to: "" });
       fetchData();
     } catch (error) {
-      toast.error("Gagal menambahkan follow-up");
+      toast.error("Gagal membuat follow-up");
     } finally {
       setSaving(false);
     }
   };
 
-  // ===== HANDLE ADD NOTE =====
   const handleAddNote = async () => {
-    if (!lead) return;
-    if (!newNote.trim()) {
+    if (!lead || !newNote.trim()) {
       toast.error("Catatan wajib diisi");
       return;
     }
-
     setSaving(true);
     try {
-      await crmService.logActivity({
-        lead_id: lead.id,
-        activity_type: "note",
-        notes: newNote,
-      });
+      await crmService.logActivity({ lead_id: lead.id, activity_type: "note", notes: newNote });
       toast.success("Catatan berhasil ditambahkan");
       setShowAddNote(false);
       setNewNote("");
@@ -279,14 +315,11 @@ export default function LeadDetailPage() {
     }
   };
 
-  // ===== HANDLE ADD INTEREST =====
   const handleAddInterest = async () => {
-    if (!lead) return;
-    if (!newInterest.property_id) {
+    if (!lead || !newInterest.property_id) {
       toast.error("Pilih properti yang diminati");
       return;
     }
-
     setSaving(true);
     try {
       await crmService.addInterest({
@@ -295,149 +328,104 @@ export default function LeadDetailPage() {
         interest_level: newInterest.interest_level || undefined,
         notes: newInterest.notes || undefined,
       });
-      toast.success("Interest berhasil ditambahkan");
+      toast.success("Minat properti berhasil ditambahkan");
       setShowAddInterest(false);
       setNewInterest({ property_id: "", interest_level: "", notes: "" });
       fetchData();
     } catch (error) {
-      toast.error("Gagal menambahkan interest");
+      toast.error("Gagal menambahkan minat properti");
     } finally {
       setSaving(false);
     }
   };
 
-  // ===== HANDLE UPDATE FOLLOWUP STATUS =====
-  const handleUpdateFollowupStatus = async (followupId: string, status: "completed" | "cancelled") => {
+  const handleSaveEditLead = async () => {
+    if (!lead) return;
+    if (!canModify) {
+      toast.error("Anda tidak memiliki akses untuk mengedit lead ini.");
+      return;
+    }
     setSaving(true);
     try {
-      await crmService.updateFollowup(followupId, { status });
-      toast.success(`Follow-up ${status === "completed" ? "selesai" : "dibatalkan"}`);
+      await crmService.updateLead(lead.id, {
+        source: editLeadData.source || undefined,
+        budget: editLeadData.budget ? parseFloat(editLeadData.budget) : undefined,
+        interest_type: editLeadData.interest_type || undefined,
+        notes: editLeadData.notes || undefined,
+      });
+
+      if (lead.contact_id && crmService.updateContact) {
+        await crmService.updateContact(lead.contact_id, {
+          full_name: editLeadData.full_name,
+          phone: editLeadData.phone,
+          whatsapp: editLeadData.whatsapp,
+          email: editLeadData.email,
+          occupation: editLeadData.occupation,
+          city: editLeadData.city,
+        });
+      }
+
+      toast.success("Data prospek berhasil diperbarui");
+      setShowEditLead(false);
       fetchData();
     } catch (error) {
-      toast.error("Gagal update follow-up");
+      toast.error("Gagal memperbarui data lead");
     } finally {
       setSaving(false);
     }
   };
 
-  // ===== HANDLE DELETE FOLLOWUP =====
-  const handleDeleteFollowup = async (followupId: string) => {
-    if (!confirm("Yakin ingin menghapus follow-up ini?")) return;
-    setSaving(true);
-    try {
-      await crmService.deleteFollowup(followupId);
-      toast.success("Follow-up berhasil dihapus");
-      fetchData();
-    } catch (error) {
-      toast.error("Gagal hapus follow-up");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  // ===== HANDLE DELETE LEAD =====
   const handleDeleteLead = async () => {
     if (!lead) return;
+    if (!canModify) {
+      toast.error("Anda tidak memiliki akses untuk menghapus lead ini.");
+      return;
+    }
     setSaving(true);
     try {
       await crmService.deleteLead(lead.id);
       toast.success("Lead berhasil dihapus");
       router.push("/crm/leads");
-      router.refresh();
     } catch (error) {
-      toast.error("Gagal hapus lead");
+      toast.error("Gagal menghapus lead");
     } finally {
       setSaving(false);
       setShowDeleteDialog(false);
     }
   };
 
-  // ===== HANDLE EXPORT LEAD =====
   const handleExportLead = () => {
     if (!lead) return;
-
     const csvData = [
       ["Field", "Value"],
-      ["ID", lead.id],
       ["Nama", lead.contact?.full_name || ""],
       ["Email", lead.contact?.email || ""],
       ["Telepon", lead.contact?.phone || ""],
-      ["WhatsApp", lead.contact?.whatsapp || ""],
-      ["Pekerjaan", lead.contact?.occupation || ""],
-      ["Kota", lead.contact?.city || ""],
-      ["Sumber", lead.source || ""],
-      ["Status", STATUS_OPTIONS.find(s => s.value === lead.status)?.label || lead.status],
-      ["Tipe Minat", lead.interest_type || ""],
-      ["Budget", lead.budget ? `Rp ${lead.budget.toLocaleString("id-ID")}` : ""],
-      ["Dibuat", new Date(lead.created_at).toLocaleString("id-ID")],
-      ["Terakhir Update", new Date(lead.updated_at).toLocaleString("id-ID")],
+      ["Budget", lead.budget ? lead.budget.toString() : ""],
+      ["Status", lead.status],
     ];
-
-    const csvContent = csvData.map(row => row.join(",")).join("\n");
-    const blob = new Blob([csvContent], { type: "text/csv" });
+    const blob = new Blob([csvData.map((r) => r.join(",")).join("\n")], { type: "text/csv" });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `lead-${lead.contact?.full_name || lead.id}-${new Date().toISOString().split("T")[0]}.csv`;
+    a.download = `lead-${lead.contact?.full_name || lead.id}.csv`;
     a.click();
-    window.URL.revokeObjectURL(url);
-    toast.success("Lead berhasil diekspor!");
+    toast.success("Data berhasil diekspor");
   };
 
-  // ===== HELPERS =====
-  const getStatusLabel = (status: LeadStatus) => {
-    return STATUS_OPTIONS.find(s => s.value === status)?.label || status;
-  };
-
-  const getInitials = (name: string) => {
-    return name
-      .split(" ")
-      .map(n => n[0])
-      .join("")
-      .toUpperCase()
-      .slice(0, 2);
-  };
-
-  const formatDate = (date: string) => {
-    return format(new Date(date), "dd MMM yyyy, HH:mm", { locale: id });
-  };
-
-  const formatRelativeTime = (date: string) => {
-    return formatDistanceToNow(new Date(date), { addSuffix: true, locale: id });
-  };
-
-  const getActivityTypeLabel = (type: string) => {
-    const map: Record<string, string> = {
-      created: "Dibuat",
-      status_change: "Status Berubah",
-      followup_scheduled: "Follow-up Dijadwalkan",
-      followup_completed: "Follow-up Selesai",
-      note: "Catatan",
-      call: "Telepon",
-      meeting: "Meeting",
-    };
-    return map[type] || type;
-  };
-
-  // ===== UNIQUE ACTIVITY TYPES FOR FILTER =====
-  const activityTypes = Array.from(new Set(activities.map((a) => a.activity_type)));
+  const getInitials = (name: string) => name ? name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2) : "U";
+  const getStatusLabel = (status: LeadStatus) => STATUS_OPTIONS.find((s) => s.value === status)?.label || status;
 
   // ============================================================
-  // LOADING & ERROR
+  // LOADING / EMPTY STATE
   // ============================================================
   if (loading) {
     return (
       <div className="space-y-6">
         <Skeleton className="h-12 w-48" />
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-1">
-            <Skeleton className="h-64 w-full rounded-xl" />
-            <Skeleton className="h-48 w-full rounded-xl mt-4" />
-          </div>
-          <div className="lg:col-span-2">
-            <Skeleton className="h-80 w-full rounded-xl" />
-            <Skeleton className="h-64 w-full rounded-xl mt-4" />
-          </div>
+          <Skeleton className="h-96 w-full rounded-2xl" />
+          <Skeleton className="h-96 lg:col-span-2 rounded-2xl" />
         </div>
       </div>
     );
@@ -446,24 +434,21 @@ export default function LeadDetailPage() {
   if (!lead) {
     return (
       <div className="flex flex-col items-center justify-center h-96 text-center">
-        <div className="text-6xl mb-4">🔍</div>
-        <h2 className="text-2xl font-bold text-slate-700">Lead Tidak Ditemukan</h2>
-        <p className="text-slate-500 mt-2">Lead yang Anda cari mungkin telah dihapus.</p>
-        <Button onClick={() => router.back()} className="mt-4">
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          Kembali
+        <h2 className="text-xl font-bold">Lead Tidak Ditemukan</h2>
+        <Button onClick={() => router.back()} className="mt-4 text-xs">
+          <ArrowLeft className="h-4 w-4 mr-2" /> Kembali
         </Button>
       </div>
     );
   }
 
   // ============================================================
-  // RENDER
+  // RENDER UTAMA
   // ============================================================
   return (
-    <div className="space-y-6">
-      {/* HEADER */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+    <div className="space-y-6 pb-16 max-w-7xl mx-auto">
+      {/* HEADER BAR */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b pb-4">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" onClick={() => router.back()}>
             <ArrowLeft className="h-5 w-5" />
@@ -471,121 +456,95 @@ export default function LeadDetailPage() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight flex items-center gap-3">
               {lead.contact?.full_name || "Tanpa Nama"}
-              <Badge
-                variant={STATUS_BADGE_VARIANTS[lead.status].variant}
-                className={STATUS_BADGE_VARIANTS[lead.status].className}
-              >
+              <Badge variant="secondary" className={cn("text-xs font-semibold", STATUS_BADGE_VARIANTS[lead.status]?.className)}>
                 {getStatusLabel(lead.status)}
               </Badge>
             </h1>
-            <p className="text-sm text-muted-foreground">
-              {lead.contact?.email || lead.contact?.phone || "Tidak ada kontak"}
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {lead.contact?.email || lead.contact?.phone || "Kontak belum lengkap"}
             </p>
           </div>
         </div>
+
+        {/* HEADER ACTIONS */}
         <div className="flex items-center gap-2 flex-wrap">
-          <Button variant="outline" size="sm" onClick={handleExportLead}>
-            <Download className="h-4 w-4 mr-2" />
-            Export
+          <Button
+            onClick={handleOpenKprCalculator}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-9 gap-1.5 shadow-sm"
+          >
+            <Calculator className="w-4 h-4" /> Simulasi KPR
           </Button>
-          <Button variant="outline" size="sm" onClick={() => setShowEditLead(true)}>
-            <Edit className="h-4 w-4 mr-2" />
-            Edit
+          <Button variant="outline" size="sm" onClick={handleExportLead} className="text-xs h-9">
+            <Download className="h-4 w-4 mr-1.5" /> Export
           </Button>
-          <Button variant="default" size="sm" onClick={() => setShowAddFollowup(true)}>
-            <Plus className="h-4 w-4 mr-2" />
-            Follow-up
-          </Button>
-          <Button variant="destructive" size="sm" onClick={() => setShowDeleteDialog(true)}>
-            <Trash2 className="h-4 w-4 mr-2" />
-            Hapus
-          </Button>
+
+          {/* 🔒 HANYA DITAMPILKAN JIKA PEMBUAT / ASSIGNED / ADMIN */}
+          {canModify && (
+            <>
+              <Button variant="outline" size="sm" onClick={() => router.push(`/crm/leads/${lead.id}/edit`)} className="text-xs h-9">
+                <Edit className="h-4 w-4 mr-1.5" /> Edit
+              </Button>
+              <Button variant="destructive" size="sm" onClick={() => setShowDeleteDialog(true)} className="text-xs h-9">
+                <Trash2 className="h-4 w-4 mr-1.5" /> Hapus
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
-      {/* MAIN GRID */}
+      {/* GRID KONTEN */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* LEFT COLUMN - Profile & Info */}
+        {/* KOLOM KIRI: PROFIL & INFO */}
         <div className="lg:col-span-1 space-y-6">
-          {/* Profile Card */}
-          <Card>
+          <Card className="border shadow-xs">
             <CardContent className="p-6">
               <div className="flex flex-col items-center text-center">
-                <Avatar className="h-20 w-20">
-                  <AvatarImage src={undefined} />
-                  <AvatarFallback className="text-2xl bg-primary/10 text-primary">
+                <Avatar className="h-20 w-20 ring-2 ring-emerald-500/20">
+                  <AvatarFallback className="text-2xl bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 font-bold">
                     {getInitials(lead.contact?.full_name || "U")}
                   </AvatarFallback>
                 </Avatar>
-                <h3 className="text-lg font-semibold mt-3">
-                  {lead.contact?.full_name || "Tanpa Nama"}
-                </h3>
-                <p className="text-sm text-muted-foreground">
-                  {lead.contact?.occupation || "Tidak ada pekerjaan"}
-                </p>
-                <div className="flex items-center gap-2 mt-2">
-                  <Badge variant="outline" className="text-xs">
-                    {lead.source || "Sumber tidak diketahui"}
-                  </Badge>
-                  <Badge variant="outline" className="text-xs">
-                    {lead.interest_type || "Tidak ada minat"}
+                <h3 className="text-base font-bold mt-3">{lead.contact?.full_name || "Tanpa Nama"}</h3>
+                <p className="text-xs text-muted-foreground">{lead.contact?.occupation || "Pekerjaan belum diisi"}</p>
+                <div className="flex items-center gap-1.5 mt-3 flex-wrap justify-center">
+                  <Badge variant="outline" className="text-[10px]">{lead.source || "Sumber -"}</Badge>
+                  <Badge variant="outline" className="text-[10px] bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
+                    {lead.interest_type || "Minat -"}
                   </Badge>
                 </div>
               </div>
 
               <Separator className="my-4" />
 
-              {/* Kontak */}
-              <div className="space-y-2 text-sm">
+              {/* Kontak Detail */}
+              <div className="space-y-2.5 text-xs">
                 {lead.contact?.phone && (
-                  <div className="flex items-center gap-3">
-                    <Phone className="h-4 w-4 text-muted-foreground" />
-                    <span>{lead.contact.phone}</span>
-                    <a
-                      href={`tel:${lead.contact.phone.replace(/\D/g, '')}`}
-                      className="ml-auto text-blue-500 hover:text-blue-600"
-                    >
-                      <PhoneCall className="h-4 w-4" />
-                    </a>
-                    <a
-                      href={`https://wa.me/${lead.contact.phone.replace(/\D/g, '')}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-emerald-500 hover:text-emerald-600"
-                    >
-                      <MessageCircle className="h-4 w-4" />
+                  <div className="flex items-center gap-2.5">
+                    <Phone className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <span className="font-mono">{lead.contact.phone}</span>
+                    <a href={`tel:${lead.contact.phone}`} className="ml-auto text-blue-500 p-1 hover:bg-blue-50 rounded-md">
+                      <PhoneCall className="h-3.5 w-3.5" />
                     </a>
                   </div>
                 )}
                 {lead.contact?.whatsapp && (
-                  <div className="flex items-center gap-3">
-                    <MessageCircle className="h-4 w-4 text-emerald-500" />
-                    <span>{lead.contact.whatsapp}</span>
-                    <a
-                      href={`https://wa.me/${lead.contact.whatsapp.replace(/\D/g, '')}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="ml-auto text-emerald-500 hover:text-emerald-600"
-                    >
-                      <MessageCircle className="h-4 w-4" />
+                  <div className="flex items-center gap-2.5">
+                    <MessageCircle className="h-4 w-4 text-emerald-600 shrink-0" />
+                    <span className="font-mono text-emerald-600 font-semibold">{lead.contact.whatsapp}</span>
+                    <a href={`https://wa.me/${lead.contact.whatsapp.replace(/\D/g, '')}`} target="_blank" rel="noopener noreferrer" className="ml-auto text-emerald-600 p-1 hover:bg-emerald-50 rounded-md">
+                      <MessageCircle className="h-3.5 w-3.5" />
                     </a>
                   </div>
                 )}
                 {lead.contact?.email && (
-                  <div className="flex items-center gap-3">
-                    <Mail className="h-4 w-4 text-muted-foreground" />
+                  <div className="flex items-center gap-2.5">
+                    <Mail className="h-4 w-4 text-muted-foreground shrink-0" />
                     <span className="truncate">{lead.contact.email}</span>
-                    <a
-                      href={`mailto:${lead.contact.email}`}
-                      className="ml-auto text-blue-500 hover:text-blue-600"
-                    >
-                      <Mail className="h-4 w-4" />
-                    </a>
                   </div>
                 )}
                 {lead.contact?.city && (
-                  <div className="flex items-center gap-3">
-                    <MapPin className="h-4 w-4 text-muted-foreground" />
+                  <div className="flex items-center gap-2.5">
+                    <MapPin className="h-4 w-4 text-muted-foreground shrink-0" />
                     <span>{lead.contact.city}</span>
                   </div>
                 )}
@@ -593,377 +552,147 @@ export default function LeadDetailPage() {
 
               <Separator className="my-4" />
 
-              {/* Lead Info */}
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
+              {/* Informasi Finansial & Status */}
+              <div className="space-y-2.5 text-xs">
+                <div className="flex justify-between items-center">
                   <span className="text-muted-foreground">Budget</span>
-                  <span className="font-medium">
-                    {lead.budget ? `Rp ${lead.budget.toLocaleString("id-ID")}` : "Tidak disebutkan"}
+                  <span className="font-mono font-bold text-emerald-600">
+                    {lead.budget ? `Rp ${lead.budget.toLocaleString("id-ID")}` : "Belum Ditentukan"}
                   </span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Tipe Minat</span>
-                  <span className="font-medium">{lead.interest_type || "-"}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Sumber</span>
-                  <span className="font-medium">{lead.source || "-"}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Status</span>
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-foreground">Status Lead</span>
                   <Select
                     value={lead.status}
                     onValueChange={(val) => handleUpdateStatus(val as LeadStatus)}
-                    disabled={saving}
+                    disabled={saving || !canModify}
                   >
-                    <SelectTrigger className="w-[140px] h-7 text-xs">
+                    <SelectTrigger className="w-[130px] h-7 text-[11px]">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
                       {STATUS_OPTIONS.map((opt) => (
-                        <SelectItem key={opt.value} value={opt.value}>
-                          <div className="flex items-center gap-2">
-                            <span className={`h-2 w-2 rounded-full ${opt.color}`} />
-                            {opt.label}
-                          </div>
+                        <SelectItem key={opt.value} value={opt.value} className="text-xs">
+                          {opt.label}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Dibuat</span>
-                  <span className="text-xs">{formatRelativeTime(lead.created_at)}</span>
-                </div>
-                {lead.assigned_user && (
-                  <div className="flex items-center gap-2 mt-2">
-                    <Avatar className="h-6 w-6">
-                      <AvatarImage src={lead.assigned_user.avatar_url || undefined} />
-                      <AvatarFallback className="text-[10px]">
-                        {getInitials(lead.assigned_user.full_name)}
-                      </AvatarFallback>
-                    </Avatar>
-                    <span className="text-xs text-muted-foreground">
-                      Assigned to: {lead.assigned_user.full_name}
-                    </span>
-                  </div>
-                )}
               </div>
-            </CardContent>
-          </Card>
-
-          {/* Quick Actions */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium">Aksi Cepat</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <Button
-                variant="outline"
-                className="w-full justify-start"
-                onClick={() => setShowAddFollowup(true)}
-              >
-                <Calendar className="h-4 w-4 mr-2" />
-                Jadwalkan Follow-up
-              </Button>
-              <Button
-                variant="outline"
-                className="w-full justify-start"
-                onClick={() => setShowAddNote(true)}
-              >
-                <MessageSquare className="h-4 w-4 mr-2" />
-                Tambah Catatan
-              </Button>
-              <Button
-                variant="outline"
-                className="w-full justify-start"
-                onClick={() => setShowAddInterest(true)}
-              >
-                <Building2 className="h-4 w-4 mr-2" />
-                Tambah Minat Properti
-              </Button>
-              {lead.contact?.phone && (
-                <div className="grid grid-cols-2 gap-2">
-                  <a
-                    href={`tel:${lead.contact.phone.replace(/\D/g, '')}`}
-                    className="w-full"
-                  >
-                    <Button variant="default" className="w-full bg-blue-500 hover:bg-blue-600">
-                      <PhoneCall className="h-4 w-4 mr-2" />
-                      Telepon
-                    </Button>
-                  </a>
-                  <a
-                    href={`https://wa.me/${lead.contact.phone.replace(/\D/g, '')}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="w-full"
-                  >
-                    <Button variant="default" className="w-full bg-emerald-500 hover:bg-emerald-600">
-                      <MessageCircle className="h-4 w-4 mr-2" />
-                      WhatsApp
-                    </Button>
-                  </a>
-                </div>
-              )}
             </CardContent>
           </Card>
         </div>
 
-        {/* RIGHT COLUMN - Timeline & Followups */}
+        {/* KOLOM KANAN: TABS (TIMELINE, FOLLOWUPS, INTERESTS) */}
         <div className="lg:col-span-2 space-y-6">
-          {/* ✅ FIX: Controlled Tabs */}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="timeline">⏱️ Timeline ({filteredActivities.length})</TabsTrigger>
-              <TabsTrigger value="followups">📅 Follow-up ({followups.length})</TabsTrigger>
-              <TabsTrigger value="interests">🏠 Minat ({lead.interests?.length || 0})</TabsTrigger>
+            <TabsList className="grid w-full grid-cols-3 h-10">
+              <TabsTrigger value="timeline" className="text-xs font-medium">⏱️ Timeline ({filteredActivities.length})</TabsTrigger>
+              <TabsTrigger value="followups" className="text-xs font-medium">📅 Follow-up ({followups.length})</TabsTrigger>
+              <TabsTrigger value="interests" className="text-xs font-medium">🏠 Minat ({lead.interests?.length || 0})</TabsTrigger>
             </TabsList>
 
-            {/* ===== TIMELINE TAB ===== */}
+            {/* TAB TIMELINE */}
             <TabsContent value="timeline" className="mt-4">
-              <Card>
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-base">Riwayat Aktivitas</CardTitle>
-                    <div className="flex items-center gap-2">
-                      <Filter className="h-4 w-4 text-muted-foreground" />
-                      <Select
-                        value={activityFilter}
-                        onValueChange={(val) => setActivityFilter(val || "all")}
-                      >
-                        <SelectTrigger className="w-[140px] h-8 text-xs">
-                          <SelectValue placeholder="Filter" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">Semua</SelectItem>
-                          {activityTypes.map((type) => (
-                            <SelectItem key={type} value={type}>
-                              {getActivityTypeLabel(type)}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  <CardDescription>Semua interaksi dengan lead ini</CardDescription>
+              <Card className="border shadow-xs">
+                <CardHeader className="p-4 pb-2 border-b flex flex-row items-center justify-between">
+                  <CardTitle className="text-sm font-bold">Riwayat Aktivitas</CardTitle>
+                  <Select
+                    value={activityFilter}
+                    onValueChange={(val) => setActivityFilter(val || "all")}
+                  >
+                    <SelectTrigger className="w-[130px] h-7 text-xs">
+                      <SelectValue placeholder="Filter Tipe" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all" className="text-xs">Semua</SelectItem>
+                      <SelectItem value="note" className="text-xs">Catatan</SelectItem>
+                      <SelectItem value="call" className="text-xs">Telepon</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="p-4">
                   {filteredActivities.length === 0 ? (
-                    <p className="text-sm text-muted-foreground text-center py-8">
-                      {activityFilter !== "all"
-                        ? `Tidak ada aktivitas dengan tipe "${getActivityTypeLabel(activityFilter)}"`
-                        : "Belum ada aktivitas. Mulai dengan menambahkan catatan atau follow-up."}
-                    </p>
+                    <p className="text-xs text-muted-foreground text-center py-8">Belum ada riwayat aktivitas.</p>
                   ) : (
-                    <ScrollArea className="h-[500px] pr-4">
+                    <ScrollArea className="h-[400px] pr-4">
                       <div className="relative pl-6 border-l-2 border-muted space-y-6">
-                        {filteredActivities.map((activity) => (
-                          <div key={activity.id} className="relative">
+                        {filteredActivities.map((act) => (
+                          <div key={act.id} className="relative">
                             <div className="absolute -left-[22px] p-1 rounded-full bg-background border-2 border-muted">
-                              {ACTIVITY_ICONS[activity.activity_type] || <Clock className="h-4 w-4 text-muted-foreground" />}
+                              {ACTIVITY_ICONS[act.activity_type] || <Clock className="h-3.5 w-3.5" />}
                             </div>
                             <div className="space-y-1">
-                              <div className="flex items-start justify-between gap-4">
-                                <p className="text-sm font-medium">
-                                  {activity.notes || activity.activity_type}
-                                </p>
-                                <span className="text-xs text-muted-foreground whitespace-nowrap">
-                                  {formatRelativeTime(activity.created_at)}
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                <span className="capitalize">{getActivityTypeLabel(activity.activity_type)}</span>
-                                {activity.user?.full_name && (
-                                  <>
-                                    <span>·</span>
-                                    <span>{activity.user.full_name}</span>
-                                  </>
-                                )}
-                              </div>
+                              <p className="text-xs font-medium leading-relaxed">{act.notes}</p>
+                              <span className="text-[10px] text-muted-foreground">
+                                {formatDistanceToNow(new Date(act.created_at), { addSuffix: true, locale: id })}
+                              </span>
                             </div>
                           </div>
                         ))}
                       </div>
                     </ScrollArea>
                   )}
-                  <Button
-                    variant="outline"
-                    className="w-full mt-4"
-                    onClick={() => setShowAddNote(true)}
-                  >
-                    <Plus className="h-4 w-4 mr-2" />
-                    Tambah Aktivitas
+                  <Button variant="outline" className="w-full mt-4 text-xs h-9 gap-1.5" onClick={() => setShowAddNote(true)}>
+                    <Plus className="h-3.5 w-3.5" /> Tambah Catatan Aktivitas
                   </Button>
                 </CardContent>
               </Card>
             </TabsContent>
 
-            {/* ===== FOLLOWUPS TAB ===== */}
+            {/* TAB FOLLOW-UPS */}
             <TabsContent value="followups" className="mt-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">Daftar Follow-up</CardTitle>
-                  <CardDescription>Jadwal dan riwayat follow-up</CardDescription>
+              <Card className="border shadow-xs">
+                <CardHeader className="p-4 pb-2 border-b">
+                  <CardTitle className="text-sm font-bold">Agenda Follow-up</CardTitle>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="p-4">
                   {followups.length === 0 ? (
-                    <p className="text-sm text-muted-foreground text-center py-8">
-                      Belum ada follow-up. Buat jadwal follow-up sekarang.
-                    </p>
-                  ) : (
-                    <div className="space-y-4">
-                      {followups.map((followup) => (
-                        <div
-                          key={followup.id}
-                          className="flex items-start justify-between p-3 rounded-lg border bg-card/50 hover:bg-card transition"
-                        >
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-2">
-                              <Badge
-  variant={
-    followup.status === "completed"
-      ? "default"
-      : followup.status === "cancelled"
-      ? "destructive"
-      : "secondary"
-  }
-  className={cn(
-    "text-xs",
-    followup.status === "pending" && "bg-amber-100 text-amber-700 border-amber-200",
-    followup.status === "completed" && "bg-emerald-100 text-emerald-700 border-emerald-200",
-    followup.status === "cancelled" && "bg-rose-100 text-rose-700 border-rose-200"
-  )}
->
-  {followup.status === "pending"
-    ? "⏳ Pending"
-    : followup.status === "completed"
-    ? "✅ Selesai"
-    : "❌ Dibatalkan"}
-</Badge>
-                              <span className="text-sm font-medium">{formatDate(followup.followup_date)}</span>
-                            </div>
-                            {followup.notes && <p className="text-sm text-muted-foreground">{followup.notes}</p>}
-                            {followup.assigned_user && (
-                              <p className="text-xs text-muted-foreground">
-                                Assigned: {followup.assigned_user.full_name}
-                              </p>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-1">
-                            {followup.status === "pending" && (
-                              <>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8 text-green-500 hover:text-green-600"
-                                  onClick={() => handleUpdateFollowupStatus(followup.id, "completed")}
-                                  disabled={saving}
-                                >
-                                  <CheckCircle className="h-4 w-4" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8 text-rose-500 hover:text-rose-600"
-                                  onClick={() => handleUpdateFollowupStatus(followup.id, "cancelled")}
-                                  disabled={saving}
-                                >
-                                  <XCircle className="h-4 w-4" />
-                                </Button>
-                              </>
-                            )}
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                              onClick={() => handleDeleteFollowup(followup.id)}
-                              disabled={saving}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  <Button
-                    variant="outline"
-                    className="w-full mt-4"
-                    onClick={() => setShowAddFollowup(true)}
-                  >
-                    <Plus className="h-4 w-4 mr-2" />
-                    Tambah Follow-up
-                  </Button>
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            {/* ===== INTERESTS TAB ===== */}
-            <TabsContent value="interests" className="mt-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">Properti yang Diminati</CardTitle>
-                  <CardDescription>Daftar properti yang diminati lead ini</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {lead.interests?.length === 0 ? (
-                    <p className="text-sm text-muted-foreground text-center py-8">
-                      Belum ada properti yang diminati.
-                    </p>
+                    <p className="text-xs text-muted-foreground text-center py-8">Belum ada agenda follow-up.</p>
                   ) : (
                     <div className="space-y-3">
-                      {lead.interests?.map((interest) => (
-                        <div
-                          key={interest.id}
-                          className="flex items-center justify-between p-3 rounded-lg border"
-                        >
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-2">
-                              <Building2 className="h-4 w-4 text-muted-foreground" />
-                              <span className="font-medium">
-                                {interest.property?.title || "Properti tidak ditemukan"}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                              <span>{interest.property?.listing_code}</span>
-                              {interest.interest_level && (
-                                <Badge variant="outline" className="text-xs">
-                                  Level: {interest.interest_level}
-                                </Badge>
-                              )}
-                              {interest.property?.price?.selling_price && (
-                                <span>
-                                  Rp {interest.property.price.selling_price.toLocaleString("id-ID")}
-                                </span>
-                              )}
-                            </div>
-                            {interest.notes && <p className="text-sm text-muted-foreground">{interest.notes}</p>}
+                      {followups.map((f) => (
+                        <div key={f.id} className="flex items-center justify-between p-3 rounded-xl border text-xs">
+                          <div>
+                            <Badge className="text-[10px] mb-1">{f.status}</Badge>
+                            <p className="font-semibold">{format(new Date(f.followup_date), "dd MMM yyyy, HH:mm", { locale: id })}</p>
+                            {f.notes && <p className="text-muted-foreground mt-0.5">{f.notes}</p>}
                           </div>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                            onClick={async () => {
-                              if (confirm("Hapus interest ini?")) {
-                                await crmService.removeInterest(interest.id);
-                                fetchData();
-                              }
-                            }}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
                         </div>
                       ))}
                     </div>
                   )}
-                  <Button
-                    variant="outline"
-                    className="w-full mt-4"
-                    onClick={() => setShowAddInterest(true)}
-                  >
-                    <Plus className="h-4 w-4 mr-2" />
-                    Tambah Minat Properti
+                  <Button variant="outline" className="w-full mt-4 text-xs h-9 gap-1.5" onClick={() => setShowAddFollowup(true)}>
+                    <Plus className="h-3.5 w-3.5" /> Buat Follow-up Baru
+                  </Button>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* TAB INTERESTS */}
+            <TabsContent value="interests" className="mt-4">
+              <Card className="border shadow-xs">
+                <CardHeader className="p-4 pb-2 border-b">
+                  <CardTitle className="text-sm font-bold">Minat Properti</CardTitle>
+                </CardHeader>
+                <CardContent className="p-4">
+                  {!lead.interests || lead.interests.length === 0 ? (
+                    <p className="text-xs text-muted-foreground text-center py-8">Belum ada properti terpilih.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {lead.interests.map((i: any) => (
+                        <div key={i.id} className="p-3 rounded-xl border text-xs flex justify-between items-center">
+                          <div>
+                            <p className="font-bold">{i.property?.title || "Properti"}</p>
+                            <p className="text-muted-foreground">Kode: {i.property?.listing_code || "-"}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <Button variant="outline" className="w-full mt-4 text-xs h-9 gap-1.5" onClick={() => setShowAddInterest(true)}>
+                    <Plus className="h-3.5 w-3.5" /> Tambah Minat Properti
                   </Button>
                 </CardContent>
               </Card>
@@ -972,222 +701,118 @@ export default function LeadDetailPage() {
         </div>
       </div>
 
-      {/* ===== DIALOGS ===== */}
-
-      {/* Add Followup Dialog */}
+      {/* DIALOG TAMBAH FOLLOWUP */}
       <Dialog open={showAddFollowup} onOpenChange={setShowAddFollowup}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-md rounded-2xl text-xs">
           <DialogHeader>
-            <DialogTitle>Jadwalkan Follow-up</DialogTitle>
-            <DialogDescription>Buat jadwal follow-up untuk lead ini</DialogDescription>
+            <DialogTitle className="text-sm font-bold">Jadwalkan Follow-up</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label>Tanggal & Waktu</Label>
-              <Input
-                type="datetime-local"
-                value={newFollowup.followup_date}
-                onChange={(e) => setNewFollowup({ ...newFollowup, followup_date: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Catatan</Label>
-              <Textarea
-                placeholder="Catatan follow-up..."
-                value={newFollowup.notes}
-                onChange={(e) => setNewFollowup({ ...newFollowup, notes: e.target.value })}
-                rows={3}
-              />
-            </div>
+          <div className="space-y-3 py-2">
+            <Input
+              type="datetime-local"
+              className="h-9 text-xs"
+              value={newFollowup.followup_date}
+              onChange={(e) => setNewFollowup({ ...newFollowup, followup_date: e.target.value })}
+            />
+            <Textarea
+              placeholder="Catatan follow-up..."
+              className="text-xs"
+              value={newFollowup.notes}
+              onChange={(e) => setNewFollowup({ ...newFollowup, notes: e.target.value })}
+              rows={3}
+            />
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAddFollowup(false)}>Batal</Button>
-            <Button onClick={handleAddFollowup} disabled={saving}>
-              {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+            <Button size="sm" onClick={handleAddFollowup} disabled={saving} className="bg-emerald-600 text-white text-xs">
               Simpan
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Add Note Dialog */}
+      {/* DIALOG TAMBAH CATATAN */}
       <Dialog open={showAddNote} onOpenChange={setShowAddNote}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-md rounded-2xl text-xs">
           <DialogHeader>
-            <DialogTitle>Tambah Catatan</DialogTitle>
-            <DialogDescription>Tambahkan catatan atau aktivitas baru</DialogDescription>
+            <DialogTitle className="text-sm font-bold">Tambah Catatan</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label>Catatan</Label>
-              <Textarea
-                placeholder="Tulis catatan..."
-                value={newNote}
-                onChange={(e) => setNewNote(e.target.value)}
-                rows={4}
-              />
-            </div>
-          </div>
+          <Textarea
+            placeholder="Tulis catatan..."
+            className="text-xs"
+            value={newNote}
+            onChange={(e) => setNewNote(e.target.value)}
+            rows={4}
+          />
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAddNote(false)}>Batal</Button>
-            <Button onClick={handleAddNote} disabled={saving}>
-              {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+            <Button size="sm" onClick={handleAddNote} disabled={saving} className="bg-emerald-600 text-white text-xs">
               Simpan
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Add Interest Dialog */}
+      {/* DIALOG TAMBAH MINAT */}
       <Dialog open={showAddInterest} onOpenChange={setShowAddInterest}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-md rounded-2xl text-xs">
           <DialogHeader>
-            <DialogTitle>Tambah Minat Properti</DialogTitle>
-            <DialogDescription>Pilih properti yang diminati oleh lead</DialogDescription>
+            <DialogTitle className="text-sm font-bold">Tambah Minat Properti</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label>Pilih Properti</Label>
-              <Select
-                value={newInterest.property_id}
-                onValueChange={(val) => setNewInterest({ ...newInterest, property_id: val || "" })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Pilih properti" />
-                </SelectTrigger>
-                <SelectContent>
-                  {properties.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.title} ({p.listing_code})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Level Minat</Label>
-              <Select
-                value={newInterest.interest_level}
-                onValueChange={(val) => setNewInterest({ ...newInterest, interest_level: val || "" })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Pilih level" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="high">Tinggi</SelectItem>
-                  <SelectItem value="medium">Sedang</SelectItem>
-                  <SelectItem value="low">Rendah</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Catatan</Label>
-              <Textarea
-                placeholder="Catatan tambahan..."
-                value={newInterest.notes}
-                onChange={(e) => setNewInterest({ ...newInterest, notes: e.target.value })}
-                rows={2}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAddInterest(false)}>Batal</Button>
-            <Button onClick={handleAddInterest} disabled={saving}>
-              {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-              Simpan
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Edit Lead Dialog */}
-      <Dialog open={showEditLead} onOpenChange={setShowEditLead}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Edit Lead</DialogTitle>
-            <DialogDescription>Update informasi lead</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label>Sumber</Label>
-              <Input
-                placeholder="Sumber lead..."
-                value={editLeadData.source}
-                onChange={(e) => setEditLeadData({ ...editLeadData, source: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Budget</Label>
-              <Input
-                type="number"
-                placeholder="Budget..."
-                value={editLeadData.budget}
-                onChange={(e) => setEditLeadData({ ...editLeadData, budget: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Tipe Minat</Label>
-              <Input
-                placeholder="Tipe minat..."
-                value={editLeadData.interest_type}
-                onChange={(e) => setEditLeadData({ ...editLeadData, interest_type: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Catatan</Label>
-              <Textarea
-                placeholder="Catatan..."
-                value={editLeadData.notes}
-                onChange={(e) => setEditLeadData({ ...editLeadData, notes: e.target.value })}
-                rows={3}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowEditLead(false)}>Batal</Button>
-            <Button
-              onClick={async () => {
-                if (!lead) return;
-                setSaving(true);
-                try {
-                  await crmService.updateLead(lead.id, {
-                    source: editLeadData.source || undefined,
-                    budget: editLeadData.budget ? parseFloat(editLeadData.budget) : undefined,
-                    interest_type: editLeadData.interest_type || undefined,
-                    notes: editLeadData.notes || undefined,
-                  });
-                  toast.success("Lead berhasil diupdate");
-                  setShowEditLead(false);
-                  fetchData();
-                } catch (error) {
-                  toast.error("Gagal update lead");
-                } finally {
-                  setSaving(false);
-                }
-              }}
-              disabled={saving}
+          <div className="space-y-3 py-2">
+            <Select
+              value={newInterest.property_id}
+              onValueChange={(val) => setNewInterest({ ...newInterest, property_id: val || "" })}
             >
-              {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              <SelectTrigger className="h-9 text-xs">
+                <SelectValue placeholder="Pilih properti" />
+              </SelectTrigger>
+              <SelectContent>
+                {properties.map((p) => (
+                  <SelectItem key={p.id} value={p.id} className="text-xs">
+                    {p.title}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select
+              value={newInterest.interest_level}
+              onValueChange={(val) => setNewInterest({ ...newInterest, interest_level: val || "" })}
+            >
+              <SelectTrigger className="h-9 text-xs">
+                <SelectValue placeholder="Level minat" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="high" className="text-xs">Tinggi</SelectItem>
+                <SelectItem value="medium" className="text-xs">Sedang</SelectItem>
+                <SelectItem value="low" className="text-xs">Rendah</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Textarea
+              placeholder="Catatan tambahan..."
+              className="text-xs"
+              value={newInterest.notes}
+              onChange={(e) => setNewInterest({ ...newInterest, notes: e.target.value })}
+              rows={2}
+            />
+          </div>
+          <DialogFooter>
+            <Button size="sm" onClick={handleAddInterest} disabled={saving} className="bg-emerald-600 text-white text-xs">
               Simpan
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Delete Lead Dialog */}
+      {/* DIALOG HAPUS */}
       <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-md rounded-2xl text-xs">
           <DialogHeader>
-            <DialogTitle>⚠️ Hapus Lead</DialogTitle>
-            <DialogDescription>
-              Apakah Anda yakin ingin menghapus lead "{lead.contact?.full_name || "ini"}"?
-              Tindakan ini tidak dapat dibatalkan.
-            </DialogDescription>
+            <DialogTitle className="text-sm font-bold text-rose-600">Hapus Lead?</DialogTitle>
+            <DialogDescription className="text-xs">Tindakan ini permanen dan tidak dapat dibatalkan.</DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>Batal</Button>
-            <Button variant="destructive" onClick={handleDeleteLead} disabled={saving}>
-              {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+            <Button variant="destructive" size="sm" onClick={handleDeleteLead} disabled={saving} className="text-xs">
               Hapus
             </Button>
           </DialogFooter>

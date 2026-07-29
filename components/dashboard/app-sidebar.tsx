@@ -32,6 +32,7 @@ import {
   Bell,
   CalendarCheck,
   Plus,
+  Calculator,
 } from "lucide-react";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -66,7 +67,7 @@ interface NavItem {
 }
 
 // ============================================================
-// NAVIGATION ITEMS
+// NAVIGATION ITEMS (KONTROL AKSES ROLE)
 // ============================================================
 
 const NAV_ITEMS: NavItem[] = [
@@ -80,15 +81,24 @@ const NAV_ITEMS: NavItem[] = [
     label: "Properties",
     icon: Home,
     href: "/properties",
-    createHref: "/properties/create",
+    createHref: "/properties/create", // Tombol create akan otomatis disembunyikan untuk viewer di logic render
+    roles: ["super_admin", "admin", "agent", "marketing", "viewer"],
+  },
+  {
+    label: "Kalkulator KPR",
+    icon: Calculator,
+    href: "/kpr-calculator",
+    roles: ["super_admin", "admin", "agent", "marketing", "viewer"],
   },
   {
     label: "CRM",
     icon: Users,
     href: "/crm",
+    // 🔒 Viewer tidak diizinkan mengakses menu CRM
+    roles: ["super_admin", "admin", "agent", "marketing"],
     children: [
-      { label: "Leads", icon: Users, href: "/crm/leads" },
-      { label: "Follow-ups", icon: CalendarCheck, href: "/crm/followups" },
+      { label: "Leads", icon: Users, href: "/crm/leads", roles: ["super_admin", "admin", "agent", "marketing"] },
+      { label: "Follow-ups", icon: CalendarCheck, href: "/crm/followups", roles: ["super_admin", "admin", "agent", "marketing"] },
     ],
   },
   {
@@ -123,7 +133,7 @@ const NAV_ITEMS: NavItem[] = [
     icon: Shield,
     href: "/admin",
     roles: ["super_admin", "admin"],
-    children: [{ label: "User Management", icon: Users, href: "/admin/users" }],
+    children: [{ label: "User Management", icon: Users, href: "/admin/users", roles: ["super_admin", "admin"] }],
   },
   {
     label: "Notifikasi",
@@ -144,11 +154,11 @@ const NAV_ITEMS: NavItem[] = [
 ];
 
 // ============================================================
-// MAIN COMPONENT - 🔥 TAMBAHKAN PROPS
+// MAIN COMPONENT
 // ============================================================
 
 interface AppSidebarProps {
-  onClose?: () => void; // 🔥 Untuk menutup sheet mobile
+  onClose?: () => void;
 }
 
 export function AppSidebar({ onClose }: AppSidebarProps) {
@@ -167,14 +177,13 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
   });
 
   const isLoading = roleLoading || userLoading;
+  const isViewer = userRole === "viewer";
 
-  // 🔥 Fungsi untuk navigasi + tutup sheet
   const navigateAndClose = (href: string) => {
     router.push(href);
     if (onClose) onClose();
   };
 
-  // Load user data
   useEffect(() => {
     async function loadUserData() {
       if (!user) return;
@@ -185,22 +194,15 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
           .eq("id", user.id)
           .maybeSingle();
 
-        if (error) {
-          console.warn("Error loading user data:", error);
+        if (error || !data) {
           setUserFullName(user.email?.split("@")[0] || "User");
           setUserAvatar("");
           return;
         }
 
-        if (data) {
-          setUserFullName(data.full_name || user.email?.split("@")[0] || "User");
-          setUserAvatar(data.avatar_url || "");
-        } else {
-          setUserFullName(user.email?.split("@")[0] || "User");
-          setUserAvatar("");
-        }
+        setUserFullName(data.full_name || user.email?.split("@")[0] || "User");
+        setUserAvatar(data.avatar_url || "");
       } catch (err) {
-        console.warn("Failed to load user data:", err);
         setUserFullName(user.email?.split("@")[0] || "User");
         setUserAvatar("");
       }
@@ -208,7 +210,6 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
     loadUserData();
   }, [user]);
 
-  // Logout
   const handleLogout = async () => {
     try {
       await supabase.auth.signOut();
@@ -220,10 +221,8 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
     }
   };
 
-  // Toggle collapse
   const toggleCollapse = () => setCollapsed(!collapsed);
 
-  // Toggle expand
   const toggleExpand = (key: string) => {
     setExpandedItems((prev) => ({
       ...prev,
@@ -231,7 +230,6 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
     }));
   };
 
-  // Check active
   const isActive = (item: NavItem) => {
     if (item.exact) {
       return pathname === item.href;
@@ -274,7 +272,9 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
     const key = item.label.toLowerCase().replace(/\s/g, "_");
     const isExpanded = expandedItems[key] ?? false;
     const hasChildActive = hasActiveChild(item);
-    const hasCreateButton = !!item.createHref;
+    
+    // 🔒 Sembunyikan tombol create (+) jika user adalah viewer
+    const hasCreateButton = !!item.createHref && !isViewer;
 
     const visibleChildren = hasChildren
       ? item.children!.filter(canSeeItem)
@@ -285,26 +285,23 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
       return (
         <TooltipProvider key={item.href}>
           <Tooltip>
-            {/* @ts-ignore - asChild prop is supported by base-ui but types are not updated */}
-            <TooltipTrigger asChild>
-              <button
-                onClick={() => navigateAndClose(item.href)}
-                className={cn(
-                  "flex items-center justify-center w-full h-10 rounded-lg transition-all duration-200 relative",
-                  active || hasChildActive
-                    ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400"
-                    : "hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100"
-                )}
-              >
-                <item.icon size={20} />
-                {hasCreateButton && (
-                  <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-emerald-500 text-white flex items-center justify-center text-[8px] font-bold">
-                    +
-                  </span>
-                )}
-              </button>
+            <TooltipTrigger
+              onClick={() => navigateAndClose(item.href)}
+              className={cn(
+                "flex items-center justify-center w-full h-10 rounded-lg transition-all duration-200 relative cursor-pointer",
+                active || hasChildActive
+                  ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400 font-bold"
+                  : "hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100"
+              )}
+            >
+              <item.icon size={20} />
+              {hasCreateButton && !isViewer && (
+                <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-emerald-500 text-white flex items-center justify-center text-[8px] font-bold">
+                  +
+                </span>
+              )}
             </TooltipTrigger>
-            <TooltipContent side="right" className="font-medium">
+            <TooltipContent side="right" className="font-medium text-xs">
               {item.label}
             </TooltipContent>
           </Tooltip>
@@ -325,7 +322,7 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
             className={cn(
               "flex items-center justify-between w-full px-3 py-2.5 rounded-lg transition-all duration-200 text-sm font-medium",
               active || hasChildActive
-                ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+                ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 font-semibold"
                 : "hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100"
             )}
           >
@@ -347,7 +344,7 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
                 className={cn(
                   "flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 text-sm w-full text-left",
                   isActive(child)
-                    ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 font-medium"
+                    ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 font-semibold"
                     : "hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100"
                 )}
               >
@@ -371,7 +368,7 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
           className={cn(
             "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 text-sm font-medium flex-1 w-full text-left",
             active
-              ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+              ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 font-semibold"
               : "hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100"
           )}
         >
@@ -380,7 +377,7 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
           {active && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-emerald-500" />}
         </button>
 
-        {hasCreateButton && (
+        {hasCreateButton && !isViewer && (
           <Button
             variant="ghost"
             size="icon"
@@ -415,7 +412,7 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
           <Skeleton className="h-6 w-16" />
         </div>
         <div className="flex-1 px-3 py-4 space-y-2">
-          {[1, 2, 3, 4, 5].map((i) => (
+          {[1, 2, 3, 4, 5, 6].map((i) => (
             <Skeleton key={i} className="h-10 w-full rounded-lg" />
           ))}
         </div>
@@ -428,17 +425,17 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
   }
 
   // ============================================================
-  // RENDER
+  // MAIN RENDER
   // ============================================================
 
   return (
     <aside
       className={cn(
-        "relative flex flex-col border-r border-slate-200/60 dark:border-slate-800/60 bg-white dark:bg-slate-950 transition-all duration-300 h-screen",
+        "relative flex flex-col border-r border-slate-200/60 dark:border-slate-800/60 bg-white dark:bg-slate-950 transition-all duration-300 h-screen shrink-0",
         collapsed ? "w-16" : "w-64"
       )}
     >
-      {/* Header */}
+      {/* Header Brand */}
       <div
         className={cn(
           "flex items-center h-16 px-4 border-b border-slate-200/60 dark:border-slate-800/60",
@@ -448,7 +445,7 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
         {!collapsed && (
           <button
             onClick={() => navigateAndClose("/dashboard")}
-            className="flex items-center gap-2.5"
+            className="flex items-center gap-2.5 text-left"
           >
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center shadow-md shadow-emerald-500/25">
               <span className="text-white font-bold text-sm">IP</span>
@@ -478,7 +475,7 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
           className={cn(
             "h-8 w-8 text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800",
             collapsed &&
-              "absolute -right-4 top-4 rounded-full border border-slate-200/60 dark:border-slate-700/60 bg-white dark:bg-slate-950 shadow-md hover:shadow-lg"
+              "absolute -right-4 top-4 rounded-full border border-slate-200/60 dark:border-slate-700/60 bg-white dark:bg-slate-950 shadow-md hover:shadow-lg z-20"
           )}
           onClick={toggleCollapse}
         >
@@ -486,66 +483,69 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
         </Button>
       </div>
 
-      {/* Navigation */}
+      {/* Navigation Links */}
       <ScrollArea className="flex-1 px-3 py-4">
         <nav className="space-y-1">
           {filteredNavItems.map((item) => renderNavItem(item))}
         </nav>
       </ScrollArea>
 
-      {/* Bottom Section */}
-      <div className="border-t border-slate-200/60 dark:border-slate-800/60 p-3 space-y-3">
+      {/* Bottom Section (Dark Mode, Profile, Logout) */}
+      <div className="border-t border-slate-200/60 dark:border-slate-800/60 p-3 space-y-2">
+        {/* Toggle Theme */}
         <Button
           variant="ghost"
           size={collapsed ? "icon" : "default"}
           className={cn(
-            "w-full justify-start gap-3 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800",
+            "w-full justify-start gap-3 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs h-9",
             collapsed && "justify-center px-0"
           )}
           onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
         >
           {theme === "dark" ? <Sun size={18} className="text-amber-500" /> : <Moon size={18} className="text-slate-500" />}
           {!collapsed && (
-            <span className="text-sm">{theme === "dark" ? "Light Mode" : "Dark Mode"}</span>
+            <span className="text-xs">{theme === "dark" ? "Mode Terang" : "Mode Gelap"}</span>
           )}
         </Button>
 
+        {/* Profil User */}
         <button
           className={cn(
-            "flex items-center gap-3 p-2 rounded-lg transition-colors w-full text-left hover:bg-slate-100 dark:hover:bg-slate-800 group",
+            "flex items-center gap-2.5 p-2 rounded-lg transition-colors w-full text-left hover:bg-slate-100 dark:hover:bg-slate-800 group",
             collapsed && "justify-center"
           )}
           onClick={() => navigateAndClose("/profile")}
         >
-          <Avatar className="h-8 w-8 ring-2 ring-emerald-200 dark:ring-emerald-800/60 ring-offset-1 ring-offset-white dark:ring-offset-slate-950">
+          <Avatar className="h-7 w-7 ring-2 ring-emerald-200 dark:ring-emerald-800/60 ring-offset-1 ring-offset-white dark:ring-offset-slate-950">
             <AvatarImage src={userAvatar || undefined} />
-            <AvatarFallback className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400 text-xs font-semibold">
+            <AvatarFallback className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400 text-[10px] font-bold">
               {getInitials(userFullName)}
             </AvatarFallback>
           </Avatar>
           {!collapsed && (
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">
+              <p className="text-xs font-semibold text-slate-700 dark:text-slate-200 truncate">
                 {userFullName}
               </p>
-              <p className="text-xs text-slate-400 dark:text-slate-500 truncate">
+              <p className="text-[10px] text-slate-400 dark:text-slate-500 truncate">
                 {user?.email}
               </p>
             </div>
           )}
         </button>
 
+        {/* Logout Button */}
         <Button
           variant="ghost"
           size={collapsed ? "icon" : "default"}
           className={cn(
-            "w-full justify-start gap-3 text-slate-500 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30",
+            "w-full justify-start gap-3 text-slate-500 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 text-xs h-9",
             collapsed && "justify-center px-0"
           )}
           onClick={handleLogout}
         >
           <LogOut size={18} />
-          {!collapsed && <span className="text-sm">Logout</span>}
+          {!collapsed && <span className="text-xs">Keluar Log</span>}
         </Button>
       </div>
     </aside>

@@ -18,6 +18,7 @@ import {
   Check,
   Sparkles,
   UserPlus,
+  Lock,
 } from "lucide-react";
 
 import { crmService } from "@/services/crm.service";
@@ -104,6 +105,11 @@ export default function CreateLeadPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
+  // User State
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [currentUserRole, setCurrentUserRole] = useState<string>("");
+  const [currentUserName, setCurrentUserName] = useState<string>("");
+
   // Data options
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -147,6 +153,9 @@ export default function CreateLeadPage() {
   // Multi-select properties
   const [selectedProperties, setSelectedProperties] = useState<string[]>([]);
 
+  // Check if current user is admin
+  const isAdmin = currentUserRole === "admin" || currentUserRole === "super_admin";
+
   // ===== CLICK OUTSIDE EVENT LISTENER =====
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -167,11 +176,38 @@ export default function CreateLeadPage() {
     };
   }, []);
 
-  // ===== FETCH INITIAL DATA =====
+  // ===== FETCH INITIAL DATA & CHECK USER SESSION =====
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
       try {
+        // 1. Ambil data sesi & role user saat ini
+        const { data: { user } } = await supabase.auth.getUser();
+        let loggedInRole = "agent";
+        let loggedInName = "Agent";
+
+        if (user) {
+          setCurrentUserId(user.id);
+          const { data: userData } = await supabase
+            .from("users")
+            .select("role, full_name, email")
+            .eq("id", user.id)
+            .maybeSingle();
+
+          loggedInRole = (userData?.role || user.user_metadata?.role || "agent").toLowerCase();
+          loggedInName = userData?.full_name || user.email || "Agent Anda";
+
+          setCurrentUserRole(loggedInRole);
+          setCurrentUserName(loggedInName);
+
+          // Jika bukan admin (Agent biasa), kunci 'assigned_to' ke ID akunnya sendiri secara otomatis
+          const userIsAdmin = loggedInRole === "admin" || loggedInRole === "super_admin";
+          if (!userIsAdmin) {
+            setForm((prev) => ({ ...prev, assigned_to: user.id }));
+          }
+        }
+
+        // 2. Fetch Opsi Kontak, Agent, dan Properti
         const [contactsRes, agentsData, propertiesData] = await Promise.all([
           supabase.from("crm_contacts").select("id, full_name, phone, email").order("full_name"),
           crmService.getAgents(),
@@ -192,7 +228,7 @@ export default function CreateLeadPage() {
     fetchData();
   }, []);
 
-  // Helper Find Object Terpilih (Mencegah UUID Acak Muncul)
+  // Helper Find Object Terpilih
   const selectedContact = useMemo(() => {
     return contacts.find((c) => c.id === form.contact_id);
   }, [contacts, form.contact_id]);
@@ -264,9 +300,12 @@ export default function CreateLeadPage() {
 
     setQuickContactSaving(true);
     try {
+      const generatedCode = `CNT-${Math.floor(100000 + Math.random() * 900000)}`;
+
       const { data, error } = await supabase
         .from("crm_contacts")
         .insert({
+          contact_code: generatedCode,
           full_name: quickContactForm.full_name,
           phone: quickContactForm.phone || null,
           email: quickContactForm.email || null,
@@ -282,7 +321,7 @@ export default function CreateLeadPage() {
       setIsQuickContactOpen(false);
       setQuickContactForm({ full_name: "", phone: "", email: "" });
     } catch (err: any) {
-      toast.error("Gagal menambah kontak baru: " + err.message);
+      toast.error("Gagal menambah kontak baru: " + (err.message || err));
     } finally {
       setQuickContactSaving(false);
     }
@@ -298,10 +337,13 @@ export default function CreateLeadPage() {
 
     setSaving(true);
     try {
-      // 1. Buat lead baru (tanpa properti 'notes' yang tidak dikenal oleh type definition)
+      // Pastikan assigned_to terisi ID agent saat ini bila bukan admin
+      const assignedToId = isAdmin ? (form.assigned_to || undefined) : (currentUserId || undefined);
+
+      // 1. Buat lead baru
       const newLead = await crmService.createLead({
         contact_id: form.contact_id,
-        assigned_to: form.assigned_to || undefined,
+        assigned_to: assignedToId,
         source: form.source || undefined,
         status: form.status as any,
         interest_type: form.interest_type || undefined,
@@ -309,18 +351,19 @@ export default function CreateLeadPage() {
         property_ids: selectedProperties.length > 0 ? selectedProperties : undefined,
       });
 
-      // 2. Simpan catatan (notes) sebagai follow-up awal
+      // 2. Simpan catatan (notes) sebagai follow-up awal jika diisi
       if (form.notes && newLead?.id) {
         try {
           await crmService.createFollowup({
             lead_id: newLead.id,
-            assigned_to: form.assigned_to || "",
+            assigned_to: assignedToId || "",
             followup_date: new Date().toISOString(),
             notes: form.notes,
-            // Hapus 'status: "pending",' karena tidak ada di dalam tipe data createFollowup
-          });
-        } catch (followupErr) {
+            created_by: currentUserId || undefined,
+          } as any);
+        } catch (followupErr: any) {
           console.error("Gagal membuat follow-up awal:", followupErr);
+          toast.warning("Lead berhasil dibuat, namun catatan awal gagal disimpan: " + (followupErr.message || followupErr));
         }
       }
 
@@ -336,7 +379,6 @@ export default function CreateLeadPage() {
       setSaving(false);
     }
   };
-
   if (loading) {
     return (
       <div className="space-y-6 max-w-3xl mx-auto pb-12">
@@ -387,7 +429,7 @@ export default function CreateLeadPage() {
           </CardHeader>
 
           <CardContent className="p-5 sm:p-6 space-y-5">
-            {/* 1. PILIH KONTAK (MENGGUNAKAN DIV SEBAGAI TRIGGER) */}
+            {/* 1. PILIH KONTAK */}
             <div className="space-y-2 relative" ref={contactRef}>
               <div className="flex items-center justify-between">
                 <Label className="text-xs font-bold text-foreground">
@@ -404,7 +446,6 @@ export default function CreateLeadPage() {
                 </Button>
               </div>
 
-              {/* Trigger menggunakan DIV (Bukan Button agar tidak bertabrakan di HTML) */}
               <div
                 role="button"
                 tabIndex={0}
@@ -479,71 +520,93 @@ export default function CreateLeadPage() {
               )}
             </div>
 
-            {/* 2. ASSIGN TO AGENT */}
+            {/* 2. ASSIGN TO AGENT (KONDISIONAL: LOCKED UNTUK AGENT, DROPDOWN UNTUK ADMIN) */}
             <div className="space-y-2 relative" ref={agentRef}>
               <Label className="text-xs font-bold text-foreground">
                 Penanggung Jawab (Agent In-Charge)
               </Label>
-              <div
-                role="button"
-                tabIndex={0}
-                onClick={() => setIsAgentOpen(!isAgentOpen)}
-                onKeyDown={(e) => e.key === "Enter" && setIsAgentOpen(!isAgentOpen)}
-                className="w-full flex items-center justify-between h-10 px-3 rounded-md border border-input bg-background text-xs cursor-pointer hover:border-blue-500 transition focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                {selectedAgent ? (
-                  <span className="font-semibold text-foreground flex items-center gap-2 truncate">
-                    <UserCheck className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                    {selectedAgent.full_name || selectedAgent.email}
-                  </span>
-                ) : (
-                  <span className="text-muted-foreground">Pilih Agent (Opsional)</span>
-                )}
-                <ChevronDown className="h-4 w-4 opacity-50 shrink-0" />
-              </div>
 
-              {/* Floating Agent Dropdown Menu */}
-              {isAgentOpen && (
-                <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-popover border border-border rounded-xl shadow-xl p-2 space-y-1">
-                  <div className="relative mb-2">
-                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                    <Input
-                      placeholder="Cari nama agent..."
-                      value={agentSearch}
-                      onChange={(e) => setAgentSearch(e.target.value)}
-                      className="pl-8 h-8 text-xs"
-                      autoFocus
-                    />
+              {!isAdmin ? (
+                /* 🔒 TAMPILAN TERKUNCI KHUSUS UNTUK ROLE AGENT */
+                <div className="space-y-1">
+                  <div className="w-full flex items-center justify-between h-10 px-3 rounded-md border border-input bg-muted/50 text-xs cursor-not-allowed select-none">
+                    <span className="font-semibold text-foreground flex items-center gap-2 truncate">
+                      <UserCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                      {currentUserName}
+                    </span>
+                    <Badge variant="outline" className="text-[10px] bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 flex items-center gap-1">
+                      <Lock className="w-2.5 h-2.5" /> Akun Anda (Otomatis)
+                    </Badge>
                   </div>
-
-                  <div className="max-h-48 overflow-y-auto space-y-1">
-                    <div
-                      onClick={() => {
-                        handleChange("assigned_to", "");
-                        setIsAgentOpen(false);
-                      }}
-                      className="p-2 rounded-lg cursor-pointer text-xs hover:bg-muted text-muted-foreground"
-                    >
-                      -- Belum Diassign --
-                    </div>
-                    {filteredAgents.map((agent) => (
-                      <div
-                        key={agent.id}
-                        onClick={() => {
-                          handleChange("assigned_to", agent.id);
-                          setIsAgentOpen(false);
-                        }}
-                        className={cn(
-                          "flex items-center justify-between p-2 rounded-lg cursor-pointer text-xs hover:bg-muted transition",
-                          form.assigned_to === agent.id && "bg-blue-50 dark:bg-blue-950/40 text-blue-700 font-bold"
-                        )}
-                      >
-                        <span className="font-medium text-foreground">{agent.full_name || agent.email}</span>
-                        {form.assigned_to === agent.id && <Check className="w-4 h-4 text-blue-600 shrink-0" />}
-                      </div>
-                    ))}
-                  </div>
+                  <p className="text-[10px] text-muted-foreground">
+                    Penanggung jawab otomatis ditetapkan ke akun Anda sendiri.
+                  </p>
                 </div>
+              ) : (
+                /* 🔓 TAMPILAN DROPDOWN KHUSUS UNTUK ADMIN / SUPER ADMIN */
+                <>
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setIsAgentOpen(!isAgentOpen)}
+                    onKeyDown={(e) => e.key === "Enter" && setIsAgentOpen(!isAgentOpen)}
+                    className="w-full flex items-center justify-between h-10 px-3 rounded-md border border-input bg-background text-xs cursor-pointer hover:border-blue-500 transition focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    {selectedAgent ? (
+                      <span className="font-semibold text-foreground flex items-center gap-2 truncate">
+                        <UserCheck className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                        {selectedAgent.full_name || selectedAgent.email}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">Pilih Agent (Opsional)</span>
+                    )}
+                    <ChevronDown className="h-4 w-4 opacity-50 shrink-0" />
+                  </div>
+
+                  {/* Floating Agent Dropdown Menu */}
+                  {isAgentOpen && (
+                    <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-popover border border-border rounded-xl shadow-xl p-2 space-y-1">
+                      <div className="relative mb-2">
+                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                        <Input
+                          placeholder="Cari nama agent..."
+                          value={agentSearch}
+                          onChange={(e) => setAgentSearch(e.target.value)}
+                          className="pl-8 h-8 text-xs"
+                          autoFocus
+                        />
+                      </div>
+
+                      <div className="max-h-48 overflow-y-auto space-y-1">
+                        <div
+                          onClick={() => {
+                            handleChange("assigned_to", "");
+                            setIsAgentOpen(false);
+                          }}
+                          className="p-2 rounded-lg cursor-pointer text-xs hover:bg-muted text-muted-foreground"
+                        >
+                          -- Belum Diassign --
+                        </div>
+                        {filteredAgents.map((agent) => (
+                          <div
+                            key={agent.id}
+                            onClick={() => {
+                              handleChange("assigned_to", agent.id);
+                              setIsAgentOpen(false);
+                            }}
+                            className={cn(
+                              "flex items-center justify-between p-2 rounded-lg cursor-pointer text-xs hover:bg-muted transition",
+                              form.assigned_to === agent.id && "bg-blue-50 dark:bg-blue-950/40 text-blue-700 font-bold"
+                            )}
+                          >
+                            <span className="font-medium text-foreground">{agent.full_name || agent.email}</span>
+                            {form.assigned_to === agent.id && <Check className="w-4 h-4 text-blue-600 shrink-0" />}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
             </div>
 
@@ -552,12 +615,12 @@ export default function CreateLeadPage() {
               <div className="space-y-2">
                 <Label className="text-xs font-bold text-foreground">Status Tahapan CRM</Label>
                 <Select
-                    value={form.status}
-                    onValueChange={(val) => handleChange("status", val || "")}
-                  >
-                    <SelectTrigger className="h-10 text-xs bg-background">
-                      <SelectValue placeholder="Pilih status" />
-                    </SelectTrigger>
+                  value={form.status}
+                  onValueChange={(val) => handleChange("status", val || "")}
+                >
+                  <SelectTrigger className="h-10 text-xs bg-background">
+                    <SelectValue placeholder="Pilih status" />
+                  </SelectTrigger>
                   <SelectContent>
                     {statusOptions.map((opt) => (
                       <SelectItem key={opt.value} value={opt.value} className="text-xs">
@@ -576,7 +639,7 @@ export default function CreateLeadPage() {
                 <Label className="text-xs font-bold text-foreground">Sumber Lead (Source)</Label>
                 <Select
                   value={form.source}
-                  onValueChange={(val) => handleChange("source", val || "")} 
+                  onValueChange={(val) => handleChange("source", val || "")}
                 >
                   <SelectTrigger className="h-10 text-xs bg-background">
                     <SelectValue placeholder="Pilih sumber" />

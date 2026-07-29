@@ -2,6 +2,34 @@
 import { GoogleGenAI } from "@google/genai";
 import Groq from "groq-sdk";
 
+// ===== HELPER SANITIZER ANGKA / RUPIAH =====
+/**
+ * Mengonversi string format uang (contoh: "Rp 15.000.000,00" atau "15.000.000")
+ * menjadi integer number murni (contoh: 15000000) agar tidak terjadi bug Rp 0 / NaN.
+ */
+function cleanNumber(val: any): number {
+  if (typeof val === "number") return isNaN(val) ? 0 : Math.round(val);
+  if (!val) return 0;
+
+  let str = String(val).replace(/[^0-9.,]/g, "").trim();
+  if (!str) return 0;
+
+  // Penanganan format angka Indonesia (15.000.000,00) vs Standar (15,000,000.00)
+  if (str.includes(".") && str.includes(",")) {
+    str = str.replace(/\./g, "").replace(",", ".");
+  } else if (str.includes(".")) {
+    const parts = str.split(".");
+    if (parts.length > 2 || (parts.length === 2 && parts[1].length === 3)) {
+      str = str.replace(/\./g, "");
+    }
+  } else if (str.includes(",")) {
+    str = str.replace(",", ".");
+  }
+
+  const parsed = parseFloat(str);
+  return isNaN(parsed) ? 0 : Math.round(parsed);
+}
+
 export class AIService {
   private groq: Groq;
   private gemini: GoogleGenAI;
@@ -21,7 +49,7 @@ export class AIService {
     this.agnesApiUrl = process.env.AGNES_API_URL!;
   }
 
-  // ===== FALLBACK 3 PROVIDER (Teks) =====
+  // ===== FALLBACK 3 PROVIDER (Teks Utama) =====
   /**
    * Generate teks dengan fallback 3 provider: Agnes → Groq → Gemini.
    */
@@ -49,7 +77,7 @@ export class AIService {
     );
   }
 
-  // ===== GROQ =====
+  // ===== GROQ PROVIDER =====
   private async generateGroq(prompt: string, systemPrompt?: string) {
     const messages: Groq.Chat.ChatCompletionMessageParam[] = [];
 
@@ -73,13 +101,17 @@ export class AIService {
     return result;
   }
 
-  // ===== GEMINI (Teks dengan Model Fallback: 3.5-flash-lite -> 2.5-flash) =====
+  // ===== GEMINI PROVIDER (Teks) =====
   private async generateGemini(prompt: string, systemPrompt?: string) {
     const fullPrompt = systemPrompt
       ? `${systemPrompt}\n\nUser: ${prompt}`
       : prompt;
 
-    const modelsToTry = ["gemini-3.5-flash-lite", "gemini-2.5-flash"];
+    const modelsToTry = [
+      "gemini-3.5-flash-lite",
+      "gemini-2.5-flash",
+      "gemini-2.0-flash",
+    ];
     let lastError: any = null;
 
     for (const model of modelsToTry) {
@@ -97,10 +129,14 @@ export class AIService {
       }
     }
 
-    throw new Error(`All Gemini models failed. Last error: ${lastError?.message || "Unknown"}`);
+    throw new Error(
+      `All Gemini models failed. Last error: ${
+        lastError?.message || "Unknown"
+      }`
+    );
   }
 
-  // ===== AGNES AI =====
+  // ===== AGNES AI PROVIDER =====
   private async generateAgnes(prompt: string, systemPrompt?: string) {
     const messages: Array<{ role: string; content: string }> = [];
 
@@ -137,7 +173,114 @@ export class AIService {
     return result;
   }
 
-  // ===== FITUR AI LAINNYA =====
+  // ===== SCAN INVOICE / KUITANSI (GEMINI VISION) =====
+  /**
+   * Menggunakan Gemini Vision untuk membaca foto kuitansi/invoice fisik secara akurat.
+   */
+  async scanInvoice(imageBuffer: Buffer, mimeType: string = "image/jpeg") {
+    const base64 = imageBuffer.toString("base64");
+    const modelsToTry = [
+      "gemini-3.5-flash-lite",
+      "gemini-2.5-flash",
+      "gemini-2.0-flash",
+    ];
+    let lastError: any = null;
+
+    const promptText = `
+Anda adalah pakar OCR akuntansi profesional. Analisis foto invoice / kuitansi / nota / bukti transfer ini dengan sangat teliti.
+Ekstrak informasi dokumen dan kembalikan HANYA dalam format JSON murni tanpa pembungkus markdown:
+
+{
+  "invoice_number": "Nomor invoice / kuitansi. Jika tidak ada, buat format INV-YYYYMMDD",
+  "vendor": "Nama toko, perusahaan penerbit, atau pihak penerima/pembayar",
+  "date": "Tanggal transaksi dalam format YYYY-MM-DD",
+  "total": 15000000,
+  "items": [
+    {
+      "description": "Rincian barang / jenis pembayaran",
+      "qty": 1,
+      "price": 15000000
+    }
+  ]
+}
+
+PETUNJUK KRITIS:
+1. PENTING: Pada field "total" dan "price", tuliskan nilainya sebagai ANGKA MURNI (integer) tanpa tulisan 'Rp', tanpa titik, dan tanpa koma (Contoh: 15000000).
+2. Periksa kata kunci seperti: "Grand Total", "Total", "Jumlah", "Nominal", "Terbilang", atau angka nominal rupiah terbesar yang tertera pada gambar.
+3. Jika kuitansi bersifat umum, buat 1 item berisi deskripsi umum pembayaran tersebut.
+`;
+
+    for (const model of modelsToTry) {
+      try {
+        const response = await this.gemini.models.generateContent({
+          model,
+          contents: [
+            {
+              role: "user",
+              parts: [
+                { text: promptText },
+                {
+                  inlineData: {
+                    mimeType: mimeType,
+                    data: base64,
+                  },
+                },
+              ],
+            },
+          ],
+        });
+
+        const rawText = response.text || "{}";
+        const cleaned = rawText.replace(/```json|```/g, "").trim();
+        const parsedData = JSON.parse(cleaned);
+
+        // Sanitasi output agar angka pasti valid (Integer)
+        const sanitizedResult = {
+          invoice_number:
+            parsedData.invoice_number ||
+            `INV-${Date.now().toString().slice(-6)}`,
+          vendor: parsedData.vendor || "Supplier / Vendor Material",
+          date: parsedData.date || new Date().toISOString().split("T")[0],
+          total: cleanNumber(
+            parsedData.total || parsedData.amount || parsedData.grand_total
+          ),
+          items: Array.isArray(parsedData.items)
+            ? parsedData.items.map((item: any) => ({
+                description:
+                  item.description || "Pembayaran Transaksi Invoice",
+                qty: cleanNumber(item.qty) || 1,
+                price: cleanNumber(item.price || item.total),
+              }))
+            : [],
+        };
+
+        // Jika items kosong tapi total ada, buat 1 item default
+        if (sanitizedResult.items.length === 0 && sanitizedResult.total > 0) {
+          sanitizedResult.items.push({
+            description: "Pembayaran Transaksi Invoice",
+            qty: 1,
+            price: sanitizedResult.total,
+          });
+        }
+
+        return sanitizedResult;
+      } catch (error) {
+        console.warn(
+          `Gemini model [${model}] failed for invoice scan, trying next...`,
+          error
+        );
+        lastError = error;
+      }
+    }
+
+    throw new Error(
+      `Failed to scan invoice across all Gemini models. Last error: ${
+        lastError?.message || "Unknown"
+      }`
+    );
+  }
+
+  // ===== FITUR AI PROPERTI & CRM =====
 
   async generateFollowup(leadName: string, property: string, status: string) {
     const prompt = `Buat pesan WhatsApp profesional dalam Bahasa Indonesia untuk agen properti. 
@@ -169,52 +312,10 @@ Progres: ${projectData.progress}%
 Status: ${projectData.status}
 Material terakhir: ${JSON.stringify(projectData.materials || [])}
 
-Buat dalam Bahasa Indonesia, fokus pada rekomendasi tindakan jika ada kendala (misal: material menipis, perlu approve invoice). Jangan berikan saran teknis berlebihan, cukup ringkas dan actionable.`;
+Buat dalam Bahasa Indonesia, fokus pada rekomendasi tindakan jika ada kendala (misal: material menipis, perlu approve invoice). Cukup ringkas dan actionable.`;
 
     const { text } = await this.generateWithFallback(prompt);
     return text;
-  }
-
-  /**
-   * Scan invoice dari gambar (Gemini Vision dengan Model Fallback: 3.5-flash-lite -> 2.5-flash)
-   */
-  async scanInvoice(imageBuffer: Buffer, mimeType: string = "image/jpeg") {
-    const base64 = imageBuffer.toString("base64");
-    const modelsToTry = ["gemini-3.5-flash-lite", "gemini-2.5-flash"];
-    let lastError: any = null;
-
-    for (const model of modelsToTry) {
-      try {
-        const response = await this.gemini.models.generateContent({
-          model,
-          contents: [
-            {
-              role: "user",
-              parts: [
-                {
-                  text: "Ekstrak informasi dari invoice ini. Berikan dalam format JSON murni dengan field: invoice_number, vendor, date, total, items (array of {description, qty, price}).",
-                },
-                {
-                  inlineData: {
-                    mimeType: mimeType,
-                    data: base64,
-                  },
-                },
-              ],
-            },
-          ],
-        });
-
-        const rawText = response.text || "{}";
-        const cleaned = rawText.replace(/```json|```/g, "").trim();
-        return JSON.parse(cleaned);
-      } catch (error) {
-        console.warn(`Gemini model [${model}] failed for invoice scan, trying next...`, error);
-        lastError = error;
-      }
-    }
-
-    throw new Error(`Failed to scan invoice across all Gemini models. Last error: ${lastError?.message || "Unknown"}`);
   }
 
   async generateTitle(propertyData: any) {

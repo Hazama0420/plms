@@ -44,6 +44,7 @@
     "react-dropzone": "^17.0.0",
     "react-hook-form": "^7.81.0",
     "react-markdown": "^10.1.0",
+    "react-onesignal": "^3.5.6",
     "recharts": "^3.9.2",
     "remark-gfm": "^4.0.1",
     "shadcn": "^4.13.0",

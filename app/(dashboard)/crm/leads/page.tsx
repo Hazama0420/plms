@@ -16,29 +16,18 @@ import {
   RefreshCw,
   MoreHorizontal,
   Phone,
-  Mail,
   Zap,
   MessageCircle,
-  Calendar,
   Clock,
   User,
   Building2,
   Send,
   Sparkles,
   ChevronRight,
-  Filter,
-  CheckCircle2,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -88,51 +77,20 @@ const statusConfig: Record<string, { label: string; color: string; bg: string }>
   lost: { label: "Lost", color: "text-rose-600 dark:text-rose-400", bg: "bg-rose-100 dark:bg-rose-950/60 border-rose-200" },
 };
 
-const statusOptions = Object.entries(statusConfig).map(([key, val]) => ({
-  value: key,
-  label: val.label,
-}));
-
-// Sample Daily Follow-ups untuk Action Hub
-const todayFollowUpsSample = [
-  {
-    id: "fu-101",
-    client_name: "Hendra Wijaya",
-    phone: "081298765432",
-    time: "09:30",
-    property_interest: "Cluster Green BSD City",
-    budget: 2850000000,
-    notes: "Kirim brosur digital & jadwalkan survei akhir pekan.",
-    status: "pending",
-  },
-  {
-    id: "fu-102",
-    client_name: "Bambang Soetrisno",
-    phone: "081566778899",
-    time: "11:00",
-    property_interest: "Ruko Sentra Fatmawati",
-    budget: 350000000,
-    notes: "Follow up opsi pembayaran KPR Bank BCA.",
-    status: "pending",
-  },
-  {
-    id: "fu-103",
-    client_name: "Siska Dewi",
-    phone: "081311223344",
-    time: "14:15",
-    property_interest: "Apartemen Harmoni Tower B",
-    budget: 850000000,
-    notes: "Konfirmasi tanggal ttd PPJB di kantor pemasaran.",
-    status: "pending",
-  },
-];
-
 export default function LeadsPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
+  const [loadingFollowUps, setLoadingFollowUps] = useState(true);
   const [searchInput, setSearchInput] = useState("");
   const [selectedMobileTab, setSelectedMobileTab] = useState<"followups" | "leads">("followups");
-  
+
+  // State User Session & Role
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [currentUserRole, setCurrentUserRole] = useState<string>("");
+
+  // State Real Follow-ups dari Database
+  const [followUps, setFollowUps] = useState<any[]>([]);
+
   // State Filter & Leads Data
   const [filters, setFilters] = useState({
     status: "all",
@@ -154,7 +112,91 @@ export default function LeadsPage() {
   const [aiGeneratedMessage, setAiGeneratedMessage] = useState("");
   const [generatingAi, setGeneratingAi] = useState(false);
 
-  // Fetch Data Leads
+  // ===== FETCH REAL FOLLOW-UPS DARI DATABASE SUPABASE =====
+  const fetchFollowUpsData = useCallback(async (userId: string | null, role: string) => {
+    setLoadingFollowUps(true);
+    try {
+      let query = supabase
+        .from("crm_followups")
+        .select(`
+          id,
+          lead_id,
+          followup_date,
+          notes,
+          status,
+          assigned_to,
+          crm_leads (
+            id,
+            budget,
+            interest_type,
+            crm_contacts (
+              full_name,
+              phone
+            )
+          )
+        `)
+        .order("followup_date", { ascending: false });
+
+      const isAdmin = role === "admin" || role === "super_admin";
+      if (!isAdmin && userId) {
+        query = query.eq("assigned_to", userId);
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+      setFollowUps(data || []);
+    } catch (err) {
+      console.error("Error fetching real followups:", err);
+    } finally {
+      setLoadingFollowUps(false);
+    }
+  }, []);
+
+  // ===== CHECK USER SESSION & ROLE =====
+  useEffect(() => {
+    async function checkUserSession() {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        setCurrentUserId(user.id);
+
+        const { data: userData } = await supabase
+          .from("users")
+          .select("role")
+          .eq("id", user.id)
+          .maybeSingle();
+
+        const role = (userData?.role || user.user_metadata?.role || "agent").toLowerCase();
+        setCurrentUserRole(role);
+
+        // Fetch Follow-up Asli berdasarkan User ID & Role
+        fetchFollowUpsData(user.id, role);
+      } catch (err) {
+        console.error("Error checking user session:", err);
+      }
+    }
+    checkUserSession();
+  }, [fetchFollowUpsData]);
+
+  // Helper Hak Akses Modifikasi
+  const isAdminOrSuperAdmin = currentUserRole === "super_admin" || currentUserRole === "admin";
+
+  const canModifyLead = useCallback(
+    (lead: any) => {
+      if (!lead) return false;
+      if (isAdminOrSuperAdmin) return true;
+      if (!currentUserId) return false;
+
+      return (
+        lead.created_by === currentUserId ||
+        lead.user_id === currentUserId ||
+        lead.assigned_to === currentUserId
+      );
+    },
+    [isAdminOrSuperAdmin, currentUserId]
+  );
+
+  // Fetch Data Leads Directory
   const fetchLeads = useCallback(async () => {
     setLoading(true);
     try {
@@ -182,24 +224,26 @@ export default function LeadsPage() {
     setFilters((prev) => ({ ...prev, search: searchInput, page: 1 }));
   };
 
-  const handleStatusChange = async (id: string, status: string) => {
-    try {
-      await crmService.updateStatus(id, status as any);
-      toast.success("Status lead berhasil diperbarui");
-      fetchLeads();
-    } catch (error: any) {
-      toast.error("Gagal memperbarui status lead");
+  const handleDelete = async (lead: any) => {
+    if (!canModifyLead(lead)) {
+      toast.error("Akses Ditolak!", {
+        description: "Anda tidak memiliki izin untuk menghapus lead milik orang lain.",
+      });
+      return;
     }
-  };
 
-  const handleDelete = async (id: string, name: string) => {
-    if (!confirm(`Yakin ingin menghapus lead "${name}"?`)) return;
+    const leadName = lead.contact?.full_name || "ini";
+    if (!confirm(`Yakin ingin menghapus lead "${leadName}"?`)) return;
+
     try {
-      await supabase.from("crm_leads").delete().eq("id", id);
+      const { error } = await supabase.from("crm_leads").delete().eq("id", lead.id);
+      if (error) throw error;
+
       toast.success("Lead berhasil dihapus");
       fetchLeads();
+      fetchFollowUpsData(currentUserId, currentUserRole);
     } catch (error: any) {
-      toast.error("Gagal menghapus lead");
+      toast.error("Gagal menghapus lead: " + (error.message || error));
     }
   };
 
@@ -217,19 +261,28 @@ export default function LeadsPage() {
   };
 
   // AI Smart Follow-up Writer
-  const handleGenerateAiMessage = async (lead: any) => {
-    setAiTargetLead(lead);
+  const handleGenerateAiMessage = async (fuItem: any) => {
+    const clientName = fuItem.crm_leads?.crm_contacts?.full_name || fuItem.client_name || "Klien";
+    const propertyInterest = fuItem.crm_leads?.interest_type || fuItem.property_interest || "Properti Premium";
+    const budgetVal = fuItem.crm_leads?.budget || fuItem.budget || "-";
+
+    setAiTargetLead({
+      client_name: clientName,
+      phone: fuItem.crm_leads?.crm_contacts?.phone || fuItem.phone,
+      property_interest: propertyInterest,
+      budget: budgetVal,
+    });
+
     setAiModalOpen(true);
     setGeneratingAi(true);
     setAiGeneratedMessage("");
 
     try {
-      // Panggil API /api/ai/generate (Groq Llama-3 / Gemini)
       const res = await fetch("/api/ai/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          prompt: `Buatkan draf pesan WhatsApp personal yang ramah dan persuasif dari agen Inland Property untuk calon pembeli rumah bernama "${lead.client_name || lead.contact?.full_name || 'Klien'}". Minat properti: "${lead.property_interest || 'Properti Premium'}". Budget: Rp ${lead.budget || lead.budget_max || '-'}. Berikan opsi tanggal survei lokasi akhir pekan ini.`,
+          prompt: `Buatkan draf pesan WhatsApp personal yang ramah dan persuasif dari agen Inland Property untuk calon pembeli rumah bernama "${clientName}". Minat properti: "${propertyInterest}". Budget: Rp ${budgetVal}. Berikan opsi tanggal survei lokasi akhir pekan ini.`,
         }),
       });
 
@@ -237,14 +290,13 @@ export default function LeadsPage() {
       if (json?.text || json?.result) {
         setAiGeneratedMessage(json.text || json.result);
       } else {
-        // Fallback generator jika API offline
         setAiGeneratedMessage(
-          `Halo Bpk/Ibu ${lead.client_name || lead.contact?.full_name || "Klien"},\n\nPerkenalkan saya dari Inland Property. Menindaklanjuti ketertarikan Anda pada properti *${lead.property_interest || "pilihan"}*, apakah akhir pekan ini ada waktu luang untuk mendampingi Anda survei lokasi secara langsung?\n\nSaya telah menyiapkan berkas dan estimasi simulasi pembayaran kpr sesuai budget Anda. Terima kasih!`
+          `Halo Bpk/Ibu ${clientName},\n\nPerkenalkan saya dari Inland Property. Menindaklanjuti ketertarikan Anda pada properti *${propertyInterest}*, apakah akhir pekan ini ada waktu luang untuk mendampingi Anda survei lokasi secara langsung?\n\nSaya telah menyiapkan berkas dan estimasi simulasi pembayaran KPR sesuai budget Anda. Terima kasih!`
         );
       }
     } catch (err) {
       setAiGeneratedMessage(
-        `Halo Bpk/Ibu ${lead.client_name || lead.contact?.full_name || "Klien"},\n\nPerkenalkan saya dari Inland Property. Menindaklanjuti ketertarikan Anda pada properti *${lead.property_interest || "pilihan"}*, apakah akhir pekan ini ada waktu luang untuk mendampingi Anda survei lokasi secara langsung?\n\nTerima kasih!`
+        `Halo Bpk/Ibu ${clientName},\n\nPerkenalkan saya dari Inland Property. Menindaklanjuti ketertarikan Anda pada properti *${propertyInterest}*, apakah akhir pekan ini ada waktu luang untuk mendampingi Anda survei lokasi secara langsung?\n\nTerima kasih!`
       );
     } finally {
       setGeneratingAi(false);
@@ -282,7 +334,7 @@ export default function LeadsPage() {
       </div>
 
       {/* ============================================================ */}
-      {/* 📱 MOBILE SUB-TABS SYSTEM (PRD 3.B block md:hidden)          */}
+      {/* 📱 MOBILE SUB-TABS SYSTEM                                   */}
       {/* ============================================================ */}
       <div className="block md:hidden space-y-4">
         <Tabs value={selectedMobileTab} onValueChange={(v) => setSelectedMobileTab(v as any)} className="w-full">
@@ -295,54 +347,75 @@ export default function LeadsPage() {
             </TabsTrigger>
           </TabsList>
 
-          {/* TAB 1: AGENDA ROW FOLLOW-UPS (PRD 3.B) */}
+          {/* TAB 1: AGENDA ROW FOLLOW-UPS (REAL DATABASE) */}
           <TabsContent value="followups" className="space-y-3 pt-2">
             <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <span className="font-semibold text-foreground">Jadwal Tugas Hari Ini</span>
-              <span>{todayFollowUpsSample.length} Prospek Menunggu</span>
+              <span className="font-semibold text-foreground">Jadwal Tugas Follow-up</span>
+              <span>{followUps.length} Catatan Aktif</span>
             </div>
 
-            {todayFollowUpsSample.map((fu) => (
-              <Card key={fu.id} className="border shadow-sm p-3 hover:border-emerald-500/40 transition">
-                <div className="flex items-center justify-between pb-2 border-b border-border/40">
-                  <div className="flex items-center gap-2">
-                    <Badge variant="outline" className="font-mono text-[10px] bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200">
-                      <Clock className="w-2.5 h-2.5 mr-1" /> {fu.time} WIB
-                    </Badge>
-                    <span className="font-bold text-xs text-foreground">{fu.client_name}</span>
-                  </div>
-                  <span className="text-[10px] font-bold text-emerald-600 font-mono">
-                    {formatCurrency(fu.budget)}
-                  </span>
-                </div>
+            {loadingFollowUps ? (
+              <div className="space-y-2">
+                {[...Array(3)].map((_, i) => (
+                  <Skeleton key={i} className="h-20 w-full rounded-xl" />
+                ))}
+              </div>
+            ) : followUps.length === 0 ? (
+              <p className="text-center py-6 text-xs text-muted-foreground bg-muted/30 rounded-xl">
+                Belum ada agenda follow-up tersimpan.
+              </p>
+            ) : (
+              followUps.map((fu) => {
+                const clientName = fu.crm_leads?.crm_contacts?.full_name || "Tanpa Nama";
+                const clientPhone = fu.crm_leads?.crm_contacts?.phone || "";
+                const budgetVal = fu.crm_leads?.budget || 0;
+                const propertyInterest = fu.crm_leads?.interest_type || "Properti";
+                const timeStr = fu.followup_date
+                  ? new Date(fu.followup_date).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }) + " WIB"
+                  : "Hari ini";
 
-                <div className="py-2 space-y-1 text-xs">
-                  <p className="text-[11px] font-medium text-foreground flex items-center gap-1">
-                    <Building2 className="w-3 h-3 text-muted-foreground shrink-0" /> {fu.property_interest}
-                  </p>
-                  <p className="text-[11px] text-muted-foreground leading-relaxed">{fu.notes}</p>
-                </div>
+                return (
+                  <Card key={fu.id} className="border shadow-sm p-3 hover:border-emerald-500/40 transition">
+                    <div className="flex items-center justify-between pb-2 border-b border-border/40">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="font-mono text-[10px] bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200">
+                          <Clock className="w-2.5 h-2.5 mr-1" /> {timeStr}
+                        </Badge>
+                        <span className="font-bold text-xs text-foreground">{clientName}</span>
+                      </div>
+                      <span className="text-[10px] font-bold text-emerald-600 font-mono">
+                        {formatCurrency(budgetVal)}
+                      </span>
+                    </div>
 
-                {/* Direct Action Buttons */}
-                <div className="flex items-center justify-end gap-1.5 pt-2 border-t border-border/40">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => handleGenerateAiMessage(fu)}
-                    className="h-7 text-[10px] gap-1 text-amber-700 dark:text-amber-400 border-amber-300/60 bg-amber-50/50"
-                  >
-                    <Zap className="w-3 h-3 text-amber-500 fill-amber-500" /> AI Writer
-                  </Button>
-                  <Button
-                    size="sm"
-                    onClick={() => openWhatsApp(fu.phone, fu.client_name)}
-                    className="h-7 text-[10px] gap-1 bg-emerald-600 hover:bg-emerald-700 text-white"
-                  >
-                    <MessageCircle className="w-3 h-3" /> WA
-                  </Button>
-                </div>
-              </Card>
-            ))}
+                    <div className="py-2 space-y-1 text-xs">
+                      <p className="text-[11px] font-medium text-foreground flex items-center gap-1">
+                        <Building2 className="w-3 h-3 text-muted-foreground shrink-0" /> {propertyInterest}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground leading-relaxed">{fu.notes || "Tidak ada catatan."}</p>
+                    </div>
+
+                    <div className="flex items-center justify-end gap-1.5 pt-2 border-t border-border/40">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleGenerateAiMessage(fu)}
+                        className="h-7 text-[10px] gap-1 text-amber-700 dark:text-amber-400 border-amber-300/60 bg-amber-50/50"
+                      >
+                        <Zap className="w-3 h-3 text-amber-500 fill-amber-500" /> AI Writer
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={() => openWhatsApp(clientPhone, clientName)}
+                        className="h-7 text-[10px] gap-1 bg-emerald-600 hover:bg-emerald-700 text-white"
+                      >
+                        <MessageCircle className="w-3 h-3" /> WA
+                      </Button>
+                    </div>
+                  </Card>
+                );
+              })
+            )}
           </TabsContent>
 
           {/* TAB 2: MOBILE LEADS DIRECTORY */}
@@ -395,11 +468,10 @@ export default function LeadsPage() {
       </div>
 
       {/* ============================================================ */}
-      {/* 💻 DESKTOP SPLIT VIEW DASHBOARD (PRD 3.A hidden md:grid)      */}
+      {/* 💻 DESKTOP SPLIT VIEW DASHBOARD                             */}
       {/* ============================================================ */}
       <div className="hidden md:grid grid-cols-12 gap-6">
-        
-        {/* LEFT COLUMN: ACTION HUB / FOLLOW-UPS (4-KOLOM) */}
+        {/* LEFT COLUMN: ACTION HUB / FOLLOW-UPS (REAL DATABASE) */}
         <div className="col-span-4 space-y-4">
           <Card className="border shadow-sm">
             <CardHeader className="p-4 pb-3 border-b bg-slate-50/50 dark:bg-slate-900/40">
@@ -408,52 +480,74 @@ export default function LeadsPage() {
                   <Clock className="w-4 h-4 text-emerald-600" /> Agenda Follow-up
                 </span>
                 <Badge variant="outline" className="text-[10px] font-mono bg-emerald-50 text-emerald-700 dark:text-emerald-300">
-                  Hari Ini ({todayFollowUpsSample.length})
+                  Aktif ({followUps.length})
                 </Badge>
               </CardTitle>
               <CardDescription className="text-xs">
-                Daftar tugas agen untuk dikontak berdasarkan prioritas.
+                Daftar tugas agen untuk dikontak berdasarkan catatan follow-up.
               </CardDescription>
             </CardHeader>
-            <CardContent className="p-3 space-y-3 text-xs">
-              {todayFollowUpsSample.map((fu) => (
-                <div key={fu.id} className="p-3 bg-card border rounded-xl space-y-2 hover:border-emerald-500/30 transition shadow-2xs">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-foreground">{fu.client_name}</span>
-                    <span className="font-mono text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-                      {fu.time} WIB
-                    </span>
-                  </div>
-
-                  <p className="text-muted-foreground text-[11px] leading-relaxed line-clamp-2">
-                    {fu.notes}
-                  </p>
-
-                  <div className="flex items-center justify-between pt-1 border-t">
-                    <span className="font-mono font-bold text-emerald-600">
-                      {formatCurrency(fu.budget)}
-                    </span>
-                    <div className="flex items-center gap-1">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => handleGenerateAiMessage(fu)}
-                        title="Draf WhatsApp via AI"
-                        className="h-7 w-7 p-0 text-amber-600 hover:bg-amber-50"
-                      >
-                        <Zap className="w-3.5 h-3.5 fill-amber-500" />
-                      </Button>
-                      <Button
-                        size="sm"
-                        onClick={() => openWhatsApp(fu.phone, fu.client_name)}
-                        className="h-7 px-2 text-[11px] bg-emerald-600 hover:bg-emerald-700 text-white gap-1"
-                      >
-                        <MessageCircle className="w-3 h-3" /> WA
-                      </Button>
-                    </div>
-                  </div>
+            <CardContent className="p-3 space-y-3 text-xs max-h-[550px] overflow-y-auto">
+              {loadingFollowUps ? (
+                <div className="space-y-3">
+                  {[...Array(3)].map((_, i) => (
+                    <Skeleton key={i} className="h-20 w-full rounded-xl" />
+                  ))}
                 </div>
-              ))}
+              ) : followUps.length === 0 ? (
+                <p className="text-center py-8 text-xs text-muted-foreground">
+                  Belum ada catatan follow-up tersimpan.
+                </p>
+              ) : (
+                followUps.map((fu) => {
+                  const clientName = fu.crm_leads?.crm_contacts?.full_name || "Tanpa Nama";
+                  const clientPhone = fu.crm_leads?.crm_contacts?.phone || "";
+                  const budgetVal = fu.crm_leads?.budget || 0;
+                  const propertyInterest = fu.crm_leads?.interest_type || "Properti";
+                  const timeStr = fu.followup_date
+                    ? new Date(fu.followup_date).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }) + " WIB"
+                    : "Hari ini";
+
+                  return (
+                    <div key={fu.id} className="p-3 bg-card border rounded-xl space-y-2 hover:border-emerald-500/30 transition shadow-2xs">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-foreground">{clientName}</span>
+                        <span className="font-mono text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                          {timeStr}
+                        </span>
+                      </div>
+
+                      <p className="text-muted-foreground text-[11px] leading-relaxed line-clamp-2">
+                        {fu.notes || "Tidak ada catatan khusus."}
+                      </p>
+
+                      <div className="flex items-center justify-between pt-1 border-t">
+                        <span className="font-mono font-bold text-emerald-600">
+                          {formatCurrency(budgetVal)}
+                        </span>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleGenerateAiMessage(fu)}
+                            title="Draf WhatsApp via AI"
+                            className="h-7 w-7 p-0 text-amber-600 hover:bg-amber-50"
+                          >
+                            <Zap className="w-3.5 h-3.5 fill-amber-500" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            onClick={() => openWhatsApp(clientPhone, clientName)}
+                            className="h-7 px-2 text-[11px] bg-emerald-600 hover:bg-emerald-700 text-white gap-1"
+                          >
+                            <MessageCircle className="w-3 h-3" /> WA
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
             </CardContent>
           </Card>
         </div>
@@ -483,7 +577,7 @@ export default function LeadsPage() {
                     className="pl-8 h-8 text-xs"
                   />
                 </div>
-                <Button variant="outline" size="icon" onClick={fetchLeads} className="h-8 w-8">
+                <Button variant="outline" size="icon" onClick={() => { fetchLeads(); fetchFollowUpsData(currentUserId, currentUserRole); }} className="h-8 w-8">
                   <RefreshCw className="h-3.5 w-3.5" />
                 </Button>
               </div>
@@ -509,6 +603,8 @@ export default function LeadsPage() {
                   <TableBody>
                     {leadsData.data.map((lead: any) => {
                       const st = statusConfig[lead.status] || statusConfig.new;
+                      const hasAccess = canModifyLead(lead);
+
                       return (
                         <TableRow
                           key={lead.id}
@@ -545,22 +641,26 @@ export default function LeadsPage() {
                               >
                                 <Eye className="w-3.5 h-3.5" />
                               </Button>
-                              <DropdownMenu>
-  <DropdownMenuTrigger className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors focus:outline-hidden">
-    <MoreHorizontal className="w-3.5 h-3.5" />
-  </DropdownMenuTrigger>
-  <DropdownMenuContent align="end" className="w-40">
-                                  <DropdownMenuItem onClick={() => router.push(`/crm/leads/${lead.id}/edit`)}>
-                                    <Pencil className="w-3.5 h-3.5 mr-2" /> Edit Lead
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem
-                                    onClick={() => handleDelete(lead.id, lead.contact?.full_name)}
-                                    className="text-rose-600"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5 mr-2" /> Hapus
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
+
+                              {/* 🔒 DROPDOWN EDIT & HAPUS HANYA UNTUK CREATOR / ASSIGNED / ADMIN */}
+                              {hasAccess && (
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors focus:outline-hidden">
+                                    <MoreHorizontal className="w-3.5 h-3.5" />
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end" className="w-40">
+                                    <DropdownMenuItem onClick={() => router.push(`/crm/leads/${lead.id}/edit`)}>
+                                      <Pencil className="w-3.5 h-3.5 mr-2" /> Edit Lead
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      onClick={() => handleDelete(lead)}
+                                      className="text-rose-600"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5 mr-2" /> Hapus
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              )}
                             </div>
                           </TableCell>
                         </TableRow>
@@ -575,7 +675,7 @@ export default function LeadsPage() {
       </div>
 
       {/* ============================================================ */}
-      {/* 🎯 MOBILE WORKFLOW SHEET (PRD 3.B Riwayat & Minat Properti)  */}
+      {/* 🎯 MOBILE WORKFLOW SHEET                                     */}
       {/* ============================================================ */}
       <Sheet open={!!selectedLeadForSheet} onOpenChange={() => setSelectedLeadForSheet(null)}>
         <SheetContent side="bottom" className="rounded-t-2xl max-h-[85vh] p-5">

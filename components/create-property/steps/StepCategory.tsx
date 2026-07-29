@@ -1,7 +1,7 @@
 // components/create-property/steps/StepCategory.tsx
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { Label } from "@/components/ui/label";
@@ -9,19 +9,33 @@ import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Video,
   Upload,
   X,
   Star,
   Sparkles,
-  AlertCircle,
-  CheckCircle,
+  CheckCircle2,
   Wand2,
+  Image as ImageIcon,
+  Building2,
+  ArrowRight,
+  Database,
+  GripVertical,
+  Maximize2,
+  Crop,
+  RotateCw,
+  ZoomIn,
+  ZoomOut,
+  Check,
 } from "lucide-react";
-import Image from "next/image";
 import { toast } from "sonner";
 
 // ============================================================
@@ -55,14 +69,13 @@ const statusOptions = [
 // ============================================================
 // INTERFACE
 // ============================================================
-interface PhotoFile {
+interface PhotoItem {
   id: string;
-  file: File;
+  file?: File;
   preview: string;
-  isCover: boolean;
-  uploadProgress: number;
-  uploaded: boolean;
-  error?: string;
+  isCover?: boolean;
+  uploaded?: boolean;
+  isExisting?: boolean;
 }
 
 interface StepCategoryProps {
@@ -71,72 +84,203 @@ interface StepCategoryProps {
   nextStep: () => void;
 }
 
+// Helper konversi DataURL ke File object
+function dataURLtoFile(dataurl: string, filename: string): File {
+  const arr = dataurl.split(",");
+  const mime = arr[0].match(/:(.*?);/)?.[1] || "image/jpeg";
+  const bstr = atob(arr[1]);
+  let n = bstr.length;
+  const u8arr = new Uint8Array(n);
+  while (n--) {
+    u8arr[n] = bstr.charCodeAt(n);
+  }
+  return new File([u8arr], filename, { type: mime });
+}
+
 // ============================================================
-// COMPONENT
+// MAIN COMPONENT
 // ============================================================
 export function StepCategory({ formData, updateFormData, nextStep }: StepCategoryProps) {
-  // ===== AI PARSE =====
+  // ===== AI PARSE STATE =====
   const [parseText, setParseText] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
 
   // ===== CO-BROKE & YOUTUBE =====
   const [showCoBrok, setShowCoBrok] = useState(formData.co_broke || false);
-  const [youtubeUrl, setYoutubeUrl] = useState("");
+  const [youtubeUrl, setYoutubeUrl] = useState(formData.youtube_url || "");
 
-  // ===== PHOTOS =====
-  const [photos, setPhotos] = useState<PhotoFile[]>(formData.photos || []);
+  // ===== PHOTOS STATE & DRAG =====
+  const [photos, setPhotos] = useState<PhotoItem[]>([]);
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // ===== PREVIEW & CROPPER STATE =====
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null);
+  const [isCropping, setIsCropping] = useState(false);
+  const [cropZoom, setCropZoom] = useState(1);
+  const [cropRotation, setCropRotation] = useState(0);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  // Sync Normalisasi Foto
+  useEffect(() => {
+    if (formData.photos && Array.isArray(formData.photos)) {
+      const normalized = formData.photos.map((p: any, idx: number) => {
+        if (typeof p === "string") {
+          return {
+            id: `existing-${idx}`,
+            preview: p,
+            isCover: idx === 0,
+            uploaded: true,
+            isExisting: true,
+          };
+        }
+        return {
+          id: p.id || `photo-${idx}`,
+          file: p.file,
+          preview: p.preview || p.url || "",
+          isCover: idx === 0, // ⭐ Urutan 0 selalu Cover
+          uploaded: p.uploaded || p.isExisting || false,
+          isExisting: p.isExisting || false,
+        };
+      });
+      setPhotos(normalized);
+    }
+  }, [formData.photos]);
+
+  // Update State Pusat dan tetapkan urutan 0 sebagai Cover
+  const syncPhotosWithCover = (newPhotos: PhotoItem[]) => {
+    const updated = newPhotos.map((p, idx) => ({
+      ...p,
+      isCover: idx === 0,
+    }));
+    setPhotos(updated);
+    updateFormData({ photos: updated, photos_uploaded: updated.length > 0 });
+  };
+
   // ============================================================
-  // AI PARSE HANDLER (TERINTEGRASI DENGAN LOKASI)
+  // DRAG & DROP REORDERING HANDLERS
+  // ============================================================
+  const handleDragStart = (index: number) => {
+    setDraggedIndex(index);
+  };
+
+  const handleDragOverItem = (e: React.DragEvent, targetIndex: number) => {
+    e.preventDefault();
+    if (draggedIndex === null || draggedIndex === targetIndex) return;
+
+    const updated = [...photos];
+    const [movedItem] = updated.splice(draggedIndex, 1);
+    updated.splice(targetIndex, 0, movedItem);
+
+    setDraggedIndex(targetIndex);
+    syncPhotosWithCover(updated);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedIndex(null);
+  };
+
+  // ============================================================
+  // HANDLER FILE INPUT
+  // ============================================================
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      const files = Array.from(e.target.files);
+      const validFiles = files.filter((file) => file.type.startsWith("image/"));
+
+      if (validFiles.length > 0) {
+        const newPhotos: PhotoItem[] = validFiles.map((file) => ({
+          id: `new-${Math.random().toString(36).slice(2)}`,
+          file,
+          preview: URL.createObjectURL(file),
+          uploaded: false,
+          isExisting: false,
+        }));
+
+        syncPhotosWithCover([...photos, ...newPhotos]);
+      }
+      e.target.value = "";
+    }
+  };
+
+  const removePhoto = (indexToRemove: number) => {
+    const updated = photos.filter((_, idx) => idx !== indexToRemove);
+    syncPhotosWithCover(updated);
+    if (previewIndex !== null) {
+      setPreviewIndex(null);
+    }
+  };
+
+  // ============================================================
+  // CROPPER ENGINE (CANVAS)
+  // ============================================================
+  const applyCrop = () => {
+    if (previewIndex === null || !photos[previewIndex]) return;
+
+    const currentPhoto = photos[previewIndex];
+    const image = new window.Image();
+    image.crossOrigin = "anonymous";
+    image.src = currentPhoto.preview;
+
+    image.onload = () => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+
+      const isRotated = cropRotation % 180 !== 0;
+      const targetWidth = isRotated ? image.height : image.width;
+      const targetHeight = isRotated ? image.width : image.height;
+
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+
+      ctx.save();
+      ctx.translate(canvas.width / 2, canvas.height / 2);
+      ctx.rotate((cropRotation * Math.PI) / 180);
+      ctx.scale(cropZoom, cropZoom);
+
+      ctx.drawImage(
+        image,
+        -image.width / 2,
+        -image.height / 2,
+        image.width,
+        image.height
+      );
+      ctx.restore();
+
+      const croppedDataUrl = canvas.toDataURL("image/jpeg", 0.92);
+      const croppedFile = dataURLtoFile(croppedDataUrl, `cropped-${Date.now()}.jpg`);
+
+      const updated = [...photos];
+      updated[previewIndex] = {
+        ...updated[previewIndex],
+        preview: croppedDataUrl,
+        file: croppedFile,
+        isExisting: false,
+      };
+
+      syncPhotosWithCover(updated);
+      setIsCropping(false);
+      setCropZoom(1);
+      setCropRotation(0);
+      toast.success("Foto berhasil dipotong & diperbarui!");
+    };
+  };
+
+  // ============================================================
+  // AI PARSE HANDLER
   // ============================================================
   const handleAIParse = async () => {
     if (!parseText.trim()) {
-      toast.warning("Silakan tempelkan teks listing terlebih dahulu.");
+      toast.warning("Silakan tempelkan teks deskripsi listing terlebih dahulu.");
       return;
     }
 
     setAiLoading(true);
-
     try {
-      const fieldNames = [
-        "title",
-        "property_type",
-        "listing_type",
-        "property_category",
-        "selling_point",
-        "address",
-        "province_id",
-        "city_id",
-        "district_id",
-        "village_id",
-        "postal_code",
-        "selling_price",
-        "rental_price",
-        "rental_period",
-        "bedroom",
-        "bathroom",
-        "garage",
-        "carport",
-        "floor",
-        "electricity",
-        "water_source",
-        "certificate",
-        "facing",
-        "condition",
-        "furnishing",
-        "year_built",
-        "land_area",
-        "land_unit",
-        "land_width",
-        "land_length",
-        "building_area",
-        "building_width",
-        "building_length",
-      ].join(", ");
-
       const response = await fetch("/api/ai/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -145,274 +289,123 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
           data: {
             text: parseText,
             currentType: formData.property_type || "belum ditentukan",
-            fieldNames,
-            areaList: "Daftar wilayah/area tersedia (contoh: DKI Jakarta, Tangerang Selatan, BSD, Serpong, Bintaro)",
           },
         }),
       });
 
       const result = await response.json();
 
-      if (result.success) {
+      if (result.success && result.data) {
         const parsed = result.data;
-
-        // Mapping lengkap mencakup properti, spesifikasi, dan lokasi database
-        const mapping: Record<string, string> = {
-          title: "title",
-          property_type: "property_type",
-          listing_type: "listing_type",
-          property_category: "property_status",
-          selling_point: "selling_point",
-          address: "address",
-          province_id: "province_id",
-          city_id: "city_id",
-          district_id: "district_id",
-          village_id: "village_id",
-          postal_code: "postal_code",
-          selling_price: "selling_price",
-          rental_price: "rental_price",
-          rental_period: "rental_period",
-          bedroom: "bedroom",
-          bathroom: "bathroom",
-          garage: "garage",
-          carport: "carport",
-          floor: "floor",
-          electricity: "electricity",
-          water_source: "water_source",
-          certificate: "certificate",
-          facing: "facing",
-          condition: "condition",
-          furnishing: "furnishing",
-          year_built: "year_built",
-          land_area: "land_area",
-          land_unit: "land_unit",
-          land_width: "land_width",
-          land_length: "land_length",
-          building_area: "building_area",
-          building_width: "building_width",
-          building_length: "building_length",
-        };
-
         const updates: any = {};
-        Object.entries(parsed).forEach(([key, value]) => {
-          if (value !== null && value !== undefined && value !== "") {
-            const field = mapping[key];
-            if (field) {
-              updates[field] = value.toString();
-            }
-          }
-        });
 
-        // Kirim update ke state pusat wizard (otomatis mengisi StepLocation juga)
+        if (parsed.title) updates.title = parsed.title;
+        if (parsed.property_type) updates.property_type = parsed.property_type.toLowerCase();
+        if (parsed.listing_type) updates.listing_type = parsed.listing_type.toLowerCase();
+        if (parsed.property_category) updates.property_status = parsed.property_category.toLowerCase();
+        if (parsed.selling_point) updates.selling_point = parsed.selling_point;
+        if (parsed.address) updates.address = parsed.address;
+        if (parsed.selling_price) updates.selling_price = parsed.selling_price.toString();
+        if (parsed.rental_price) updates.rental_price = parsed.rental_price.toString();
+
         updateFormData(updates);
-
-        toast.success(`✨ Data kategori, spesifikasi, & lokasi berhasil diekstrak AI!`);
+        toast.success("✨ Data berhasil diekstrak AI!");
       } else {
-        toast.error(result.error || "Gagal parsing teks");
+        toast.error(result.error || "Gagal memproses deskripsi teks");
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error("AI parse error:", error);
-      toast.error("Gagal terhubung ke AI service");
+      toast.error("Terjadi kesalahan saat terhubung ke AI service.");
     } finally {
       setAiLoading(false);
     }
   };
 
-  // ============================================================
-  // HANDLERS KATEGORI
-  // ============================================================
-  const handlePropertyTypeSelect = (value: string) => {
-    updateFormData({ property_type: value });
-  };
-
-  const handleListingTypeSelect = (value: string) => {
-    updateFormData({ listing_type: value });
-  };
-
-  const handleStatusSelect = (value: string) => {
-    updateFormData({ property_status: value });
-  };
-
-  const handleCoBrokChange = (checked: boolean) => {
-    setShowCoBrok(checked);
-    updateFormData({ co_broke: checked });
-  };
-
-  // ============================================================
-  // HANDLERS FOTO (MANUAL)
-  // ============================================================
-  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) {
-      const files = Array.from(e.target.files);
-      const validFiles = files.filter((file) => file.type.startsWith("image/"));
-      if (validFiles.length !== files.length) {
-        toast.warning("Beberapa file bukan gambar dan akan diabaikan");
-      }
-      if (validFiles.length > 0) {
-        const newPhotos = validFiles.map((file) => ({
-          id: Math.random().toString(36).slice(2),
-          file,
-          preview: URL.createObjectURL(file),
-          isCover: photos.length === 0,
-          uploadProgress: 0,
-          uploaded: false,
-        }));
-        const updated = [...photos, ...newPhotos];
-        setPhotos(updated);
-        updateFormData({ photos: updated });
-      }
-      e.target.value = "";
-    }
-  };
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    if (e.dataTransfer.files) {
-      const files = Array.from(e.dataTransfer.files);
-      const validFiles = files.filter((file) => file.type.startsWith("image/"));
-      if (validFiles.length > 0) {
-        const newPhotos = validFiles.map((file) => ({
-          id: Math.random().toString(36).slice(2),
-          file,
-          preview: URL.createObjectURL(file),
-          isCover: photos.length === 0,
-          uploadProgress: 0,
-          uploaded: false,
-        }));
-        const updated = [...photos, ...newPhotos];
-        setPhotos(updated);
-        updateFormData({ photos: updated });
-      }
-    }
-  };
-
-  const removePhoto = (id: string) => {
-    const filtered = photos.filter((p) => p.id !== id);
-    if (filtered.length > 0 && !filtered.some((p) => p.isCover)) {
-      filtered[0].isCover = true;
-    }
-    setPhotos(filtered);
-    updateFormData({ photos: filtered });
-  };
-
-  const setCover = (id: string) => {
-    const updated = photos.map((p) => ({ ...p, isCover: p.id === id }));
-    setPhotos(updated);
-    updateFormData({ photos: updated });
-  };
-
-  // ===== SIMULASI UPLOAD =====
-  const handleUpload = async () => {
-    setUploading(true);
-    for (let i = 0; i < photos.length; i++) {
-      if (photos[i].uploaded) continue;
-      for (let progress = 0; progress <= 100; progress += 10) {
-        setPhotos((prev) => {
-          const updated = [...prev];
-          updated[i] = { ...updated[i], uploadProgress: progress };
-          return updated;
-        });
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      }
-      setPhotos((prev) => {
-        const updated = [...prev];
-        updated[i] = { ...updated[i], uploaded: true };
-        return updated;
-      });
-    }
-    setUploading(false);
-    updateFormData({ photos_uploaded: true });
-    toast.success(`${photos.length} foto berhasil diupload!`);
-  };
-
-  const totalUploaded = photos.filter((p) => p.uploaded).length;
-  const uploadProgress = photos.length > 0 ? Math.round((totalUploaded / photos.length) * 100) : 0;
-
-  // ============================================================
-  // RENDER
-  // ============================================================
   return (
     <div className="space-y-8">
-      {/* HEADER */}
+      {/* HEADER UTAMA */}
       <div>
-        <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Kategori & Foto</h2>
-        <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-          Pilih tipe properti, unggah foto, dan gunakan AI Parse untuk mengisi data otomatis (termasuk lokasi)
+        <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+          <Building2 className="w-6 h-6 text-emerald-600" />
+          Kategori & Foto Properti
+        </h2>
+        <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
+          Atur tipe properti, geser urutan foto, dan tinjau atau crop foto sesuai kebutuhan.
         </p>
       </div>
 
-      {/* ===== AI PARSE ===== */}
-      <div className="space-y-3 p-4 bg-gradient-to-r from-blue-50/50 to-purple-50/50 rounded-xl border border-blue-200 dark:border-blue-900 dark:bg-blue-950/20">
-        <div className="flex items-center gap-2">
-          <Wand2 size={18} className="text-blue-500" />
-          <Label className="font-semibold text-blue-700 dark:text-blue-300">
-            ✨ AI Parsing – Isi Otomatis dari Teks Listing
-          </Label>
+      {/* 📌 BANNER AI AUTO-FILL */}
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-950 via-slate-900 to-emerald-950 p-5 text-white shadow-xl border border-indigo-500/30">
+        <div className="relative z-10 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="p-2 bg-indigo-500/20 rounded-xl border border-indigo-400/30">
+                <Sparkles className="w-5 h-5 text-indigo-300 animate-pulse" />
+              </span>
+              <h3 className="text-sm font-bold tracking-wide text-indigo-100">
+                AI Listing Auto-Fill
+              </h3>
+            </div>
+            <Badge className="bg-gradient-to-r from-indigo-500 to-purple-500 text-[10px] px-2 py-0.5 border-0">
+              INLAND AI
+            </Badge>
+          </div>
+
+          <Textarea
+            placeholder="Tempel teks deskripsi (contoh: Dijual Rumah BSD Sektor 1.2 LT 120 LB 90 KT 3 KM 2 Rp 1.5 Milyar)..."
+            value={parseText}
+            onChange={(e) => setParseText(e.target.value)}
+            rows={2}
+            className="bg-black/40 border-indigo-500/40 text-xs text-white placeholder:text-slate-400 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 rounded-xl"
+          />
+
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              onClick={handleAIParse}
+              disabled={aiLoading}
+              className="bg-gradient-to-r from-indigo-500 to-emerald-500 hover:from-indigo-600 hover:to-emerald-600 text-white font-semibold text-xs h-9 px-4 rounded-xl shadow-md gap-2"
+            >
+              {aiLoading ? (
+                <>
+                  <span className="animate-spin rounded-full h-3.5 w-3.5 border-2 border-white border-t-transparent" />
+                  Mengekstrak Data...
+                </>
+              ) : (
+                <>
+                  <Wand2 className="w-4 h-4" />
+                  Ekstrak dengan AI
+                </>
+              )}
+            </Button>
+          </div>
         </div>
-        <p className="text-xs text-slate-500 dark:text-slate-400">
-          Tempelkan teks listing (dari WhatsApp, email, atau web) lalu klik AI Parse untuk mengisi kategori, spesifikasi, dan wilayah lokasi secara instan.
-        </p>
-        <Textarea
-          placeholder="Tempelkan teks listing di sini... (contoh: Dijual Rumah BSD City Sektor 1.2, Serpong, Tangerang Selatan...)"
-          value={parseText}
-          onChange={(e) => setParseText(e.target.value)}
-          rows={3}
-          className="border-blue-200 dark:border-blue-800 focus:ring-blue-500 dark:bg-slate-900 dark:text-slate-200 text-xs"
-        />
-        <Button
-          type="button"
-          variant="default"
-          size="sm"
-          onClick={handleAIParse}
-          disabled={aiLoading}
-          className="bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white shadow-md text-xs"
-        >
-          {aiLoading ? (
-            <>
-              <span className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2" />
-              Parsing Data AI...
-            </>
-          ) : (
-            <>
-              <Wand2 size={16} className="mr-2" />
-              ✨ AI Parse & Auto-Fill Lokasi
-            </>
-          )}
-        </Button>
       </div>
 
-      {/* ===== BAGIAN KATEGORI ===== */}
+      {/* 📌 SEKSI PILIHAN KATEGORI */}
       <div className="space-y-6">
         {/* Tipe Properti */}
         <div className="space-y-3">
-          <Label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-            Tipe Properti
+          <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">
+            Tipe Properti <span className="text-rose-500">*</span>
           </Label>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
             {propertyTypes.map((type) => (
               <button
                 key={type.value}
                 type="button"
-                onClick={() => handlePropertyTypeSelect(type.value)}
+                onClick={() => updateFormData({ property_type: type.value })}
                 className={cn(
-                  "px-4 py-3 rounded-xl border-2 text-sm font-medium transition-all text-left",
+                  "px-3.5 py-2.5 rounded-xl border text-xs font-semibold transition-all text-left flex items-center justify-between",
                   formData.property_type === type.value
-                    ? "border-blue-600 bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300 shadow-sm"
-                    : "border-slate-200 dark:border-slate-700 hover:border-blue-300 dark:hover:border-blue-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                    ? "border-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 ring-2 ring-emerald-600/20"
+                    : "border-slate-200 dark:border-slate-800 hover:border-emerald-300 text-slate-700 dark:text-slate-300 bg-background"
                 )}
               >
-                {type.label}
+                <span>{type.label}</span>
+                {formData.property_type === type.value && (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                )}
               </button>
             ))}
           </div>
@@ -420,20 +413,20 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
 
         {/* Jual / Sewa */}
         <div className="space-y-3">
-          <Label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-            Tipe Listing
+          <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">
+            Tipe Listing <span className="text-rose-500">*</span>
           </Label>
-          <div className="flex gap-3">
+          <div className="grid grid-cols-2 gap-3 max-w-md">
             {listingTypes.map((type) => (
               <button
                 key={type.value}
                 type="button"
-                onClick={() => handleListingTypeSelect(type.value)}
+                onClick={() => updateFormData({ listing_type: type.value })}
                 className={cn(
-                  "flex-1 px-6 py-3 rounded-xl border-2 text-sm font-medium transition-all",
+                  "py-2.5 px-4 rounded-xl border text-xs font-bold transition-all text-center flex items-center justify-center gap-2",
                   formData.listing_type === type.value
-                    ? "border-blue-600 bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300 shadow-sm"
-                    : "border-slate-200 dark:border-slate-700 hover:border-blue-300 dark:hover:border-blue-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                    ? "border-emerald-600 bg-emerald-600 text-white shadow-md shadow-emerald-600/20"
+                    : "border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 bg-background hover:bg-slate-50"
                 )}
               >
                 {type.label}
@@ -444,23 +437,20 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
 
         {/* Status Properti */}
         <div className="space-y-3">
-          <div className="flex items-center gap-2">
-            <Label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-              Status Properti
-            </Label>
-            <span className="text-xs text-rose-500 font-medium">Wajib</span>
-          </div>
+          <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">
+            Kondisi Properti
+          </Label>
           <div className="flex flex-wrap gap-2">
             {statusOptions.map((status) => (
               <button
                 key={status.value}
                 type="button"
-                onClick={() => handleStatusSelect(status.value)}
+                onClick={() => updateFormData({ property_status: status.value })}
                 className={cn(
-                  "px-5 py-2 rounded-full border text-sm font-medium transition-all",
+                  "px-4 py-1.5 rounded-full border text-xs font-medium transition-all",
                   formData.property_status === status.value
-                    ? "border-blue-600 bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300"
-                    : "border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-blue-300 dark:hover:border-blue-700 hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                    ? "border-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 font-semibold"
+                    : "border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 bg-background"
                 )}
               >
                 {status.label}
@@ -469,211 +459,284 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
           </div>
         </div>
 
-        {/* Co-Broke */}
-        <div className="space-y-3 pt-2 border-t border-slate-200 dark:border-slate-800">
-          <div className="flex items-center justify-between">
-            <div>
-              <Label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-                Bisa di Co-Broke
-              </Label>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Izinkan agen lain ikut menjual properti ini
-              </p>
+        {/* Co-Broke & Youtube */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+          <div className="p-4 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label className="text-xs font-bold">Kerjasama Co-Broke</Label>
+              <p className="text-[11px] text-muted-foreground">Izinkan agen eksternal menjual unit ini</p>
             </div>
-            <Switch checked={showCoBrok} onCheckedChange={handleCoBrokChange} />
+            <Switch
+              checked={showCoBrok}
+              onCheckedChange={(val) => {
+                setShowCoBrok(val);
+                updateFormData({ co_broke: val });
+              }}
+            />
           </div>
-          {showCoBrok && (
-            <div className="bg-blue-50/50 dark:bg-blue-950/20 rounded-xl p-4 space-y-2 border border-blue-200/50 dark:border-blue-800/50">
-              <p className="text-sm text-slate-700 dark:text-slate-300 font-medium">Keuntungan Co-Broke</p>
-              <ul className="text-xs text-slate-600 dark:text-slate-400 space-y-1 list-disc list-inside">
-                <li>Jangkau pasar lebih luas</li>
-                <li>Properti lebih cepat terjual</li>
-                <li>Komisi dibagi sesuai kesepakatan</li>
-              </ul>
-            </div>
-          )}
-        </div>
 
-        {/* YouTube Video */}
-        <div className="space-y-3 pt-2 border-t border-slate-200 dark:border-slate-800">
-          <Label className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2">
-            <Video className="h-4 w-4 text-red-500" />
-            Link Video YouTube
-          </Label>
-          <div className="flex gap-3">
+          <div className="space-y-1.5">
+            <Label className="text-xs font-bold flex items-center gap-1.5">
+              <Video className="w-4 h-4 text-rose-500" /> Link Video YouTube (Opsional)
+            </Label>
             <Input
               placeholder="https://www.youtube.com/watch?v=..."
               value={youtubeUrl}
-              onChange={(e) => setYoutubeUrl(e.target.value)}
-              className="flex-1 text-xs"
+              onChange={(e) => {
+                setYoutubeUrl(e.target.value);
+                updateFormData({ youtube_url: e.target.value });
+              }}
+              className="h-9 text-xs font-mono"
             />
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => updateFormData({ youtube_url: youtubeUrl })}
-              disabled={!youtubeUrl}
-            >
-              Tambahkan
-            </Button>
           </div>
-          {formData.youtube_url && (
-            <div className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-              ✅ Video terpasang
-            </div>
-          )}
         </div>
       </div>
 
-      {/* ===== BAGIAN FOTO ===== */}
-      <div className="space-y-4 pt-4 border-t border-slate-200 dark:border-slate-800">
-        <div>
-          <Label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-            📸 Foto Properti
-          </Label>
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            Upload minimal 3 foto untuk hasil terbaik
-          </p>
+      {/* 📌 SEKSI MANAJEMEN FOTO (DRAG & DROP + AUTO COVER + CROP) */}
+      <div className="space-y-4 pt-4 border-t">
+        <div className="flex items-center justify-between">
+          <div>
+            <Label className="text-xs font-bold flex items-center gap-1.5">
+              <ImageIcon className="w-4 h-4 text-emerald-600" />
+              Galeri Foto Properti ({photos.length})
+            </Label>
+            <p className="text-[11px] text-muted-foreground mt-0.5">
+              <strong>Tips:</strong> Geser foto untuk mengurutkan. Foto <strong>baris/urutan pertama otomatis dijadikan Cover</strong>.
+            </p>
+          </div>
         </div>
 
-        {/* Drop Zone Manual */}
+        {/* DROPZONE FOTO */}
         <div
-          className={cn(
-            "relative border-2 border-dashed rounded-2xl p-6 transition-all cursor-pointer",
-            isDragging
-              ? "border-blue-500 bg-blue-50/50 dark:bg-blue-950/20"
-              : "border-slate-300 dark:border-slate-700 hover:border-blue-400 dark:hover:border-blue-600"
-          )}
           onClick={() => fileInputRef.current?.click()}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
+          className="border-2 border-dashed border-slate-300 dark:border-slate-800 hover:border-emerald-400 bg-muted/20 rounded-2xl p-6 text-center transition cursor-pointer relative"
         >
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*"
             multiple
+            accept="image/*"
             onChange={handleFileInputChange}
             className="hidden"
           />
-          <div className="text-center">
-            <div className="mx-auto w-12 h-12 rounded-full bg-blue-50 dark:bg-blue-950/30 flex items-center justify-center mb-3">
-              <Upload className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+          <div className="flex flex-col items-center justify-center space-y-2">
+            <div className="p-3 bg-emerald-100 dark:bg-emerald-950 text-emerald-600 rounded-full">
+              <Upload className="w-5 h-5" />
             </div>
-            <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
-              Klik atau drag & drop foto di sini
-            </p>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              (max 10MB per foto, format JPG, PNG, WEBP)
-            </p>
+            <p className="text-xs font-semibold">Klik atau seret file foto ke area ini</p>
+            <p className="text-[10px] text-muted-foreground">Format JPG, PNG, WEBP hingga 10MB per foto</p>
           </div>
         </div>
 
-        {/* Photo Grid */}
+        {/* GRID DRAGGABLE PREVIEW FOTO */}
         {photos.length > 0 && (
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                  {photos.length} foto
-                </span>
-                <Badge variant="secondary" className="text-xs">
-                  {totalUploaded} diupload
-                </Badge>
-              </div>
-              <Button
-                type="button"
-                size="sm"
-                onClick={handleUpload}
-                disabled={uploading || photos.every((p) => p.uploaded)}
-                className="gap-2 text-xs"
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3 pt-2">
+            {photos.map((photo, idx) => (
+              <motion.div
+                key={photo.id}
+                draggable
+                onDragStart={() => handleDragStart(idx)}
+                onDragOver={(e) => handleDragOverItem(e, idx)}
+                onDragEnd={handleDragEnd}
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className={cn(
+                  "relative group aspect-square rounded-xl overflow-hidden border bg-slate-900 shadow-2xs cursor-grab active:cursor-grabbing transition-transform duration-150",
+                  draggedIndex === idx && "opacity-40 scale-95 ring-2 ring-blue-500",
+                  idx === 0 && "ring-2 ring-amber-500 border-transparent shadow-md"
+                )}
               >
-                {uploading ? "Mengupload..." : "Upload Semua"}
-              </Button>
-            </div>
+                {/* Visual Drag Handle Icon */}
+                <div className="absolute top-1.5 left-1.5 z-20 bg-black/60 backdrop-blur-xs p-1 rounded text-white opacity-80 group-hover:opacity-100 transition">
+                  <GripVertical className="w-3.5 h-3.5" />
+                </div>
 
-            {uploadProgress > 0 && uploadProgress < 100 && (
-              <Progress value={uploadProgress} className="h-2" />
-            )}
+                <img
+                  src={photo.preview}
+                  alt={`Foto ${idx + 1}`}
+                  className="w-full h-full object-cover"
+                />
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-              {photos.map((photo, index) => (
-                <motion.div
-                  key={photo.id}
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="relative group rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 aspect-square"
-                >
-                  <Image
-                    src={photo.preview}
-                    alt={`Foto ${index + 1}`}
-                    fill
-                    className="object-cover"
-                  />
-                  {photo.isCover && (
-                    <div className="absolute top-2 left-2">
-                      <Badge className="bg-blue-600 text-white border-0 gap-1 text-[10px]">
-                        <Star className="h-3 w-3 fill-current" />
-                        Cover
-                      </Badge>
-                    </div>
+                {/* Badge Status Auto Cover & Database */}
+                <div className="absolute top-1.5 right-1.5 flex flex-col items-end gap-1 z-10">
+                  {idx === 0 && (
+                    <Badge className="bg-amber-500 text-white text-[9px] px-1.5 py-0 border-0 flex items-center gap-1 font-bold shadow-sm">
+                      <Star className="w-2.5 h-2.5 fill-current" /> Cover Utama
+                    </Badge>
                   )}
-                  {!photo.uploaded && photo.uploadProgress > 0 && (
-                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                      <div className="text-center">
-                        <div className="text-white text-xs font-medium">{photo.uploadProgress}%</div>
-                        <Progress value={photo.uploadProgress} className="h-1 w-20 mt-1 bg-white/20" />
-                      </div>
-                    </div>
+                  {photo.isExisting && (
+                    <Badge variant="secondary" className="text-[9px] px-1.5 py-0 bg-black/60 text-white border-0 flex items-center gap-1 backdrop-blur-xs">
+                      <Database className="w-2.5 h-2.5 text-emerald-400" /> Database
+                    </Badge>
                   )}
-                  {photo.uploaded && (
-                    <div className="absolute top-2 right-2">
-                      <CheckCircle className="h-5 w-5 text-emerald-500 bg-white/80 rounded-full" />
-                    </div>
-                  )}
-                  <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 p-2">
-                    <button
-                      type="button"
-                      onClick={() => setCover(photo.id)}
-                      className="p-1.5 bg-white/20 hover:bg-white/30 rounded-lg text-white transition"
-                      title="Jadikan Cover"
-                    >
-                      <Star className="h-4 w-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => removePhoto(photo.id)}
-                      className="p-1.5 bg-rose-500/80 hover:bg-rose-600 rounded-lg text-white transition"
-                      title="Hapus"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  </div>
-                </motion.div>
-              ))}
-            </div>
+                </div>
 
-            <div className="bg-amber-50/50 dark:bg-amber-950/20 rounded-xl p-4 border border-amber-200/50 dark:border-amber-800/50">
-              <p className="text-xs text-amber-700 dark:text-amber-300 flex items-start gap-2">
-                <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
-                <span>
-                  <strong>Tips:</strong> Gunakan foto dengan resolusi tinggi, pastikan pencahayaan baik, dan tampilkan semua sudut properti.
-                </span>
-              </p>
-            </div>
+                {/* Overlay Aksi (Preview & Delete) */}
+                <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-2 z-20">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPreviewIndex(idx);
+                      setIsCropping(false);
+                      setCropZoom(1);
+                      setCropRotation(0);
+                    }}
+                    className="p-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition"
+                    title="Perbesar / Review Foto"
+                  >
+                    <Maximize2 className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => removePhoto(idx)}
+                    className="p-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg transition"
+                    title="Hapus Foto"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </motion.div>
+            ))}
           </div>
         )}
       </div>
 
-      {/* Next Button */}
-      <div className="flex justify-end pt-4">
+      {/* 📌 MODAL PREVIEW & CROPPER FOTO (RESPONSIVE DESKTOP & MOBILE) */}
+      <Dialog
+        open={previewIndex !== null}
+        onOpenChange={(open) => {
+          if (!open) setPreviewIndex(null);
+        }}
+      >
+        <DialogContent className="w-full max-w-full sm:max-w-4xl md:max-w-5xl lg:max-w-6xl xl:w-[92vw] p-4 bg-slate-950 border-slate-800 text-white rounded-2xl overflow-hidden">
+          <DialogHeader className="pb-2 border-b border-slate-800 flex flex-row items-center justify-between">
+            <DialogTitle className="text-sm sm:text-base font-bold flex items-center gap-2">
+              <ImageIcon className="w-4 h-4 text-emerald-400" />
+              Review & Edit Foto {previewIndex !== null ? `#${previewIndex + 1}` : ""}
+              {previewIndex === 0 && (
+                <Badge className="bg-amber-500 text-white text-[9px] px-1.5 py-0 border-0">
+                  Cover Utama
+                </Badge>
+              )}
+            </DialogTitle>
+          </DialogHeader>
+
+          {previewIndex !== null && photos[previewIndex] && (
+            <div className="space-y-4 py-2">
+              {/* AREA TAMPILAN FOTO / CROP CANVAS (LEBIH BESAR DI DESKTOP) */}
+              <div className="relative w-full h-[50vh] sm:h-[65vh] md:h-[72vh] lg:h-[78vh] bg-black/90 rounded-xl overflow-hidden flex items-center justify-center border border-slate-800 shadow-inner">
+                {!isCropping ? (
+                  <img
+                    src={photos[previewIndex].preview}
+                    alt="Preview Full"
+                    className="max-w-full max-h-full object-contain"
+                  />
+                ) : (
+                  <div className="relative flex items-center justify-center w-full h-full overflow-hidden">
+                    <img
+                      src={photos[previewIndex].preview}
+                      alt="Crop View"
+                      style={{
+                        transform: `scale(${cropZoom}) rotate(${cropRotation}deg)`,
+                        transition: "transform 0.15s ease-out",
+                      }}
+                      className="max-w-full max-h-full object-contain pointer-events-none"
+                    />
+                    <div className="absolute inset-0 border-2 border-dashed border-emerald-400/80 pointer-events-none m-6 sm:m-12 rounded-lg flex items-center justify-center">
+                      <span className="bg-black/70 backdrop-blur-xs text-white text-[11px] px-3 py-1 rounded font-semibold border border-emerald-400/30">
+                        Area Hasil Potongan
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* CONTROLS BAR CROP */}
+              {isCropping ? (
+                <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-slate-900 rounded-xl border border-slate-800 text-xs">
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-1">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setCropZoom((z) => Math.max(0.5, z - 0.2))}
+                        className="h-8 w-8 p-0 text-white border-slate-700 hover:bg-slate-800"
+                      >
+                        <ZoomOut className="w-4 h-4" />
+                      </Button>
+                      <span className="font-mono text-xs w-12 text-center">
+                        {Math.round(cropZoom * 100)}%
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setCropZoom((z) => Math.min(3, z + 0.2))}
+                        className="h-8 w-8 p-0 text-white border-slate-700 hover:bg-slate-800"
+                      >
+                        <ZoomIn className="w-4 h-4" />
+                      </Button>
+                    </div>
+
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setCropRotation((r) => (r + 90) % 360)}
+                      className="h-8 gap-1.5 text-white border-slate-700 text-xs hover:bg-slate-800"
+                    >
+                      <RotateCw className="w-4 h-4" /> Putar 90°
+                    </Button>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setIsCropping(false)}
+                      className="h-8 text-xs text-slate-400 hover:text-white"
+                    >
+                      Batal
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={applyCrop}
+                      className="h-8 text-xs bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 font-semibold"
+                    >
+                      <Check className="w-4 h-4" /> Terapkan Hasil Potong
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex justify-between items-center pt-1">
+                  <p className="text-xs text-slate-400">
+                    {photos[previewIndex].isExisting ? "Foto tersimpan di database" : "Foto baru siap diunggah"}
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setIsCropping(true)}
+                    className="h-8 text-xs border-slate-700 text-white hover:bg-slate-800 gap-1.5"
+                  >
+                    <Crop className="w-3.5 h-3.5 text-emerald-400" /> Mode Crop & Rotasi
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* CANVAS HIDDEN UNTUK PROSES CROP EXPORT */}
+      <canvas ref={canvasRef} className="hidden" />
+
+      {/* FOOTER NAVIGASI */}
+      <div className="flex justify-end pt-4 border-t">
         <Button
           type="button"
           onClick={nextStep}
-          className="gap-2 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-xs"
+          className="gap-2 text-xs h-9 bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20"
         >
-          Lanjut ke Spesifikasi →
+          <span>Lanjut ke Lokasi & Alamat</span>
+          <ArrowRight className="w-4 h-4" />
         </Button>
       </div>
     </div>

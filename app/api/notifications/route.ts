@@ -1,4 +1,3 @@
-// app/api/notifications/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
@@ -48,7 +47,7 @@ export async function GET(req: NextRequest) {
 }
 
 // ============================================================
-// POST – Kirim notifikasi
+// POST – Kirim notifikasi (Database Web + OneSignal Push Notification)
 // ============================================================
 export async function POST(req: NextRequest) {
   const supabase = await createSupabaseClient();
@@ -68,6 +67,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    // 1. Simpan ke database via service (Masuk ke tabel 'notifications' & Lonceng Web)
     const result = await notificationService.sendNotification({
       recipient_type,
       user_ids,
@@ -76,6 +76,33 @@ export async function POST(req: NextRequest) {
       message,
       link,
     });
+
+    // 2. 🚀 Kirim juga ke OneSignal REST API (Agar muncul di Push Notification Bar HP/PC)
+    const onesignalAppId = process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID;
+    const onesignalApiKey = process.env.ONESIGNAL_REST_API_KEY;
+
+    if (onesignalApiKey && onesignalAppId) {
+      try {
+        await fetch("https://onesignal.com/api/v1/notifications", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json; charset=utf-8",
+            "Authorization": `Basic ${onesignalApiKey}`,
+          },
+          body: JSON.stringify({
+            app_id: onesignalAppId,
+            included_segments: ["All"], // Mengirim ke semua user yang subscribe
+            headings: { en: title },
+            contents: { en: message },
+            url: link || undefined, // Opsional: mengarah ke link tertentu jika notifikasi diklik
+          }),
+        });
+      } catch (onesignalError) {
+        // Dibuat non-blocking agar jika push luar web gagal, data di database tetap sukses tersimpan
+        console.error("Gagal mengirim OneSignal push (Non-blocking):", onesignalError);
+      }
+    }
+
     return NextResponse.json({ success: true, data: result });
   } catch (error: any) {
     return NextResponse.json(

@@ -15,17 +15,19 @@ import {
   Clock,
   ChevronDown,
   Check,
-  Sparkles,
-  FileText,
+  Lock,
+  Plus,
 } from "lucide-react";
 
 import { crmService } from "@/services/crm.service";
+import { supabase } from "@/lib/supabase/client";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
@@ -49,6 +51,11 @@ export default function CreateFollowupPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+
+  // User Session & Role States
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [currentUserRole, setCurrentUserRole] = useState<string>("");
+  const [currentUserName, setCurrentUserName] = useState<string>("");
 
   // Data Options
   const [agents, setAgents] = useState<AgentItem[]>([]);
@@ -74,6 +81,8 @@ export default function CreateFollowupPage() {
     notes: "",
   });
 
+  const isAdmin = currentUserRole === "admin" || currentUserRole === "super_admin";
+
   // ===== CLICK OUTSIDE EVENT LISTENER =====
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -91,11 +100,33 @@ export default function CreateFollowupPage() {
     };
   }, []);
 
-  // ===== FETCH INITIAL DATA =====
+  // ===== FETCH INITIAL DATA & USER ROLE =====
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
       try {
+        // 1. Check current logged in user session & role
+        const { data: { user } } = await supabase.auth.getUser();
+        let loggedInUserId = user?.id || null;
+        let loggedInRole = "agent";
+        let loggedInName = "Agent";
+
+        if (user) {
+          setCurrentUserId(user.id);
+          const { data: userData } = await supabase
+            .from("users")
+            .select("role, full_name, email")
+            .eq("id", user.id)
+            .maybeSingle();
+
+          loggedInRole = (userData?.role || user.user_metadata?.role || "agent").toLowerCase();
+          loggedInName = userData?.full_name || user.email || "Agent Anda";
+
+          setCurrentUserRole(loggedInRole);
+          setCurrentUserName(loggedInName);
+        }
+
+        // 2. Fetch Agents & Leads Data
         const [agentsData, leadsResult] = await Promise.all([
           crmService.getAgents(),
           crmService.getLeads({ limit: 100 }),
@@ -104,7 +135,7 @@ export default function CreateFollowupPage() {
         setAgents(agentsData || []);
 
         const mappedLeads: LeadItem[] = (leadsResult.data || []).map((lead: any) => {
-          const contactObj = lead.contact || {};
+          const contactObj = lead.contact || lead.crm_contacts || {};
           const name =
             contactObj.full_name ||
             lead.full_name ||
@@ -122,6 +153,12 @@ export default function CreateFollowupPage() {
         });
 
         setLeads(mappedLeads);
+
+        // Set default assigned_to jika agent biasa
+        setForm((prev) => ({
+          ...prev,
+          assigned_to: prev.assigned_to || loggedInUserId || "",
+        }));
       } catch (error) {
         console.error("Error fetching data:", error);
         toast.error("Gagal memuat data pilihan");
@@ -133,7 +170,7 @@ export default function CreateFollowupPage() {
     fetchData();
   }, []);
 
-  // Selected Item Helpers (Mencegah UUID/Huruf Acak Tampil)
+  // Selected Item Helpers
   const selectedLead = useMemo(() => {
     return leads.find((l) => l.id === form.lead_id);
   }, [leads, form.lead_id]);
@@ -164,7 +201,7 @@ export default function CreateFollowupPage() {
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
-  // Quick Preset Tanggal
+  // Quick Preset Tanggal Follow-up
   const setPresetDate = (daysAhead: number) => {
     const target = new Date();
     target.setDate(target.getDate() + daysAhead);
@@ -177,11 +214,20 @@ export default function CreateFollowupPage() {
     handleChange("followup_date", isoLocal);
   };
 
-  // ===== SUBMIT =====
+  // ===== SUBMIT FORM =====
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.lead_id || !form.assigned_to || !form.followup_date) {
-      toast.error("Lead, Agent, dan Tanggal wajib diisi!");
+    if (!form.lead_id || !form.followup_date) {
+      toast.error("Lead prospek dan tanggal follow-up wajib diisi!");
+      return;
+    }
+
+    const assignedToId = isAdmin 
+      ? (form.assigned_to || currentUserId) 
+      : (currentUserId || form.assigned_to);
+
+    if (!assignedToId) {
+      toast.error("Penanggung jawab agent wajib ditentukan!");
       return;
     }
 
@@ -189,18 +235,19 @@ export default function CreateFollowupPage() {
     try {
       await crmService.createFollowup({
         lead_id: form.lead_id,
-        assigned_to: form.assigned_to,
+        assigned_to: assignedToId,
         followup_date: form.followup_date,
         notes: form.notes || undefined,
-      });
+        created_by: currentUserId || undefined,
+      } as any);
 
       toast.success("Jadwal follow-up berhasil dibuat!");
       router.push("/crm/followups");
       router.refresh();
     } catch (error: any) {
       console.error("Error creating followup:", error);
-      toast.error("Gagal membuat follow-up", {
-        description: error.message || "Silakan coba lagi.",
+      toast.error("Gagal membuat agenda follow-up", {
+        description: error.message || "Silakan periksa kembali formulir Anda.",
       });
     } finally {
       setSaving(false);
@@ -211,7 +258,7 @@ export default function CreateFollowupPage() {
     return (
       <div className="space-y-6 max-w-2xl mx-auto pb-12">
         <Skeleton className="h-10 w-48 rounded-xl" />
-        <Card className="p-6 space-y-4">
+        <Card className="p-6 space-y-4 border shadow-xs">
           <Skeleton className="h-12 w-full rounded-xl" />
           <Skeleton className="h-12 w-full rounded-xl" />
           <Skeleton className="h-32 w-full rounded-xl" />
@@ -242,10 +289,10 @@ export default function CreateFollowupPage() {
         </div>
       </div>
 
-      {/* FORM */}
+      {/* FORM CARD */}
       <form onSubmit={handleSubmit}>
         <Card className="border shadow-md bg-card overflow-hidden">
-          <CardHeader className="bg-muted/40 border-b pb-4">
+          <CardHeader className="bg-slate-50/50 dark:bg-slate-900/40 border-b pb-4">
             <CardTitle className="text-sm font-bold flex items-center gap-2">
               <Clock className="w-4 h-4 text-emerald-600" /> Rincian Agenda Follow-up
             </CardTitle>
@@ -255,7 +302,7 @@ export default function CreateFollowupPage() {
           </CardHeader>
 
           <CardContent className="p-5 sm:p-6 space-y-5">
-            {/* 1. PILIH LEAD (SEARCHABLE DROPDOWN - BEBAS BUG UUID) */}
+            {/* 1. PILIH LEAD PROSPEK (SEARCHABLE DROPDOWN) */}
             <div className="space-y-2 relative" ref={leadRef}>
               <Label className="text-xs font-bold text-foreground">
                 Pilih Lead Prospek <span className="text-rose-500">*</span>
@@ -286,7 +333,7 @@ export default function CreateFollowupPage() {
                 <ChevronDown className="h-4 w-4 opacity-50 shrink-0" />
               </div>
 
-              {/* Floating Dropdown */}
+              {/* Floating Lead Dropdown */}
               {isLeadOpen && (
                 <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-popover border border-border rounded-xl shadow-xl p-2 space-y-1">
                   <div className="relative mb-2">
@@ -336,70 +383,91 @@ export default function CreateFollowupPage() {
               )}
             </div>
 
-            {/* 2. ASSIGN TO AGENT */}
+            {/* 2. ASSIGN TO AGENT (KONDISIONAL: TERKUNCI UNTUK AGENT, DROPDOWN UNTUK ADMIN) */}
             <div className="space-y-2 relative" ref={agentRef}>
               <Label className="text-xs font-bold text-foreground">
-                Assign ke Agent Penanggung Jawab <span className="text-rose-500">*</span>
+                Penanggung Jawab (Agent In-Charge) <span className="text-rose-500">*</span>
               </Label>
 
-              <div
-                role="button"
-                tabIndex={0}
-                onClick={() => setIsAgentOpen(!isAgentOpen)}
-                onKeyDown={(e) => e.key === "Enter" && setIsAgentOpen(!isAgentOpen)}
-                className="w-full flex items-center justify-between h-10 px-3 rounded-md border border-input bg-background text-xs cursor-pointer hover:border-emerald-500 transition focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              >
-                {selectedAgent ? (
-                  <span className="font-semibold text-foreground flex items-center gap-2 truncate">
-                    <UserCheck className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                    {selectedAgent.full_name || selectedAgent.email}
-                  </span>
-                ) : (
-                  <span className="text-muted-foreground flex items-center gap-2">
-                    <Search className="w-3.5 h-3.5 text-muted-foreground" /> Pilih agent penanggung jawab...
-                  </span>
-                )}
-                <ChevronDown className="h-4 w-4 opacity-50 shrink-0" />
-              </div>
-
-              {/* Floating Agent Dropdown */}
-              {isAgentOpen && (
-                <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-popover border border-border rounded-xl shadow-xl p-2 space-y-1">
-                  <div className="relative mb-2">
-                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                    <Input
-                      placeholder="Cari nama agent..."
-                      value={agentSearch}
-                      onChange={(e) => setAgentSearch(e.target.value)}
-                      className="pl-8 h-8 text-xs"
-                      autoFocus
-                    />
+              {!isAdmin ? (
+                /* 🔒 TAMPILAN TERKUNCI UNTUK ROLE AGENT */
+                <div className="space-y-1">
+                  <div className="w-full flex items-center justify-between h-10 px-3 rounded-md border border-input bg-muted/50 text-xs cursor-not-allowed select-none">
+                    <span className="font-semibold text-foreground flex items-center gap-2 truncate">
+                      <UserCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                      {selectedAgent ? (selectedAgent.full_name || selectedAgent.email) : (currentUserName || "Agent In-Charge")}
+                    </span>
+                    <Badge variant="outline" className="text-[10px] bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 flex items-center gap-1">
+                      <Lock className="w-2.5 h-2.5" /> Akun Agent (Terkunci)
+                    </Badge>
                   </div>
-
-                  <div className="max-h-48 overflow-y-auto space-y-1">
-                    {filteredAgents.map((agent) => (
-                      <div
-                        key={agent.id}
-                        onClick={() => {
-                          handleChange("assigned_to", agent.id);
-                          setIsAgentOpen(false);
-                        }}
-                        className={cn(
-                          "flex items-center justify-between p-2 rounded-lg cursor-pointer text-xs hover:bg-muted transition",
-                          form.assigned_to === agent.id &&
-                            "bg-blue-50 dark:bg-blue-950/40 text-blue-700 font-bold"
-                        )}
-                      >
-                        <span className="font-medium text-foreground">
-                          {agent.full_name || agent.email}
-                        </span>
-                        {form.assigned_to === agent.id && (
-                          <Check className="w-4 h-4 text-blue-600 shrink-0" />
-                        )}
-                      </div>
-                    ))}
-                  </div>
+                  <p className="text-[10px] text-muted-foreground">
+                    Secara otomatis ditugaskan ke akun Anda.
+                  </p>
                 </div>
+              ) : (
+                /* 🔓 DROPDOWN INTERAKTIF UNTUK ADMIN / SUPER ADMIN */
+                <>
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setIsAgentOpen(!isAgentOpen)}
+                    onKeyDown={(e) => e.key === "Enter" && setIsAgentOpen(!isAgentOpen)}
+                    className="w-full flex items-center justify-between h-10 px-3 rounded-md border border-input bg-background text-xs cursor-pointer hover:border-emerald-500 transition focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  >
+                    {selectedAgent ? (
+                      <span className="font-semibold text-foreground flex items-center gap-2 truncate">
+                        <UserCheck className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                        {selectedAgent.full_name || selectedAgent.email}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground flex items-center gap-2">
+                        <Search className="w-3.5 h-3.5 text-muted-foreground" /> Pilih agent penanggung jawab...
+                      </span>
+                    )}
+                    <ChevronDown className="h-4 w-4 opacity-50 shrink-0" />
+                  </div>
+
+                  {/* Floating Agent Dropdown */}
+                  {isAgentOpen && (
+                    <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-popover border border-border rounded-xl shadow-xl p-2 space-y-1">
+                      <div className="relative mb-2">
+                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                        <Input
+                          placeholder="Cari nama agent..."
+                          value={agentSearch}
+                          onChange={(e) => setAgentSearch(e.target.value)}
+                          className="pl-8 h-8 text-xs"
+                          autoFocus
+                        />
+                      </div>
+
+                      <div className="max-h-48 overflow-y-auto space-y-1">
+                        {filteredAgents.map((agent) => (
+                          <div
+                            key={agent.id}
+                            onClick={() => {
+                              handleChange("assigned_to", agent.id);
+                              setIsAgentOpen(false);
+                            }}
+                            className={cn(
+                              "flex items-center justify-between p-2 rounded-lg cursor-pointer text-xs hover:bg-muted transition",
+                              form.assigned_to === agent.id &&
+                                "bg-blue-50 dark:bg-blue-950/40 text-blue-700 font-bold"
+                            )}
+                          >
+                            <span className="font-medium text-foreground">
+                              {agent.full_name || agent.email}
+                            </span>
+                            {form.assigned_to === agent.id && (
+                              <Check className="w-4 h-4 text-blue-600 shrink-0" />
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
             </div>
 
@@ -413,21 +481,21 @@ export default function CreateFollowupPage() {
                   <button
                     type="button"
                     onClick={() => setPresetDate(1)}
-                    className="text-[10px] bg-muted hover:bg-emerald-50 hover:text-emerald-700 px-2 py-0.5 rounded-md transition"
+                    className="text-[10px] font-medium bg-muted hover:bg-emerald-50 hover:text-emerald-700 dark:hover:bg-emerald-950/50 dark:hover:text-emerald-300 px-2 py-0.5 rounded-md transition border border-transparent hover:border-emerald-300"
                   >
                     Besok
                   </button>
                   <button
                     type="button"
                     onClick={() => setPresetDate(3)}
-                    className="text-[10px] bg-muted hover:bg-emerald-50 hover:text-emerald-700 px-2 py-0.5 rounded-md transition"
+                    className="text-[10px] font-medium bg-muted hover:bg-emerald-50 hover:text-emerald-700 dark:hover:bg-emerald-950/50 dark:hover:text-emerald-300 px-2 py-0.5 rounded-md transition border border-transparent hover:border-emerald-300"
                   >
                     +3 Hari
                   </button>
                   <button
                     type="button"
                     onClick={() => setPresetDate(7)}
-                    className="text-[10px] bg-muted hover:bg-emerald-50 hover:text-emerald-700 px-2 py-0.5 rounded-md transition"
+                    className="text-[10px] font-medium bg-muted hover:bg-emerald-50 hover:text-emerald-700 dark:hover:bg-emerald-950/50 dark:hover:text-emerald-300 px-2 py-0.5 rounded-md transition border border-transparent hover:border-emerald-300"
                   >
                     +1 Minggu
                   </button>

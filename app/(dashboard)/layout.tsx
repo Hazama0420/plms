@@ -1,3 +1,4 @@
+// app/(dashboard)/layout.tsx
 "use client";
 
 import { useState, useEffect } from "react";
@@ -6,7 +7,7 @@ import { AppSidebar } from "@/components/dashboard/app-sidebar";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { NotificationBell } from "@/components/notification-bell";
 import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { cn } from "@/lib/utils";
 
@@ -20,44 +21,68 @@ export default function DashboardLayout({
   const [dateStr, setDateStr] = useState("");
 
   useEffect(() => {
-    const now = new Date();
-    setTimeStr(now.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }));
-    setDateStr(now.toLocaleDateString("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric" }));
+    const updateDateTime = () => {
+      const now = new Date();
+      setTimeStr(
+        now.toLocaleTimeString("id-ID", {
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      );
+      setDateStr(
+        now.toLocaleDateString("id-ID", {
+          weekday: "long",
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+        })
+      );
+    };
+
+    updateDateTime();
+    // Update jam otomatis setiap 1 menit
+    const interval = setInterval(updateDateTime, 1000 * 60);
+
+    return () => clearInterval(interval);
   }, []);
 
   return (
-    <div className="flex h-screen w-full bg-background">
-      {/* Desktop Sidebar */}
-      <div className="hidden md:block w-64 border-r bg-card shrink-0 overflow-y-auto">
+    <div className="flex h-screen w-full bg-background overflow-hidden">
+      {/* Desktop Sidebar (Fleksibel mengikuti ukuran collapsed AppSidebar) */}
+      <div className="hidden md:flex shrink-0">
         <AppSidebar />
       </div>
 
-      {/* Mobile Sidebar (Sheet) */}
+      {/* Mobile Sidebar (Sheet Drawer) */}
       <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
-        <SheetContent side="left" className="p-0 w-64">
+        <SheetContent side="left" className="p-0 w-64 border-r-0">
+          <SheetTitle className="sr-only">Navigasi Sidebar</SheetTitle>
           <AppSidebar onClose={() => setSidebarOpen(false)} />
         </SheetContent>
       </Sheet>
 
-      {/* Main Content */}
+      {/* Area Konten Utama */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {/* Header */}
-        <header className="h-16 border-b px-4 md:px-6 flex items-center justify-between bg-background shrink-0">
+        {/* Header Bar */}
+        <header className="h-16 border-b px-4 md:px-6 flex items-center justify-between bg-background shrink-0 z-10">
           <div className="flex items-center gap-2">
             <Button
               variant="ghost"
               size="icon"
-              className="md:hidden"
+              className="md:hidden text-slate-600 dark:text-slate-300"
               onClick={() => setSidebarOpen(true)}
             >
               <Menu size={24} />
             </Button>
-            <h2 className="text-lg font-semibold">Dashboard</h2>
+            <h2 className="text-lg font-semibold tracking-tight text-foreground">
+              Dashboard
+            </h2>
           </div>
+
           <div className="flex items-center gap-4">
-            <div className="hidden sm:flex items-center gap-3 text-sm text-muted-foreground">
+            <div className="hidden sm:flex items-center gap-3 text-sm text-muted-foreground font-medium">
               <span>{dateStr}</span>
-              <span className="w-px h-4 bg-slate-300 dark:bg-slate-600" />
+              <span className="w-px h-4 bg-slate-200 dark:bg-slate-700" />
               <span>{timeStr}</span>
             </div>
             <NotificationBell />
@@ -65,11 +90,13 @@ export default function DashboardLayout({
           </div>
         </header>
 
-        {/* Main Content */}
-        <main className={cn(
-          "flex-1 overflow-y-auto p-4 md:p-6 bg-slate-50/50 dark:bg-slate-900/50",
-          "pb-20 md:pb-6"
-        )}>
+        {/* Main View Area */}
+        <main
+          className={cn(
+            "flex-1 overflow-y-auto p-4 md:p-6 bg-slate-50/50 dark:bg-slate-900/50",
+            "pb-20 md:pb-6"
+          )}
+        >
           {children}
         </main>
 

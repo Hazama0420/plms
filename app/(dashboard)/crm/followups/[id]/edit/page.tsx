@@ -1,28 +1,34 @@
+// app/(dashboard)/crm/followups/[id]/edit/page.tsx
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { ArrowLeft, Calendar, User, Phone, Mail, MessageSquare, Loader2, Edit, Trash2, CheckCircle, XCircle, Clock } from "lucide-react";
 import { toast } from "sonner";
+import {
+  ArrowLeft,
+  Save,
+  Loader2,
+  Search,
+  User,
+  UserCheck,
+  Calendar,
+  Clock,
+  ChevronDown,
+  Check,
+  Lock,
+  ShieldAlert,
+} from "lucide-react";
 
 import { crmService } from "@/services/crm.service";
+import { supabase } from "@/lib/supabase/client";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Label } from "@/components/ui/label"; // ✅ Tambahkan ini
-import { Textarea } from "@/components/ui/textarea"; // ✅ Tambahkan ini
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -32,374 +38,590 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
-const statusConfig: Record<string, { label: string; color: string; bg: string; icon: React.ReactNode }> = {
-  pending: { label: "Pending", color: "text-amber-600", bg: "bg-amber-100", icon: <Clock size={18} /> },
-  completed: { label: "Selesai", color: "text-emerald-600", bg: "bg-emerald-100", icon: <CheckCircle size={18} /> },
-  cancelled: { label: "Dibatalkan", color: "text-rose-600", bg: "bg-rose-100", icon: <XCircle size={18} /> },
-};
+// ============================================================
+// TYPES
+// ============================================================
+interface LeadItem {
+  id: string;
+  lead_name: string;
+  phone: string | null;
+  status?: string;
+}
 
-export default function FollowupDetailPage() {
+interface AgentItem {
+  id: string;
+  full_name?: string;
+  email?: string;
+}
+
+export default function EditFollowupPage() {
   const router = useRouter();
   const params = useParams();
   const followupId = params.id as string;
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [followup, setFollowup] = useState<any>(null);
-  const [showEditDialog, setShowEditDialog] = useState(false);
-  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-  const [editForm, setEditForm] = useState({
+
+  // User Session & Role States
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [currentUserRole, setCurrentUserRole] = useState<string>("");
+  const [currentUserName, setCurrentUserName] = useState<string>("");
+
+  // Options Data
+  const [agents, setAgents] = useState<AgentItem[]>([]);
+  const [leads, setLeads] = useState<LeadItem[]>([]);
+
+  // Search Filter States
+  const [leadSearch, setLeadSearch] = useState("");
+  const [agentSearch, setAgentSearch] = useState("");
+
+  // Dropdown Open States
+  const [isLeadOpen, setIsLeadOpen] = useState(false);
+  const [isAgentOpen, setIsAgentOpen] = useState(false);
+
+  // DOM Container Refs (Click Outside)
+  const leadRef = useRef<HTMLDivElement>(null);
+  const agentRef = useRef<HTMLDivElement>(null);
+
+  // Form State
+  const [form, setForm] = useState({
+    lead_id: "",
+    assigned_to: "",
+    followup_date: "",
     status: "pending",
     notes: "",
   });
 
+  // Strict Admin Role Check
+  const isAdmin = currentUserRole === "admin" || currentUserRole === "super_admin";
+
+  // Format Tanggal ISO ke datetime-local input
+  const formatForDateTimeLocal = (dateString: string) => {
+    if (!dateString) return "";
+    const d = new Date(dateString);
+    const isoLocal = new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+      .toISOString()
+      .slice(0, 16);
+    return isoLocal;
+  };
+
+  // ===== CLICK OUTSIDE EVENT LISTENER =====
   useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      try {
-        const data = await crmService.getFollowupById(followupId);
-        setFollowup(data);
-        setEditForm({
-          status: data.status || "pending",
-          notes: data.notes || "",
-        });
-      } catch (error) {
-        console.error("Error fetching followup:", error);
-        toast.error("Gagal memuat data follow-up");
-      } finally {
-        setLoading(false);
+    const handleClickOutside = (event: MouseEvent) => {
+      if (leadRef.current && !leadRef.current.contains(event.target as Node)) {
+        setIsLeadOpen(false);
+      }
+      if (agentRef.current && !agentRef.current.contains(event.target as Node)) {
+        setIsAgentOpen(false);
       }
     };
 
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
+  // ===== FETCH INITIAL DATA & FOLLOWUP DETAIL =====
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      // 1. Check Auth Session & Get User Role
+      const { data: { user } } = await supabase.auth.getUser();
+      let loggedInUserId = user?.id || null;
+      let loggedInRole = "agent";
+      let loggedInName = "Agent";
+
+      if (user) {
+        setCurrentUserId(user.id);
+        const { data: userData } = await supabase
+          .from("users")
+          .select("role, full_name, email")
+          .eq("id", user.id)
+          .maybeSingle();
+
+        loggedInRole = (userData?.role || user.user_metadata?.role || "agent").toLowerCase();
+        loggedInName = userData?.full_name || user.email || "Agent";
+        
+        setCurrentUserRole(loggedInRole);
+        setCurrentUserName(loggedInName);
+      }
+
+      // 2. Fetch Agents, Leads, & Existing Followup Data
+      const [agentsData, leadsResult, followupData] = await Promise.all([
+        crmService.getAgents(),
+        crmService.getLeads({ limit: 100 }),
+        crmService.getFollowupById(followupId),
+      ]);
+
+      if (!followupData) {
+        toast.error("Data follow-up tidak ditemukan");
+        router.push("/crm/followups");
+        return;
+      }
+
+      // Validasi Hak Akses Halaman (RBAC)
+      const isOwner =
+        followupData.assigned_to === loggedInUserId ||
+        followupData.created_by === loggedInUserId;
+
+      const isAdminUser = loggedInRole === "admin" || loggedInRole === "super_admin";
+
+      if (!isAdminUser && !isOwner) {
+        toast.error("Akses Ditolak!", {
+          description: "Anda tidak berhak mengedit follow-up milik agent lain.",
+        });
+        router.push("/crm/followups");
+        return;
+      }
+
+      setAgents(agentsData || []);
+
+      const mappedLeads: LeadItem[] = (leadsResult.data || []).map((lead: any) => {
+        const contactObj = lead.contact || lead.crm_contacts || {};
+        const name =
+          contactObj.full_name ||
+          lead.full_name ||
+          lead.name ||
+          lead.contact_name ||
+          "Prospek Tanpa Nama";
+        const phone = contactObj.phone || lead.phone || null;
+
+        return {
+          id: lead.id,
+          lead_name: name,
+          phone: phone,
+          status: lead.status || "new",
+        };
+      });
+
+      setLeads(mappedLeads);
+
+      // Populate Form State
+      setForm({
+        lead_id: followupData.lead_id || "",
+        assigned_to: followupData.assigned_to || loggedInUserId || "",
+        followup_date: formatForDateTimeLocal(followupData.followup_date),
+        status: followupData.status || "pending",
+        notes: followupData.notes || "",
+      });
+    } catch (error: any) {
+      console.error("Error fetching followup for edit:", error);
+      toast.error("Gagal memuat data follow-up");
+    } finally {
+      setLoading(false);
+    }
+  }, [followupId, router]);
+
+  useEffect(() => {
     fetchData();
-  }, [followupId]);
+  }, [fetchData]);
 
-  const handleUpdateStatus = async (status: "pending" | "completed" | "cancelled") => {
-    setSaving(true);
-    try {
-      await crmService.updateFollowup(followupId, { status });
-      toast.success(`Status berhasil diperbarui`);
-      const updated = await crmService.getFollowupById(followupId);
-      setFollowup(updated);
-      setEditForm({ ...editForm, status });
-    } catch (error: any) {
-      console.error("Error updating status:", error);
-      toast.error("Gagal update status", {
-        description: error.message || "Silakan coba lagi.",
-      });
-    } finally {
-      setSaving(false);
-    }
+  // Selected Item Helpers
+  const selectedLead = useMemo(() => {
+    return leads.find((l) => l.id === form.lead_id);
+  }, [leads, form.lead_id]);
+
+  const selectedAgent = useMemo(() => {
+    return agents.find((a) => a.id === form.assigned_to);
+  }, [agents, form.assigned_to]);
+
+  // Filtered lists
+  const filteredLeads = useMemo(() => {
+    return leads.filter(
+      (l) =>
+        l.lead_name.toLowerCase().includes(leadSearch.toLowerCase()) ||
+        (l.phone && l.phone.includes(leadSearch))
+    );
+  }, [leads, leadSearch]);
+
+  const filteredAgents = useMemo(() => {
+    return agents.filter(
+      (a) =>
+        (a.full_name && a.full_name.toLowerCase().includes(agentSearch.toLowerCase())) ||
+        (a.email && a.email.toLowerCase().includes(agentSearch.toLowerCase()))
+    );
+  }, [agents, agentSearch]);
+
+  // ===== HANDLERS =====
+  const handleChange = (field: string, value: string) => {
+    setForm((prev) => ({ ...prev, [field]: value }));
   };
 
-  const handleUpdateNotes = async () => {
+  // Quick Preset Tanggal
+  const setPresetDate = (daysAhead: number) => {
+    const target = new Date();
+    target.setDate(target.getDate() + daysAhead);
+    target.setHours(10, 0, 0, 0);
+
+    const isoLocal = new Date(target.getTime() - target.getTimezoneOffset() * 60000)
+      .toISOString()
+      .slice(0, 16);
+
+    handleChange("followup_date", isoLocal);
+  };
+
+  // ===== SUBMIT FORM =====
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.lead_id || !form.followup_date) {
+      toast.error("Lead prospek dan tanggal follow-up wajib diisi!");
+      return;
+    }
+
     setSaving(true);
     try {
+      const completedAt = form.status === "completed" ? new Date().toISOString() : null;
+
+      // STRICT PROTECTION: Jika bukan Admin, kunci assigned_to ke agen saat ini / awal
+      const targetAssignedTo = isAdmin
+        ? form.assigned_to
+        : (form.assigned_to || currentUserId);
+
       await crmService.updateFollowup(followupId, {
-        notes: editForm.notes,
+          assigned_to: targetAssignedTo ?? undefined, // ⭐ Ubah null menjadi undefined
+          followup_date: form.followup_date,
+          status: form.status as any,
+        notes: form.notes || undefined,
       });
-      toast.success("Catatan berhasil diperbarui");
-      const updated = await crmService.getFollowupById(followupId);
-      setFollowup(updated);
-      setShowEditDialog(false);
-    } catch (error: any) {
-      console.error("Error updating notes:", error);
-      toast.error("Gagal update catatan", {
-        description: error.message || "Silakan coba lagi.",
-      });
-    } finally {
-      setSaving(false);
-    }
-  };
 
-  const handleDelete = async () => {
-    setSaving(true);
-    try {
-      await crmService.deleteFollowup(followupId);
-      toast.success("Follow-up berhasil dihapus");
-      router.push("/crm/followups");
+      toast.success("Agenda follow-up berhasil diperbarui!");
+      router.push(`/crm/followups/${followupId}`);
       router.refresh();
     } catch (error: any) {
-      console.error("Error deleting followup:", error);
-      toast.error("Gagal hapus follow-up", {
-        description: error.message || "Silakan coba lagi.",
+      console.error("Error updating followup:", error);
+      toast.error("Gagal memperbarui follow-up", {
+        description: error.message || "Silakan periksa kembali data Anda.",
       });
     } finally {
       setSaving(false);
     }
-  };
-
-  const formatDate = (date: string) => {
-    return new Date(date).toLocaleDateString("id-ID", {
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
-
-  const getInitials = (name: string) => {
-    return name
-      .split(" ")
-      .map((n) => n[0])
-      .join("")
-      .toUpperCase()
-      .slice(0, 2);
   };
 
   if (loading) {
     return (
-      <div className="space-y-6 max-w-3xl mx-auto">
-        <Skeleton className="h-10 w-40" />
-        <Skeleton className="h-64 w-full rounded-xl" />
-        <Skeleton className="h-48 w-full rounded-xl" />
-      </div>
-    );
-  }
-
-  if (!followup) {
-    return (
-      <div className="flex h-64 flex-col items-center justify-center gap-3">
-        <div className="text-6xl">📅</div>
-        <p className="text-lg font-medium text-slate-700">Follow-up tidak ditemukan</p>
-        <Button onClick={() => router.back()}>
-          <ArrowLeft size={16} className="mr-2" />
-          Kembali
-        </Button>
+      <div className="space-y-6 max-w-2xl mx-auto pb-12">
+        <Skeleton className="h-10 w-48 rounded-xl" />
+        <Card className="p-6 space-y-4 border shadow-xs">
+          <Skeleton className="h-12 w-full rounded-xl" />
+          <Skeleton className="h-12 w-full rounded-xl" />
+          <Skeleton className="h-32 w-full rounded-xl" />
+        </Card>
       </div>
     );
   }
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
+    <div className="max-w-2xl mx-auto space-y-6 pb-16">
       {/* HEADER */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={() => router.back()}>
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">📅 Detail Follow-up</h1>
-            <p className="text-sm text-muted-foreground">
-              {followup.lead?.contact?.full_name || "Lead tidak ditemukan"}
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => setShowEditDialog(true)}>
-            <Edit size={16} className="mr-2" />
-            Edit
-          </Button>
-          <Button variant="destructive" size="sm" onClick={() => setShowDeleteDialog(true)}>
-            <Trash2 size={16} className="mr-2" />
-            Hapus
-          </Button>
+      <div className="flex items-center gap-3">
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={() => router.back()}
+          className="h-9 w-9 rounded-xl shrink-0"
+        >
+          <ArrowLeft className="h-4 w-4" />
+        </Button>
+        <div>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
+            ✏️ Edit Agenda Follow-up
+          </h1>
+          <p className="text-xs text-muted-foreground">
+            Ubah status, jadwal, atau catatan aktivitas untuk prospek ini.
+          </p>
         </div>
       </div>
 
-      {/* STATUS CARD */}
-      <Card className="border-0 shadow-md">
-        <CardContent className="p-6">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-4">
-              <div className={cn(
-                "p-3 rounded-full",
-                statusConfig[followup.status]?.bg
-              )}>
-                {statusConfig[followup.status]?.icon}
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Status</p>
-                <Badge
-                  className={cn(
-                    "text-sm font-medium border-0",
-                    statusConfig[followup.status]?.bg,
-                    statusConfig[followup.status]?.color
-                  )}
-                >
-                  {statusConfig[followup.status]?.label || followup.status}
-                </Badge>
-              </div>
-            </div>
+      {/* FORM CARD */}
+      <form onSubmit={handleSubmit}>
+        <Card className="border shadow-md bg-card overflow-hidden">
+          <CardHeader className="bg-slate-50/50 dark:bg-slate-900/40 border-b pb-4">
+            <CardTitle className="text-sm font-bold flex items-center gap-2">
+              <Clock className="w-4 h-4 text-emerald-600" /> Rincian Agenda Follow-up
+            </CardTitle>
+            <CardDescription className="text-xs">
+              Pastikan status dan tanggal follow-up telah disesuaikan.
+            </CardDescription>
+          </CardHeader>
 
-            <div className="flex items-center gap-2">
+          <CardContent className="p-5 sm:p-6 space-y-5">
+            {/* 1. STATUS SELECTOR */}
+            <div className="space-y-2">
+              <Label htmlFor="status" className="text-xs font-bold text-foreground">
+                Status Agenda Follow-up <span className="text-rose-500">*</span>
+              </Label>
               <Select
-                value={followup.status}
-                onValueChange={(val) => handleUpdateStatus(val as any)}
-                disabled={saving}
+                value={form.status}
+                onValueChange={(val) => handleChange("status", val || "")}
               >
-                <SelectTrigger className="w-[150px]">
-                  <SelectValue placeholder="Ubah Status" />
+                <SelectTrigger className="h-10 text-xs bg-background">
+                  <SelectValue placeholder="Pilih status agenda" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="pending">⏳ Pending</SelectItem>
-                  <SelectItem value="completed">✅ Selesai</SelectItem>
-                  <SelectItem value="cancelled">❌ Dibatalkan</SelectItem>
+                  <SelectItem value="pending" className="text-xs">⏳ Pending / Mendatang</SelectItem>
+                  <SelectItem value="completed" className="text-xs">✅ Selesai (Completed)</SelectItem>
+                  <SelectItem value="cancelled" className="text-xs">❌ Dibatalkan (Cancelled)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-          </div>
-        </CardContent>
-      </Card>
 
-      {/* INFO GRID */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <Card className="border-0 shadow-md">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Calendar size={18} className="text-amber-500" />
-              Jadwal
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-lg font-semibold">{formatDate(followup.followup_date)}</p>
-          </CardContent>
-        </Card>
+            {/* 2. PILIH LEAD PROSPEK (SEARCHABLE DROPDOWN) */}
+            <div className="space-y-2 relative" ref={leadRef}>
+              <Label className="text-xs font-bold text-foreground">
+                Lead Prospek <span className="text-rose-500">*</span>
+              </Label>
 
-        <Card className="border-0 shadow-md">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <User size={18} className="text-blue-500" />
-              Assigned Agent
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center gap-3">
-              <Avatar className="h-8 w-8">
-                <AvatarImage src={followup.assigned_user?.avatar_url || undefined} />
-                <AvatarFallback>
-                  {getInitials(followup.assigned_user?.full_name || "Agent")}
-                </AvatarFallback>
-              </Avatar>
-              <span className="font-medium">
-                {followup.assigned_user?.full_name || followup.assigned_to || "Tidak diassign"}
-              </span>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* LEAD INFO */}
-      <Card className="border-0 shadow-md">
-        <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            👤 Info Lead Terkait
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex items-center gap-3">
-            <Avatar className="h-12 w-12">
-              <AvatarFallback className="text-lg bg-primary/10 text-primary">
-                {getInitials(followup.lead?.contact?.full_name || "L")}
-              </AvatarFallback>
-            </Avatar>
-            <div>
-              <p className="font-semibold text-lg">
-                {followup.lead?.contact?.full_name || "Lead tidak ditemukan"}
-              </p>
-              <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-                {followup.lead?.contact?.phone && (
-                  <span>📞 {followup.lead.contact.phone}</span>
-                )}
-                {followup.lead?.contact?.email && (
-                  <span>✉️ {followup.lead.contact.email}</span>
-                )}
-              </div>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => router.push(`/crm/leads/${followup.lead?.id}`)}
-            >
-              Lihat Detail Lead
-            </Button>
-            {followup.lead?.contact?.phone && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="text-emerald-500 border-emerald-200 hover:bg-emerald-50"
-                onClick={() => {
-                  const phone = followup.lead.contact.phone.replace(/\D/g, "");
-                  window.open(`https://wa.me/${phone}`, "_blank");
-                }}
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => setIsLeadOpen(!isLeadOpen)}
+                onKeyDown={(e) => e.key === "Enter" && setIsLeadOpen(!isLeadOpen)}
+                className="w-full flex items-center justify-between h-10 px-3 rounded-md border border-input bg-background text-xs cursor-pointer hover:border-emerald-500 transition focus:outline-none focus:ring-2 focus:ring-emerald-500"
               >
-                WhatsApp
-              </Button>
-            )}
-          </div>
-        </CardContent>
-      </Card>
+                {selectedLead ? (
+                  <span className="font-semibold text-foreground flex items-center gap-2 truncate">
+                    <User className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    {selectedLead.lead_name}
+                    {selectedLead.phone && (
+                      <span className="text-muted-foreground font-normal font-mono text-[11px]">
+                        ({selectedLead.phone})
+                      </span>
+                    )}
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground flex items-center gap-2">
+                    <Search className="w-3.5 h-3.5 text-muted-foreground" /> Cari atau pilih lead prospek...
+                  </span>
+                )}
+                <ChevronDown className="h-4 w-4 opacity-50 shrink-0" />
+              </div>
 
-      {/* NOTES */}
-      <Card className="border-0 shadow-md">
-        <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <MessageSquare size={18} className="text-purple-500" />
-            Catatan
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {followup.notes ? (
-            <p className="text-sm whitespace-pre-wrap">{followup.notes}</p>
-          ) : (
-            <p className="text-sm text-muted-foreground italic">Tidak ada catatan</p>
-          )}
-        </CardContent>
-      </Card>
+              {/* Floating Lead Dropdown */}
+              {isLeadOpen && (
+                <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-popover border border-border rounded-xl shadow-xl p-2 space-y-1">
+                  <div className="relative mb-2">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                    <Input
+                      placeholder="Ketik nama atau no HP..."
+                      value={leadSearch}
+                      onChange={(e) => setLeadSearch(e.target.value)}
+                      className="pl-8 h-8 text-xs"
+                      autoFocus
+                    />
+                  </div>
 
-      {/* EDIT DIALOG */}
-      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>✏️ Edit Follow-up</DialogTitle>
-            <DialogDescription>Update catatan follow-up ini</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
+                  <div className="max-h-52 overflow-y-auto space-y-1">
+                    {filteredLeads.length === 0 ? (
+                      <p className="p-3 text-center text-xs text-muted-foreground">
+                        Belum ada data lead yang cocok.
+                      </p>
+                    ) : (
+                      filteredLeads.map((item) => (
+                        <div
+                          key={item.id}
+                          onClick={() => {
+                            handleChange("lead_id", item.id);
+                            setIsLeadOpen(false);
+                          }}
+                          className={cn(
+                            "flex items-center justify-between p-2 rounded-lg cursor-pointer text-xs hover:bg-muted transition",
+                            form.lead_id === item.id &&
+                              "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 font-bold"
+                          )}
+                        >
+                          <div>
+                            <p className="font-medium text-foreground">{item.lead_name}</p>
+                            <p className="text-[10px] text-muted-foreground font-mono">
+                              {item.phone || "Tidak ada telepon"}
+                            </p>
+                          </div>
+                          {form.lead_id === item.id && (
+                            <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+                          )}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 3. ASSIGN TO AGENT (🔒 HANYA ADMIN BISA UBAH, AGENT TERKUNCI PERMANEN) */}
+            <div className="space-y-2 relative" ref={agentRef}>
+              <Label className="text-xs font-bold text-foreground">
+                Penanggung Jawab (Agent In-Charge) <span className="text-rose-500">*</span>
+              </Label>
+
+              {!isAdmin ? (
+                /* 🔒 TAMPILAN TERKUNCI LENGKAP UNTUK ROLE AGENT */
+                <div className="space-y-1">
+                  <div className="w-full flex items-center justify-between h-10 px-3 rounded-md border border-input bg-muted/60 text-xs cursor-not-allowed select-none opacity-90">
+                    <span className="font-semibold text-foreground flex items-center gap-2 truncate">
+                      <UserCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                      {selectedAgent ? (selectedAgent.full_name || selectedAgent.email) : (currentUserName || "Agent In-Charge")}
+                    </span>
+                    <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border-amber-200 flex items-center gap-1 font-mono">
+                      <Lock className="w-2.5 h-2.5" /> Terkunci (Agent)
+                    </Badge>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+                    <ShieldAlert className="w-3 h-3 text-amber-500" />
+                    Penanggung jawab tidak dapat diubah oleh Agent. Hubungi Admin jika ingin mengganti penugasan.
+                  </p>
+                </div>
+              ) : (
+                /* 🔓 DROPDOWN INTERAKTIF UNTUK ADMIN / SUPER ADMIN */
+                <>
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setIsAgentOpen(!isAgentOpen)}
+                    onKeyDown={(e) => e.key === "Enter" && setIsAgentOpen(!isAgentOpen)}
+                    className="w-full flex items-center justify-between h-10 px-3 rounded-md border border-input bg-background text-xs cursor-pointer hover:border-emerald-500 transition focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  >
+                    {selectedAgent ? (
+                      <span className="font-semibold text-foreground flex items-center gap-2 truncate">
+                        <UserCheck className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                        {selectedAgent.full_name || selectedAgent.email}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground flex items-center gap-2">
+                        <Search className="w-3.5 h-3.5 text-muted-foreground" /> Pilih agent penanggung jawab...
+                      </span>
+                    )}
+                    <ChevronDown className="h-4 w-4 opacity-50 shrink-0" />
+                  </div>
+
+                  {/* Floating Agent Dropdown */}
+                  {isAgentOpen && (
+                    <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-popover border border-border rounded-xl shadow-xl p-2 space-y-1">
+                      <div className="relative mb-2">
+                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                        <Input
+                          placeholder="Cari nama agent..."
+                          value={agentSearch}
+                          onChange={(e) => setAgentSearch(e.target.value)}
+                          className="pl-8 h-8 text-xs"
+                          autoFocus
+                        />
+                      </div>
+
+                      <div className="max-h-48 overflow-y-auto space-y-1">
+                        {filteredAgents.map((agent) => (
+                          <div
+                            key={agent.id}
+                            onClick={() => {
+                              handleChange("assigned_to", agent.id);
+                              setIsAgentOpen(false);
+                            }}
+                            className={cn(
+                              "flex items-center justify-between p-2 rounded-lg cursor-pointer text-xs hover:bg-muted transition",
+                              form.assigned_to === agent.id &&
+                                "bg-blue-50 dark:bg-blue-950/40 text-blue-700 font-bold"
+                            )}
+                          >
+                            <span className="font-medium text-foreground">
+                              {agent.full_name || agent.email}
+                            </span>
+                            {form.assigned_to === agent.id && (
+                              <Check className="w-4 h-4 text-blue-600 shrink-0" />
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* 4. TANGGAL & WAKTU FOLLOW-UP WITH PRESETS */}
             <div className="space-y-2">
-              <Label>Catatan</Label>
-              <Textarea
-                value={editForm.notes}
-                onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
-                placeholder="Catatan follow-up..."
-                rows={4}
+              <div className="flex items-center justify-between">
+                <Label htmlFor="followup_date" className="text-xs font-bold text-foreground">
+                  Tanggal & Waktu Follow-up <span className="text-rose-500">*</span>
+                </Label>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setPresetDate(1)}
+                    className="text-[10px] font-medium bg-muted hover:bg-emerald-50 hover:text-emerald-700 dark:hover:bg-emerald-950/50 dark:hover:text-emerald-300 px-2 py-0.5 rounded-md transition border border-transparent hover:border-emerald-300"
+                  >
+                    Besok
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPresetDate(3)}
+                    className="text-[10px] font-medium bg-muted hover:bg-emerald-50 hover:text-emerald-700 dark:hover:bg-emerald-950/50 dark:hover:text-emerald-300 px-2 py-0.5 rounded-md transition border border-transparent hover:border-emerald-300"
+                  >
+                    +3 Hari
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPresetDate(7)}
+                    className="text-[10px] font-medium bg-muted hover:bg-emerald-50 hover:text-emerald-700 dark:hover:bg-emerald-950/50 dark:hover:text-emerald-300 px-2 py-0.5 rounded-md transition border border-transparent hover:border-emerald-300"
+                  >
+                    +1 Minggu
+                  </button>
+                </div>
+              </div>
+
+              <Input
+                id="followup_date"
+                type="datetime-local"
+                value={form.followup_date}
+                onChange={(e) => handleChange("followup_date", e.target.value)}
+                className="h-10 text-xs font-mono"
+                required
               />
             </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowEditDialog(false)}>
-              Batal
-            </Button>
-            <Button onClick={handleUpdateNotes} disabled={saving}>
-              {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-              Simpan
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
-      {/* DELETE DIALOG */}
-      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>⚠️ Hapus Follow-up</DialogTitle>
-            <DialogDescription>
-              Apakah Anda yakin ingin menghapus follow-up ini? Tindakan ini tidak dapat dibatalkan.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>
-              Batal
-            </Button>
-            <Button variant="destructive" onClick={handleDelete} disabled={saving}>
-              {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-              Hapus
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            {/* 5. CATATAN / PLAN ACTIVITY */}
+            <div className="space-y-2">
+              <Label htmlFor="notes" className="text-xs font-bold text-foreground">
+                Catatan Rencana Aktivitas
+              </Label>
+              <Textarea
+                id="notes"
+                placeholder="Misal: Telepon via WhatsApp untuk menanyakan progres KPR, kirimkan brosur unit Tipe 36, atau atur janji survei lokasi..."
+                value={form.notes}
+                onChange={(e) => handleChange("notes", e.target.value)}
+                rows={4}
+                className="text-xs leading-relaxed"
+              />
+            </div>
+
+            {/* SUBMIT BUTTONS */}
+            <div className="flex items-center gap-2 pt-4 border-t">
+              <Button
+                type="submit"
+                disabled={saving}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20 text-xs gap-2 px-5 h-9"
+              >
+                {saving ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" /> Menyimpan...
+                  </>
+                ) : (
+                  <>
+                    <Save className="h-4 w-4" /> Simpan Perubahan
+                  </>
+                )}
+              </Button>
+
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => router.back()}
+                className="text-xs h-9"
+              >
+                Batal
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </form>
     </div>
   );
 }

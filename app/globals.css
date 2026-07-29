@@ -81,6 +81,28 @@
   }
 }
 
+/* ============================================================ */
+/* ATURAN COMPACT MODE (TAMPILAN PADAT DATA)                   */
+/* ============================================================ */
+html.compact-mode table th,
+html.compact-mode table td {
+  padding-top: 0.35rem !important;
+  padding-bottom: 0.35rem !important;
+  font-size: 0.75rem !important;
+}
+
+html.compact-mode .card,
+html.compact-mode [data-slot="card"] {
+  padding-top: 0.5rem !important;
+  padding-bottom: 0.5rem !important;
+}
+
+html.compact-mode .card-header,
+html.compact-mode .card-content {
+  padding-top: 0.5rem !important;
+  padding-bottom: 0.5rem !important;
+}
+
 /* Scrollbar styling */
 ::-webkit-scrollbar {
   width: 6px;

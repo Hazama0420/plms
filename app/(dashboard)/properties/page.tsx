@@ -1,72 +1,39 @@
 // app/(dashboard)/properties/page.tsx
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
-import { useRouter } from "next/navigation";
-import Link from "next/link";
+import { useState, useEffect, useCallback, useMemo, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { motion } from "framer-motion";
 
+import { supabase } from "@/lib/supabase/client";
 import { useProperties } from "@/hooks/use-properties";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
-} from "@/components/ui/sheet";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
 import {
-  Home,
-  FileText,
-  CheckCircle,
-  XCircle,
   Plus,
   Search,
   Building2,
   MapPin,
-  MoreHorizontal,
-  Pencil,
   Eye,
   Share2,
-  ShieldCheck,
   User,
-  MessageCircle,
   RefreshCw,
-  TrendingUp,
-  TrendingDown,
+  LayoutGrid,
+  List,
+  Filter,
+  X,
+  Globe,
+  Star,
   Bed,
   Bath,
   Maximize2,
-  Building,
-  LayoutGrid,
-  List,
 } from "lucide-react";
 
-// ============================================================
-// TIPE DATA & CONFIG STATUS
-// ============================================================
 export interface PropertyItem {
   id: string;
   title: string;
@@ -85,27 +52,31 @@ export interface PropertyItem {
   owner_name: string;
   owner_phone: string;
   description: string;
+  created_by?: string;
+  assigned_to?: string;
+  is_featured?: boolean;
+  uploader_name: string;
+  uploader_avatar: string;
 }
 
 const statusConfig: Record<string, { label: string; bg: string; text: string }> = {
-  published: { label: "Published", bg: "bg-emerald-100 dark:bg-emerald-950/60 border-emerald-200", text: "text-emerald-700 dark:text-emerald-300" },
-  available: { label: "Tersedia", bg: "bg-emerald-100 dark:bg-emerald-950/60 border-emerald-200", text: "text-emerald-700 dark:text-emerald-300" },
-  draft: { label: "Draft", bg: "bg-amber-100 dark:bg-amber-950/60 border-amber-200", text: "text-amber-700 dark:text-amber-300" },
-  review: { label: "Review", bg: "bg-amber-100 dark:bg-amber-950/60 border-amber-200", text: "text-amber-700 dark:text-amber-300" },
-  sold: { label: "Terjual", bg: "bg-blue-100 dark:bg-blue-950/60 border-blue-200", text: "text-blue-700 dark:text-blue-300" },
-  rented: { label: "Tersewa", bg: "bg-purple-100 dark:bg-purple-950/60 border-purple-200", text: "text-purple-700 dark:text-purple-300" },
+  published: { label: "Dipublikasikan", bg: "bg-emerald-500/10 border-emerald-500/20", text: "text-emerald-700 dark:text-emerald-400" },
+  available: { label: "Tersedia", bg: "bg-emerald-500/10 border-emerald-500/20", text: "text-emerald-700 dark:text-emerald-400" },
+  draft: { label: "Draf", bg: "bg-amber-500/10 border-amber-500/20", text: "text-amber-700 dark:text-amber-400" },
+  review: { label: "Peninjauan", bg: "bg-amber-500/10 border-amber-500/20", text: "text-amber-700 dark:text-amber-400" },
+  sold: { label: "Terjual", bg: "bg-slate-500/10 border-slate-500/20", text: "text-slate-700 dark:text-slate-400" },
+  rented: { label: "Tersewa", bg: "bg-blue-500/10 border-blue-500/20", text: "text-blue-700 dark:text-blue-400" },
 };
 
 const DEFAULT_FALLBACK_IMAGE =
   "https://images.unsplash.com/photo-1564013799919-ab600027ffc6?auto=format&fit=crop&w=800&q=80";
 
-// ============================================================
-// HELPER EKSTRAKSI DATA MULTI-LAYER (SAMA DENGAN [id]/page.tsx)
-// ============================================================
-const mapPropertyItem = (p: any): PropertyItem => {
+const mapPropertyItem = (
+  p: any,
+  profilesMap: Record<string, { full_name: string; avatar_url: string }>
+): PropertyItem => {
   if (!p) return {} as PropertyItem;
 
-  // 1. EKSTRAK GAMBAR (MEDIA, IMAGES JSON, THUMBNAIL)
   let thumbnail = DEFAULT_FALLBACK_IMAGE;
   const mediaArr = Array.isArray(p.media) ? p.media : [];
 
@@ -143,7 +114,6 @@ const mapPropertyItem = (p: any): PropertyItem => {
     }
   }
 
-  // 2. EKSTRAK HARGA
   const priceObj = Array.isArray(p.price) ? p.price[0] : p.price;
   let priceVal = 0;
   if (typeof p.price === "number") {
@@ -154,46 +124,58 @@ const mapPropertyItem = (p: any): PropertyItem => {
     priceVal = Number(priceObj.selling_price || priceObj.rental_price || priceObj.price || priceObj.amount || 0);
   }
 
-  // 3. EKSTRAK SPESIFIKASI KAMAR (SINGULAR & PLURAL SUPPORT)
   const specObj = Array.isArray(p.specifications)
     ? p.specifications[0]
     : p.specifications || (Array.isArray(p.specs) ? p.specs[0] : p.specs);
 
-  const bedrooms = Number(
-    specObj?.bedroom ?? specObj?.bedrooms ?? p.bedrooms ?? p.bedroom ?? 0
-  );
-  const bathrooms = Number(
-    specObj?.bathroom ?? specObj?.bathrooms ?? p.bathrooms ?? p.bathroom ?? 0
-  );
+  const bedrooms = Number(specObj?.bedroom ?? specObj?.bedrooms ?? p.bedrooms ?? p.bedroom ?? 0);
+  const bathrooms = Number(specObj?.bathroom ?? specObj?.bathrooms ?? p.bathrooms ?? p.bathroom ?? 0);
 
-  // 4. EKSTRAK LUAS TANAH & BANGUNAN (LAND & BUILDING OBJECT SUPPORT)
   const landObj = Array.isArray(p.land) ? p.land[0] : p.land;
   const buildingObj = Array.isArray(p.building) ? p.building[0] : p.building;
 
-  const landArea = Number(
-    landObj?.land_area ?? specObj?.land_area ?? p.land_area ?? p.land_size ?? 0
-  );
-  const buildingArea = Number(
-    buildingObj?.building_area ?? specObj?.building_area ?? p.building_area ?? p.building_size ?? 0
-  );
+  const landArea = Number(landObj?.land_area ?? specObj?.land_area ?? p.land_area ?? p.land_size ?? 0);
+  const buildingArea = Number(buildingObj?.building_area ?? specObj?.building_area ?? p.building_area ?? p.building_size ?? 0);
 
-  // 5. EKSTRAK LOKASI & ALAMAT
   const addressObj = Array.isArray(p.address) ? p.address[0] : p.address;
-  let locationStr = "Lokasi Belum Diatur";
+  let locationStr = "Lokasi Belum Dikonfigurasi";
   if (addressObj) {
     if (typeof addressObj === "string") {
       locationStr = addressObj;
     } else {
-      const parts = [addressObj.address, addressObj.city, addressObj.province].filter(Boolean);
-      locationStr = parts.length > 0 ? parts.join(", ") : "Lokasi Tersedia";
+      const parts = [
+        addressObj.address,
+        addressObj.district_name || addressObj.district,
+        addressObj.city_name || addressObj.city,
+        addressObj.province_name || addressObj.province,
+      ].filter(Boolean);
+      locationStr = parts.length > 0 ? parts.join(", ") : "Lokasi Terverifikasi";
     }
   } else if (p.location) {
     locationStr = p.location;
   }
 
-  // 6. OWNER & CERTIFICATE
   const legalObj = Array.isArray(p.legalities) ? p.legalities[0] : p.legalities;
   const ownerObj = Array.isArray(p.owner) ? p.owner[0] : p.owner;
+
+  // 🔹 PEMANCETAN PROFIL PENGUNGGAH DARI TABEL user_profiles SUPABASE
+  const uploaderId = p.created_by || p.user_id || "";
+  const profileFromJoin = Array.isArray(p.user_profiles) ? p.user_profiles[0] : p.user_profiles;
+  const profileFromMap = uploaderId ? profilesMap[uploaderId] : null;
+
+  const uploaderName =
+    profileFromJoin?.full_name ||
+    profileFromMap?.full_name ||
+    p.users?.full_name ||
+    p.uploader_name ||
+    "Agen Resmi";
+
+  const uploaderAvatar =
+    profileFromJoin?.avatar_url ||
+    profileFromMap?.avatar_url ||
+    p.users?.avatar_url ||
+    p.uploader_avatar ||
+    "";
 
   return {
     id: p.id,
@@ -210,54 +192,155 @@ const mapPropertyItem = (p: any): PropertyItem => {
     bathrooms: bathrooms,
     thumbnail: thumbnail,
     certificate_status: specObj?.certificate || legalObj?.certificate_type || p.certificate_status || "SHM",
-    owner_name: ownerObj?.full_name || ownerObj?.owner_name || p.owner_name || "Internal Company",
+    owner_name: ownerObj?.full_name || ownerObj?.owner_name || p.owner_name || "Perusahaan Internal",
     owner_phone: ownerObj?.phone || ownerObj?.owner_phone || p.owner_phone || "",
     description: p.description || "",
+    created_by: uploaderId,
+    assigned_to: p.assigned_to || "",
+    is_featured: p.is_featured || false,
+    uploader_name: uploaderName,
+    uploader_avatar: uploaderAvatar,
   };
 };
 
-export default function PropertiesPage() {
+function PropertiesCatalogContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+
   const [searchInput, setSearchInput] = useState("");
-  const [activeTab, setActiveTab] = useState<string>("all");
-  const [selectedProperty, setSelectedProperty] = useState<PropertyItem | null>(null);
+  const [activeTab] = useState<string>("all");
   const [viewMode, setViewMode] = useState<"grid" | "table">("grid");
 
-  // Core Hook Project
+  const [currentUser, setCurrentUser] = useState<{ id: string; role: string } | null>(null);
+  const [profilesMap, setProfilesMap] = useState<Record<string, { full_name: string; avatar_url: string }>>({});
+
+  const viewParam = searchParams.get("view");
+  const [scopeMode, setScopeMode] = useState<"my_properties" | "global">(
+    viewParam === "global" ? "global" : "my_properties"
+  );
+
+  useEffect(() => {
+    async function fetchUser() {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data: profile } = await supabase
+            .from("users")
+            .select("id, role")
+            .eq("id", user.id)
+            .maybeSingle();
+
+          const role = (profile?.role || user.user_metadata?.role || "agent").toLowerCase();
+          setCurrentUser({ id: user.id, role });
+
+          if (role === "viewer") {
+            setScopeMode("global");
+          }
+        }
+      } catch (err) {
+        console.error("Gagal memuat data pengguna:", err);
+      }
+    }
+    fetchUser();
+  }, []);
+
+  useEffect(() => {
+    if (viewParam === "global") setScopeMode("global");
+  }, [viewParam]);
+
+  const isSuperAdmin = currentUser?.role === "super_admin" || currentUser?.role === "superadmin";
+  const isViewer = currentUser?.role === "viewer";
+
+  const qParam = searchParams.get("q") || "";
+  const listingTypeParam = searchParams.get("listing_type") || "";
+  const propertyTypeParam = searchParams.get("property_type") || "";
+  const cityParam = searchParams.get("city") || "";
+  const provinceParam = searchParams.get("province") || "";
+
+  const hasDashboardFilter = !!(qParam || listingTypeParam || propertyTypeParam || cityParam || provinceParam);
+
   const {
     data: rawProperties = [],
     loading,
-    error,
-    totalItems,
-    updateFilters,
     refetch,
   } = useProperties();
 
-  // Mapping Data Menggunakan Helper Multi-Layer
-  const properties: PropertyItem[] = useMemo(() => {
-    return (rawProperties || []).map(mapPropertyItem);
+  // 🔹 FETCH DATA PROFIL PENGUNGGAH DARI TABEL "users" (sumber kebenaran profil user)
+  useEffect(() => {
+    async function fetchProfiles() {
+      if (!rawProperties || rawProperties.length === 0) return;
+
+      const userIds = Array.from(
+        new Set(
+          rawProperties
+            .map((p: any) => p.created_by || p.user_id)
+            .filter(Boolean)
+        )
+      );
+
+      if (userIds.length === 0) return;
+
+      try {
+        const { data, error } = await supabase
+          .from("users")
+          .select("id, full_name, avatar_url")
+          .in("id", userIds);
+
+        if (error) {
+          console.error("Gagal mengambil data users:", error);
+          return;
+        }
+
+        if (data) {
+          const map: Record<string, { full_name: string; avatar_url: string }> = {};
+          data.forEach((prof: any) => {
+            map[prof.id] = {
+              full_name: prof.full_name || "Agen Resmi",
+              avatar_url: prof.avatar_url || "",
+            };
+          });
+          setProfilesMap(map);
+        }
+      } catch (err) {
+        console.error("Error fetching users:", err);
+      }
+    }
+
+    fetchProfiles();
   }, [rawProperties]);
 
-  // Statistik Kategori
-  const stats = useMemo(() => {
-    return {
-      total: totalItems || properties.length,
-      published: properties.filter((p) => p.status === "published" || p.status === "available").length,
-      draft: properties.filter((p) => p.status === "draft" || p.status === "review").length,
-      sold: properties.filter((p) => p.status === "sold" || p.status === "rented").length,
-    };
-  }, [properties, totalItems]);
+  const properties: PropertyItem[] = useMemo(() => {
+    return (rawProperties || []).map((p) => mapPropertyItem(p, profilesMap));
+  }, [rawProperties, profilesMap]);
 
-  const statCards = [
-    { label: "Total Properti", value: stats.total, icon: Home, trend: "+12%", trendUp: true },
-    { label: "Published / Tersedia", value: stats.published, icon: CheckCircle, trend: "+8%", trendUp: true },
-    { label: "Draft / Review", value: stats.draft, icon: FileText, trend: "-3%", trendUp: false },
-    { label: "Sold / Rented", value: stats.sold, icon: XCircle, trend: "+5%", trendUp: true },
-  ];
+  useEffect(() => {
+    if (qParam) setSearchInput(qParam);
+  }, [qParam]);
 
-  const handleSearchSubmit = useCallback(() => {
-    updateFilters?.({ search: searchInput, page: 1 });
-  }, [searchInput, updateFilters]);
+  const handleToggleFeatured = async (property: PropertyItem, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (!isSuperAdmin) return;
+
+    try {
+      const nextVal = !property.is_featured;
+      const { error: updateErr } = await supabase
+        .from("properties")
+        .update({ is_featured: nextVal })
+        .eq("id", property.id);
+
+      if (updateErr) throw updateErr;
+
+      toast.success(
+        nextVal
+          ? `Properti '${property.title}' berhasil ditetapkan sebagai Properti Unggulan.`
+          : `Status Unggulan pada properti '${property.title}' telah dicabut.`
+      );
+
+      refetch?.();
+    } catch (err: any) {
+      toast.error("Gagal memperbarui status unggulan: " + (err.message || err));
+    }
+  };
 
   const formatCurrency = (val?: number) => {
     return new Intl.NumberFormat("id-ID", {
@@ -272,547 +355,350 @@ export default function PropertiesPage() {
     router.push(`/properties/${id}`);
   };
 
-  // WhatsApp Share Brochure
   const handleSendWABrochure = (property: PropertyItem, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     const text = encodeURIComponent(
-      `🏠 *BROSUR PROPERTI: ${property.title.toUpperCase()}*\n\n` +
+      `🏠 *BROSUR RESMI PROPERTI: ${property.title.toUpperCase()}*\n\n` +
       `📍 *Lokasi*: ${property.location}\n` +
       `💰 *Harga*: ${formatCurrency(property.price)}\n` +
-      `📐 *Spesifikasi*: LT ${property.land_area || 0}m² | LB ${property.building_area || 0}m² | ${property.bedrooms || 0} KT | ${property.bathrooms || 0} KM\n` +
-      `📋 *Legalitas*: ${property.certificate_status || "SHM Lengkap"}\n` +
+      `📐 *Spesifikasi*: LT ${property.land_area || 0} m² | LB ${property.building_area || 0} m² | ${property.bedrooms || 0} KT | ${property.bathrooms || 0} KM\n` +
+      `📋 *Legalitas*: ${property.certificate_status || "Sertifikat Terverifikasi"}\n` +
       `🔖 *Kode Listing*: ${property.listing_code}\n\n` +
-      `Informasi lebih lanjut & penjadwalan survei hubungi Tim Inland Property.`
+      `Untuk informasi lebih lanjut serta penjadwalan survei lokasi, silakan hubungi Tim Penjualan Inland Property.`
     );
     window.open(`https://wa.me/?text=${text}`, "_blank");
   };
 
-  // Filter Data
+  // FILTERING DATA
   const filteredProperties = useMemo(() => {
     return properties.filter((item) => {
-      const matchSearch =
-        item.title.toLowerCase().includes(searchInput.toLowerCase()) ||
-        item.location.toLowerCase().includes(searchInput.toLowerCase()) ||
-        item.listing_code.toLowerCase().includes(searchInput.toLowerCase());
+      if (isViewer) {
+        if (item.status !== "published" && item.status !== "available") {
+          return false;
+        }
+      }
 
-      if (activeTab === "all") return matchSearch;
-      if (activeTab === "published") return matchSearch && (item.status === "published" || item.status === "available");
-      if (activeTab === "draft") return matchSearch && (item.status === "draft" || item.status === "review");
-      if (activeTab === "sold_rented") return matchSearch && (item.status === "sold" || item.status === "rented");
-      return matchSearch;
+      if (scopeMode === "my_properties" && currentUser && !isViewer) {
+        if (!isSuperAdmin) {
+          const isOwner = item.created_by === currentUser.id || item.assigned_to === currentUser.id;
+          if (!isOwner) return false;
+        }
+      }
+
+      const query = searchInput.trim().toLowerCase();
+      const matchSearch =
+        !query ||
+        item.title.toLowerCase().includes(query) ||
+        item.location.toLowerCase().includes(query) ||
+        item.listing_code.toLowerCase().includes(query);
+
+      let matchTab = true;
+      if (activeTab === "published") matchTab = item.status === "published" || item.status === "available";
+      else if (activeTab === "draft") matchTab = item.status === "draft" || item.status === "review";
+      else if (activeTab === "sold_rented") matchTab = item.status === "sold" || item.status === "rented";
+
+      let matchListingType = true;
+      if (listingTypeParam && listingTypeParam !== "all") {
+        matchListingType = item.listing_type.toLowerCase() === listingTypeParam.toLowerCase();
+      }
+
+      return matchSearch && matchTab && matchListingType;
     });
-  }, [properties, searchInput, activeTab]);
+  }, [properties, searchInput, activeTab, scopeMode, currentUser, isViewer, isSuperAdmin, listingTypeParam]);
 
   return (
-    <div className="space-y-6 pb-16">
+    <div className="space-y-8 pb-20 max-w-7xl mx-auto px-4 sm:px-6">
       {/* 1. HEADER PAGE */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-border/60 pb-6">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
-            🏠 Katalog Aset Properti
-          </h1>
-          <p className="text-xs text-muted-foreground">
-            Kelola inventaris properti, status penerbitan, brosur digital, dan data legalitas unit.
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground">
+              {isViewer
+                ? "Katalog Properti Resmi"
+                : scopeMode === "my_properties"
+                ? "Portofolio Properti Saya"
+                : "Katalog Properti Perusahaan"}
+            </h1>
+            <Badge
+              variant="outline"
+              className={cn(
+                "text-[10px] font-bold uppercase tracking-wider px-3 py-1 rounded-full border shadow-2xs",
+                isViewer || scopeMode === "global"
+                  ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20"
+                  : "bg-purple-500/10 text-purple-700 dark:text-purple-400 border-purple-500/20"
+              )}
+            >
+              {isViewer ? "Portal Akses Klien" : scopeMode === "my_properties" ? "Akses Pribadi" : "Akses Perusahaan"}
+            </Badge>
+          </div>
+          <p className="text-xs sm:text-sm text-muted-foreground mt-1.5 font-normal max-w-2xl">
+            {isViewer
+              ? "Jelajahi pilihan properti terverifikasi dengan standar kualitas eksklusif dari Inland Property."
+              : scopeMode === "my_properties"
+              ? "Kelola seluruh daftar inventaris properti yang Anda daftarkan secara terstruktur."
+              : "Seluruh portofolio properti perusahaan dari agen dan konsultan properti resmi."}
           </p>
         </div>
 
-        <Button
-          onClick={() => router.push("/properties/create")}
-          className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20 text-xs gap-2 shrink-0 h-9"
-        >
-          <Plus className="h-4 w-4" /> Tambah Properti Baru
-        </Button>
+        {!isViewer && currentUser?.role !== "commissioner" && (
+          <Button
+            onClick={() => router.push("/properties/create")}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm hover:shadow text-xs font-semibold gap-2 shrink-0 h-10 px-5 rounded-xl cursor-pointer transition-all"
+          >
+            <Plus className="h-4 w-4" /> Tambah Properti
+          </Button>
+        )}
       </div>
 
-      {/* 2. STATS CARDS */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-        {statCards.map((stat, index) => {
-          const IconComp = stat.icon;
-          return (
-            <motion.div
-              key={stat.label}
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.04 }}
-            >
-              <Card className="border shadow-xs bg-card hover:border-emerald-500/40 transition">
-                <CardContent className="p-3.5 md:p-4 flex items-center justify-between">
-                  <div>
-                    <p className="text-[11px] font-semibold text-muted-foreground">{stat.label}</p>
-                    <h3 className="text-lg md:text-xl font-bold text-foreground mt-0.5">{stat.value}</h3>
-                    <p className="text-[10px] text-muted-foreground flex items-center gap-0.5 mt-0.5">
-                      {stat.trendUp ? (
-                        <span className="text-emerald-600 font-bold flex items-center">{stat.trend} <TrendingUp className="w-2.5 h-2.5 ml-0.5" /></span>
-                      ) : (
-                        <span className="text-rose-600 font-bold flex items-center">{stat.trend} <TrendingDown className="w-2.5 h-2.5 ml-0.5" /></span>
-                      )}
-                      <span>vs bulan lalu</span>
-                    </p>
-                  </div>
-                  <div className="p-2.5 bg-muted rounded-xl text-emerald-600 shrink-0">
-                    <IconComp className="w-4 h-4 md:w-5 md:h-5" />
-                  </div>
-                </CardContent>
-              </Card>
-            </motion.div>
-          );
-        })}
-      </div>
-
-      {/* 3. SEARCH & TOGGLE VIEW MODE */}
-      <div className="space-y-3">
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
-          <div className="relative w-full sm:w-80">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Cari judul, lokasi, atau kode listing..."
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleSearchSubmit()}
-              className="pl-9 h-9 text-xs"
-            />
-          </div>
-
-          <div className="hidden md:block">
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-auto">
-              <TabsList className="bg-muted p-1 h-9">
-                <TabsTrigger value="all" className="text-xs px-3">Semua ({stats.total})</TabsTrigger>
-                <TabsTrigger value="published" className="text-xs px-3">Published ({stats.published})</TabsTrigger>
-                <TabsTrigger value="draft" className="text-xs px-3">Draft ({stats.draft})</TabsTrigger>
-                <TabsTrigger value="sold_rented" className="text-xs px-3">Sold / Rented ({stats.sold})</TabsTrigger>
-              </TabsList>
-            </Tabs>
-          </div>
-
-          <div className="flex items-center gap-1.5 self-end sm:self-auto shrink-0">
+      {/* 2. TOGGLE SWITCHER SCOPE */}
+      {!isViewer && (
+        <div className="flex flex-col sm:flex-row items-center justify-between bg-muted/30 p-2 rounded-2xl border border-border/60 gap-3 backdrop-blur-md">
+          <div className="flex items-center gap-2 w-full sm:w-auto">
             <Button
-              variant="outline"
-              size="icon"
-              onClick={() => refetch?.()}
-              className="h-9 w-9 shrink-0"
-              title="Refresh Data"
+              variant={scopeMode === "my_properties" ? "default" : "ghost"}
+              size="sm"
+              onClick={() => setScopeMode("my_properties")}
+              className={cn(
+                "text-xs font-medium h-9 rounded-xl gap-2 flex-1 sm:flex-initial cursor-pointer transition-all",
+                scopeMode === "my_properties" && "bg-slate-900 text-white dark:bg-emerald-600 shadow-xs"
+              )}
             >
-              <RefreshCw className="w-3.5 h-3.5" />
+              <User className="w-3.5 h-3.5" /> Portofolio Saya
             </Button>
-
-            <div className="flex items-center border rounded-xl p-0.5 bg-muted/60">
-              <Button
-                variant={viewMode === "grid" ? "secondary" : "ghost"}
-                size="sm"
-                onClick={() => setViewMode("grid")}
-                className="h-8 px-2.5 text-xs gap-1"
-              >
-                <LayoutGrid className="w-3.5 h-3.5" /> Grid
-              </Button>
-              <Button
-                variant={viewMode === "table" ? "secondary" : "ghost"}
-                size="sm"
-                onClick={() => setViewMode("table")}
-                className="h-8 px-2.5 text-xs gap-1"
-              >
-                <List className="w-3.5 h-3.5" /> Tabel
-              </Button>
-            </div>
+            <Button
+              variant={scopeMode === "global" ? "default" : "ghost"}
+              size="sm"
+              onClick={() => setScopeMode("global")}
+              className={cn(
+                "text-xs font-medium h-9 rounded-xl gap-2 flex-1 sm:flex-initial cursor-pointer transition-all",
+                scopeMode === "global" && "bg-slate-900 text-white dark:bg-emerald-600 shadow-xs"
+              )}
+            >
+              <Globe className="w-3.5 h-3.5" /> Katalog Perusahaan
+            </Button>
           </div>
+
+          {isSuperAdmin && (
+            <span className="text-xs text-amber-600 dark:text-amber-400 font-medium px-3 hidden md:flex items-center gap-1.5">
+              <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500" /> Mode Super Admin: Klik ikon bintang untuk mengatur Properti Unggulan
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* BANNER FILTER DASHBOARD */}
+      {hasDashboardFilter && (
+        <div className="bg-emerald-500/10 border border-emerald-500/20 p-4 rounded-2xl flex items-center justify-between text-xs backdrop-blur-sm">
+          <span className="text-emerald-800 dark:text-emerald-300 font-medium flex items-center gap-2">
+            <Filter className="w-4 h-4 text-emerald-600" /> Menampilkan Hasil Filter Pencarian Dashboard
+          </span>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => router.push("/properties")}
+            className="h-7 text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-500/10 gap-1.5 cursor-pointer rounded-lg"
+          >
+            <X className="w-3.5 h-3.5" /> Reset Filter
+          </Button>
+        </div>
+      )}
+
+      {/* 3. SEARCH & CONTROLS */}
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div className="relative w-full sm:w-80">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Cari nama properti, lokasi, atau kode listing..."
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            className="pl-10 h-10 text-xs rounded-xl bg-background border-border/80 shadow-2xs focus-visible:ring-emerald-500"
+          />
         </div>
 
-        {/* Filter Badges Mobile */}
-        <div className="block md:hidden overflow-x-auto scrollbar-none pb-1">
-          <div className="flex items-center gap-1.5 min-w-max">
-            {[
-              { id: "all", label: `Semua (${stats.total})` },
-              { id: "published", label: `Published (${stats.published})` },
-              { id: "draft", label: `Draft (${stats.draft})` },
-              { id: "sold_rented", label: `Sold/Rented (${stats.sold})` },
-            ].map((tab) => (
-              <Badge
-                key={tab.id}
-                variant={activeTab === tab.id ? "default" : "outline"}
-                onClick={() => setActiveTab(tab.id)}
-                className={cn(
-                  "cursor-pointer px-3 py-1 text-xs transition-all",
-                  activeTab === tab.id
-                    ? "bg-emerald-600 text-white font-semibold"
-                    : "bg-background text-muted-foreground hover:bg-muted"
-                )}
-              >
-                {tab.label}
-              </Badge>
-            ))}
+        <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+          <Button variant="outline" size="icon" onClick={() => refetch?.()} className="h-10 w-10 rounded-xl cursor-pointer">
+            <RefreshCw className="w-4 h-4 text-muted-foreground" />
+          </Button>
+
+          <div className="flex items-center border border-border/80 rounded-xl p-1 bg-muted/40">
+            <Button
+              variant={viewMode === "grid" ? "secondary" : "ghost"}
+              size="sm"
+              onClick={() => setViewMode("grid")}
+              className={cn("h-8 px-3 text-xs gap-1.5 rounded-lg cursor-pointer", viewMode === "grid" && "bg-background shadow-2xs font-medium")}
+            >
+              <LayoutGrid className="w-3.5 h-3.5" /> Grid
+            </Button>
+            <Button
+              variant={viewMode === "table" ? "secondary" : "ghost"}
+              size="sm"
+              onClick={() => setViewMode("table")}
+              className={cn("h-8 px-3 text-xs gap-1.5 rounded-lg cursor-pointer", viewMode === "table" && "bg-background shadow-2xs font-medium")}
+            >
+              <List className="w-3.5 h-3.5" /> Tabel
+            </Button>
           </div>
         </div>
       </div>
 
-      {/* 4. MAIN PROPERTIES CATALOG LIST */}
+      {/* 4. MAIN LIST PROPERTI */}
       {loading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
           {[...Array(8)].map((_, i) => (
             <Skeleton key={i} className="h-80 w-full rounded-2xl" />
           ))}
         </div>
-      ) : error ? (
-        <Card className="border border-rose-200 bg-rose-50/50 p-6 text-center text-xs text-rose-600">
-          ❌ Gagal memuat data: {error}
-        </Card>
       ) : filteredProperties.length === 0 ? (
-        <Card className="border shadow-xs p-12 text-center space-y-3">
-          <Building2 className="w-12 h-12 text-muted-foreground/40 mx-auto stroke-[1.2]" />
-          <h3 className="text-sm font-semibold text-foreground">Tidak Ada Properti Ditemukan</h3>
-          <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-            Belum ada listing properti sesuai kriteria pencarian Anda.
+        <Card className="border border-border/60 p-12 text-center space-y-4 rounded-2xl shadow-2xs bg-card">
+          <Building2 className="w-12 h-12 text-muted-foreground/30 mx-auto" />
+          <h3 className="text-base font-semibold text-foreground">Properti Tidak Ditemukan</h3>
+          <p className="text-xs sm:text-sm text-muted-foreground max-w-sm mx-auto">
+            {scopeMode === "my_properties"
+              ? "Anda belum mendaftarkan properti. Silakan tambah properti pertama Anda melalui tombol di bawah."
+              : "Tidak ada data properti yang sesuai dengan kriteria pencarian Anda."}
           </p>
-          <Button onClick={() => router.push("/properties/create")} className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs gap-2">
-            <Plus className="w-4 h-4" /> Tambah Properti Baru
-          </Button>
+          {scopeMode === "my_properties" && !isViewer && (
+            <Button onClick={() => router.push("/properties/create")} className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold gap-2 rounded-xl mt-2 cursor-pointer">
+              <Plus className="w-4 h-4" /> Tambah Properti Baru
+            </Button>
+          )}
         </Card>
       ) : (
-        <>
-          {/* 🖼️ MODE 1: GRID PHOTO CARDS */}
-          {viewMode === "grid" && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {filteredProperties.map((prop) => {
-                const st = statusConfig[prop.status] || statusConfig.published;
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          {filteredProperties.map((prop) => {
+            const st = statusConfig[prop.status] || statusConfig.published;
 
-                return (
-                  <Card
-                    key={prop.id}
-                    onClick={() => goToDetail(prop.id)}
-                    className="group overflow-hidden border shadow-xs hover:shadow-xl hover:border-emerald-500/50 transition-all duration-300 flex flex-col justify-between bg-card cursor-pointer"
-                  >
-                    <div>
-                      {/* Image Thumbnail Header */}
-                      <div className="relative aspect-[16/10] overflow-hidden bg-muted">
-                        <img
-                          src={prop.thumbnail}
-                          alt={prop.title}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).src = DEFAULT_FALLBACK_IMAGE;
-                          }}
+            return (
+              <Card
+                key={prop.id}
+                onClick={() => goToDetail(prop.id)}
+                className="group border border-border/70 shadow-2xs hover:shadow-xl hover:border-emerald-500/40 transition-all duration-300 rounded-2xl overflow-hidden cursor-pointer flex flex-col justify-between bg-card"
+              >
+                <div>
+                  {/* Foto Properti & Overlay */}
+                  <div className="relative aspect-[16/10] bg-muted overflow-hidden">
+                    <img
+                      src={prop.thumbnail}
+                      alt={prop.title}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = DEFAULT_FALLBACK_IMAGE;
+                      }}
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-slate-950/20 to-transparent opacity-90" />
+
+                    {/* Tombol Unggulan (Super Admin) */}
+                    {isSuperAdmin && (
+                      <button
+                        type="button"
+                        onClick={(e) => handleToggleFeatured(prop, e)}
+                        title={prop.is_featured ? "Hapus dari Properti Unggulan" : "Tetapkan sebagai Properti Unggulan"}
+                        className="absolute top-3 right-3 p-2 rounded-full bg-slate-900/80 backdrop-blur-md hover:scale-110 transition shadow-md z-10 cursor-pointer"
+                      >
+                        <Star
+                          className={cn(
+                            "w-4 h-4 transition-colors",
+                            prop.is_featured
+                              ? "fill-amber-400 text-amber-400"
+                              : "text-slate-300 hover:text-amber-400"
+                          )}
                         />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-80" />
+                      </button>
+                    )}
 
-                        {/* Badges Top */}
-                        <div className="absolute top-2.5 left-2.5 right-2.5 flex items-center justify-between">
-                          <Badge
-                            className={cn(
-                              "text-[10px] uppercase font-bold px-2 py-0.5 border-0 shadow-sm",
-                              prop.listing_type === "jual" || prop.listing_type === "sale"
-                                ? "bg-emerald-600 text-white"
-                                : "bg-blue-600 text-white"
-                            )}
-                          >
-                            {prop.listing_type === "jual" || prop.listing_type === "sale" ? "DIJUAL" : "DISEWA"}
-                          </Badge>
-                          <Badge variant="outline" className={cn("text-[10px] font-semibold border px-2 py-0.5 backdrop-blur-md", st.bg, st.text)}>
-                            {st.label}
-                          </Badge>
-                        </div>
-
-                        {/* Price & Code Overlay */}
-                        <div className="absolute bottom-2.5 left-2.5 right-2.5 flex items-end justify-between">
-                          <div>
-                            <span className="text-[10px] text-white/80 block">Harga Penawaran:</span>
-                            <span className="text-base font-extrabold font-mono text-white drop-shadow-md">
-                              {formatCurrency(prop.price)}
-                            </span>
-                          </div>
-                          <Badge variant="outline" className="font-mono text-[9px] bg-black/60 text-white border-0 backdrop-blur-md">
-                            {prop.listing_code}
-                          </Badge>
-                        </div>
-                      </div>
-
-                      {/* Content Body */}
-                      <CardContent className="p-3.5 space-y-2">
-                        <h3 className="font-bold text-xs text-foreground line-clamp-1 group-hover:text-emerald-600 transition">
-                          {prop.title}
-                        </h3>
-
-                        <p className="text-[11px] text-muted-foreground flex items-center gap-1 line-clamp-1">
-                          <MapPin className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-                          {prop.location}
-                        </p>
-
-                        {/* 📝 DESKRIPSI POTONGAN */}
-                        {prop.description ? (
-                          <p className="text-[11px] text-muted-foreground line-clamp-2 leading-relaxed bg-muted/30 p-2 rounded-lg border border-border/40">
-                            {prop.description}
-                          </p>
-                        ) : (
-                          <p className="text-[11px] text-muted-foreground/60 italic bg-muted/20 p-2 rounded-lg">
-                            Belum ada deskripsi rinci.
-                          </p>
-                        )}
-
-                        {/* 🛏️ SPESIFIKASI AKURAT (KT, KM, LB, LT) */}
-                        <div className="grid grid-cols-4 gap-1 pt-2 border-t border-border/50 text-[10px] text-muted-foreground text-center">
-                          <div className="bg-muted/50 py-1 rounded">
-                            <span className="block font-bold text-foreground font-mono flex items-center justify-center gap-0.5">
-                              <Bed className="w-3 h-3 text-emerald-600" /> {prop.bedrooms}
-                            </span>
-                            <span className="text-[9px]">KT</span>
-                          </div>
-                          <div className="bg-muted/50 py-1 rounded">
-                            <span className="block font-bold text-foreground font-mono flex items-center justify-center gap-0.5">
-                              <Bath className="w-3 h-3 text-blue-600" /> {prop.bathrooms}
-                            </span>
-                            <span className="text-[9px]">KM</span>
-                          </div>
-                          <div className="bg-muted/50 py-1 rounded">
-                            <span className="block font-bold text-foreground font-mono flex items-center justify-center gap-0.5">
-                              <Building className="w-3 h-3 text-amber-600" /> {prop.building_area}
-                            </span>
-                            <span className="text-[9px]">LB (m²)</span>
-                          </div>
-                          <div className="bg-muted/50 py-1 rounded">
-                            <span className="block font-bold text-foreground font-mono flex items-center justify-center gap-0.5">
-                              <Maximize2 className="w-3 h-3 text-purple-600" /> {prop.land_area}
-                            </span>
-                            <span className="text-[9px]">LT (m²)</span>
-                          </div>
-                        </div>
-                      </CardContent>
+                    {/* Status Listing & Badge */}
+                    <div className="absolute top-3 left-3 flex items-center gap-2">
+                      <Badge className={cn("text-[10px] font-bold px-2.5 py-0.5 shadow-2xs uppercase tracking-wider text-white border-0", prop.listing_type === "sewa" ? "bg-amber-600" : "bg-emerald-600")}>
+                        {prop.listing_type === "sewa" ? "DISEWA" : "DIJUAL"}
+                      </Badge>
+                      <Badge variant="outline" className={cn("text-[10px] font-semibold px-2.5 py-0.5 backdrop-blur-md border", st.bg, st.text)}>
+                        {st.label}
+                      </Badge>
                     </div>
 
-                    {/* Footer Actions */}
-                    <CardFooter className="p-2.5 bg-muted/30 border-t border-border/50 flex items-center justify-between" onClick={(e) => e.stopPropagation()}>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={(e) => goToDetail(prop.id, e)}
-                        className="h-7 text-[11px] gap-1"
-                      >
-                        <Eye className="w-3.5 h-3.5 text-emerald-600" /> Detail
-                      </Button>
-
-                      <div className="flex items-center gap-1">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={(e) => handleSendWABrochure(prop, e)}
-                          title="Kirim Brosur WA"
-                          className="h-7 w-7 text-emerald-600 hover:bg-emerald-50"
-                        >
-                          <Share2 className="w-3.5 h-3.5" />
-                        </Button>
-
-                        <DropdownMenu>
-                          <DropdownMenuTrigger className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors focus:outline-hidden">
-                            <MoreHorizontal className="w-3.5 h-3.5" />
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="w-40">
-                            <DropdownMenuItem onClick={() => router.push(`/properties/${prop.id}`)}>
-                              <Eye className="w-3.5 h-3.5 mr-2 text-emerald-600" /> Detail Full
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => router.push(`/properties/${prop.id}/edit`)}>
-                              <Pencil className="w-3.5 h-3.5 mr-2 text-blue-600" /> Edit Listing
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                    {/* Price Tag & Kode Listing */}
+                    <div className="absolute bottom-3 left-3 right-3 flex items-end justify-between">
+                      <div className="text-white font-mono font-bold text-sm bg-slate-950/70 px-3 py-1 rounded-xl backdrop-blur-md border border-white/10 shadow-xs">
+                        {formatCurrency(prop.price)}
                       </div>
-                    </CardFooter>
-                  </Card>
-                );
-              })}
-            </div>
-          )}
+                      <span className="text-[10px] font-mono font-medium text-white/90 bg-slate-950/60 px-2 py-0.5 rounded-lg backdrop-blur-md border border-white/10">
+                        {prop.listing_code}
+                      </span>
+                    </div>
+                  </div>
 
-          {/* 📋 MODE 2: TABEL RINCI */}
-          {viewMode === "table" && (
-            <Card className="border shadow-xs overflow-hidden">
-              <CardContent className="p-0">
-                <Table>
-                  <TableHeader className="bg-muted/50">
-                    <TableRow>
-                      <TableHead className="text-xs font-semibold">Foto</TableHead>
-                      <TableHead className="text-xs font-semibold">Properti & Kode</TableHead>
-                      <TableHead className="text-xs font-semibold">Tipe</TableHead>
-                      <TableHead className="text-xs font-semibold">Spesifikasi</TableHead>
-                      <TableHead className="text-xs font-semibold">Harga Penawaran</TableHead>
-                      <TableHead className="text-xs font-semibold">Lokasi</TableHead>
-                      <TableHead className="text-xs font-semibold text-right">Aksi</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredProperties.map((prop) => {
-                      const st = statusConfig[prop.status] || statusConfig.published;
+                  {/* Informasi Properti */}
+                  <CardContent className="p-4 space-y-3">
+                    <h3 className="font-bold text-sm line-clamp-1 group-hover:text-emerald-600 transition-colors tracking-tight text-foreground">
+                      {prop.title}
+                    </h3>
+                    <p className="text-xs text-muted-foreground flex items-center gap-1.5 truncate">
+                      <MapPin className="w-3.5 h-3.5 text-rose-500 shrink-0" /> {prop.location}
+                    </p>
 
-                      return (
-                        <TableRow
-                          key={prop.id}
-                          onClick={() => goToDetail(prop.id)}
-                          className="hover:bg-emerald-50/40 dark:hover:bg-emerald-950/20 cursor-pointer transition-colors"
-                        >
-                          <TableCell className="p-2.5">
-                            <div className="w-14 h-10 rounded-lg overflow-hidden bg-muted shrink-0 border">
-                              <img
-                                src={prop.thumbnail}
-                                alt={prop.title}
-                                className="w-full h-full object-cover"
-                                onError={(e) => {
-                                  (e.target as HTMLImageElement).src = DEFAULT_FALLBACK_IMAGE;
-                                }}
-                              />
-                            </div>
-                          </TableCell>
+                    {/* Spesifikasi Properti */}
+                    <div className="grid grid-cols-3 gap-2 pt-3 border-t border-border/50 text-xs text-muted-foreground font-medium">
+                      <div className="flex items-center gap-1.5">
+                        <Bed className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>{prop.bedrooms || 0} KT</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <Bath className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>{prop.bathrooms || 0} KM</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 truncate">
+                        <Maximize2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        <span className="truncate">{prop.building_area || prop.land_area || 0} m²</span>
+                      </div>
+                    </div>
+                  </CardContent>
+                </div>
 
-                          <TableCell className="p-3">
-                            <Link
-                              href={`/properties/${prop.id}`}
-                              onClick={(e) => e.stopPropagation()}
-                              className="font-bold text-xs text-foreground hover:text-emerald-600 transition hover:underline line-clamp-1 block"
-                            >
-                              {prop.title}
-                            </Link>
-                            <span className="font-mono text-[10px] text-muted-foreground">
-                              Kode: {prop.listing_code}
-                            </span>
-                          </TableCell>
+                {/* Footer Kartu: Detail & Profil Pengunggah user_profiles Supabase */}
+                <CardFooter className="p-3 border-t border-border/50 bg-muted/20 flex items-center justify-between" onClick={(e) => e.stopPropagation()}>
+                  {/* Sisi Kiri: Tombol Lihat Detail & Share */}
+                  <div className="flex items-center gap-1.5">
+                    <Button variant="outline" size="sm" onClick={(e) => goToDetail(prop.id, e)} className="h-8 text-xs font-semibold gap-1.5 rounded-xl cursor-pointer hover:bg-emerald-50 dark:hover:bg-emerald-950/30 border-border/80">
+                      <Eye className="w-3.5 h-3.5 text-emerald-600" /> Lihat Detail
+                    </Button>
+                    <Button variant="ghost" size="icon" onClick={(e) => handleSendWABrochure(prop, e)} className="h-8 w-8 text-emerald-600 hover:bg-emerald-500/10 rounded-xl cursor-pointer" title="Kirim Brosur via WhatsApp">
+                      <Share2 className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
 
-                          <TableCell className="p-3">
-                            <div className="flex flex-col gap-1">
-                              <Badge className={cn("text-[9px] uppercase font-bold w-fit px-1.5 py-0", prop.listing_type === "jual" || prop.listing_type === "sale" ? "bg-emerald-600" : "bg-blue-600")}>
-                                {prop.listing_type === "jual" || prop.listing_type === "sale" ? "DIJUAL" : "DISEWA"}
-                              </Badge>
-                              <Badge variant="outline" className={cn("text-[9px] font-semibold w-fit px-1.5 py-0 border", st.bg, st.text)}>
-                                {st.label}
-                              </Badge>
-                            </div>
-                          </TableCell>
-
-                          <TableCell className="p-3 text-xs">
-                            <div className="flex items-center gap-2.5 text-muted-foreground font-mono">
-                              <span className="flex items-center gap-1"><Bed className="w-3.5 h-3.5 text-emerald-600" /> {prop.bedrooms}</span>
-                              <span className="flex items-center gap-1"><Bath className="w-3.5 h-3.5 text-blue-600" /> {prop.bathrooms}</span>
-                              <span className="flex items-center gap-1"><Building className="w-3.5 h-3.5 text-amber-600" /> {prop.building_area} m²</span>
-                              <span className="flex items-center gap-1"><Maximize2 className="w-3.5 h-3.5 text-purple-600" /> {prop.land_area} m²</span>
-                            </div>
-                          </TableCell>
-
-                          <TableCell className="p-3 font-mono font-bold text-xs text-emerald-600">
-                            {formatCurrency(prop.price)}
-                          </TableCell>
-
-                          <TableCell className="p-3 text-xs text-muted-foreground">
-                            <span className="flex items-center gap-1 truncate max-w-[180px]">
-                              <MapPin className="w-3 h-3 text-rose-500 shrink-0" /> {prop.location}
-                            </span>
-                          </TableCell>
-
-                          <TableCell className="p-3 text-right" onClick={(e) => e.stopPropagation()}>
-                            <div className="flex items-center justify-end gap-1">
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={(e) => goToDetail(prop.id, e)}
-                                className="h-8 w-8 p-0 text-muted-foreground hover:text-emerald-600 hover:bg-emerald-50"
-                                title="Lihat Detail Properti"
-                              >
-                                <Eye className="w-4 h-4" />
-                              </Button>
-
-                              <DropdownMenu>
-                                <DropdownMenuTrigger className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors focus:outline-hidden">
-                                  <MoreHorizontal className="w-3.5 h-3.5" />
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end" className="w-40">
-                                  <DropdownMenuItem onClick={() => router.push(`/properties/${prop.id}`)}>
-                                    <Eye className="w-3.5 h-3.5 mr-2 text-emerald-600" /> Detail Full
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem onClick={() => router.push(`/properties/${prop.id}/edit`)}>
-                                    <Pencil className="w-3.5 h-3.5 mr-2 text-blue-600" /> Edit Listing
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-          )}
-        </>
+                  {/* Sisi Kanan: Foto Profil & Nama Resmi dari user_profiles Supabase */}
+                  <div className="flex items-center gap-2" title={`Dipublikasikan oleh: ${prop.uploader_name}`}>
+                    <span className="text-[11px] text-muted-foreground font-medium truncate max-w-[100px] hidden sm:inline">
+                      {prop.uploader_name}
+                    </span>
+                    <div className="relative w-7 h-7 rounded-full overflow-hidden border border-border/80 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 font-bold text-[10px] flex items-center justify-center shrink-0 shadow-2xs">
+                      {prop.uploader_name ? prop.uploader_name.slice(0, 2).toUpperCase() : "IP"}
+                      {prop.uploader_avatar && (
+                        <img
+                          src={prop.uploader_avatar}
+                          alt={prop.uploader_name}
+                          className="absolute inset-0 w-full h-full object-cover"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).style.display = "none";
+                          }}
+                        />
+                      )}
+                    </div>
+                  </div>
+                </CardFooter>
+              </Card>
+            );
+          })}
+        </div>
       )}
-
-      {/* 5. MOBILE BOTTOM SHEET */}
-      <Sheet open={!!selectedProperty} onOpenChange={() => setSelectedProperty(null)}>
-        <SheetContent side="bottom" className="rounded-t-2xl max-h-[88vh] p-5">
-          <SheetHeader className="text-left">
-            <div className="flex items-center justify-between">
-              <Badge variant="outline" className="text-[10px] uppercase font-mono">
-                {selectedProperty?.listing_code}
-              </Badge>
-              {selectedProperty && (
-                <Badge variant="outline" className={cn("text-[10px]", statusConfig[selectedProperty.status]?.bg, statusConfig[selectedProperty.status]?.text)}>
-                  {statusConfig[selectedProperty.status]?.label}
-                </Badge>
-              )}
-            </div>
-            <SheetTitle className="text-base font-bold mt-1 line-clamp-2">
-              {selectedProperty?.title}
-            </SheetTitle>
-            <SheetDescription className="text-xs flex items-center gap-1">
-              <MapPin className="w-3.5 h-3.5 text-rose-500 shrink-0" /> {selectedProperty?.location}
-            </SheetDescription>
-          </SheetHeader>
-
-          <div className="space-y-4 py-4 text-xs">
-            <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/50 rounded-xl flex items-center justify-between">
-              <span className="text-muted-foreground">Harga Penawaran:</span>
-              <span className="text-base font-bold text-emerald-700 dark:text-emerald-300 font-mono">
-                {formatCurrency(selectedProperty?.price)}
-              </span>
-            </div>
-
-            <div className="p-3 bg-muted/60 rounded-xl space-y-2">
-              <div className="flex justify-between border-b pb-1.5">
-                <span className="text-muted-foreground flex items-center gap-1">
-                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" /> Dokumen Legalitas:
-                </span>
-                <span className="font-semibold text-foreground">{selectedProperty?.certificate_status || "SHM"}</span>
-              </div>
-              <div className="flex justify-between border-b pb-1.5">
-                <span className="text-muted-foreground flex items-center gap-1">
-                  <User className="w-3.5 h-3.5 text-muted-foreground" /> Nama Pemilik Asal:
-                </span>
-                <span className="font-semibold text-foreground">{selectedProperty?.owner_name || "Internal Company"}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Spesifikasi Luas:</span>
-                <span className="font-mono">LT {selectedProperty?.land_area || 0}m² / LB {selectedProperty?.building_area || 0}m²</span>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 pt-2">
-              <Button
-                variant="outline"
-                className="w-full text-xs gap-1"
-                onClick={() => {
-                  if (selectedProperty) {
-                    router.push(`/properties/${selectedProperty.id}`);
-                    setSelectedProperty(null);
-                  }
-                }}
-              >
-                <Eye className="w-3.5 h-3.5" /> Detail Lengkap
-              </Button>
-
-              <Button
-                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs gap-1 shadow-md shadow-emerald-600/20"
-                onClick={() => {
-                  if (selectedProperty) handleSendWABrochure(selectedProperty);
-                }}
-              >
-                <MessageCircle className="w-3.5 h-3.5" /> Kirim Brosur WA
-              </Button>
-            </div>
-          </div>
-        </SheetContent>
-      </Sheet>
     </div>
+  );
+}
+
+export default function PropertiesPage() {
+  return (
+    <Suspense fallback={<Skeleton className="h-96 w-full rounded-2xl" />}>
+      <PropertiesCatalogContent />
+    </Suspense>
   );
 }

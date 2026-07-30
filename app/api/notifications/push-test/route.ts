@@ -1,9 +1,10 @@
+// app/api/notifications/send/route.ts
 import { NextResponse } from "next/server";
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { title, message } = body;
+    const { title, message, targetRole, category, actionUrl } = body;
 
     const onesignalAppId = process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID;
     const onesignalApiKey = process.env.ONESIGNAL_REST_API_KEY;
@@ -15,6 +16,15 @@ export async function POST(request: Request) {
       );
     }
 
+    // Tentukan segment OneSignal berdasarkan targetRole
+    // (Pastikan Anda menggunakan segment di OneSignal dashboard, atau gunakan "All")
+    let segments = ["All"];
+    if (targetRole === "internal") {
+      segments = ["Active Users"]; // Atau segment khusus internal Anda
+    } else if (targetRole === "viewer") {
+      segments = ["Subscribed Users"]; 
+    }
+
     // Kirim perintah push notification ke server OneSignal
     const res = await fetch("https://onesignal.com/api/v1/notifications", {
       method: "POST",
@@ -24,9 +34,14 @@ export async function POST(request: Request) {
       },
       body: JSON.stringify({
         app_id: onesignalAppId,
-        included_segments: ["All"], // Mengirim ke semua user yang sudah subscribe
-        headings: { en: title },
-        contents: { en: message },
+        included_segments: segments, 
+        headings: { en: title, id: title },
+        contents: { en: message, id: message },
+        url: actionUrl || undefined,
+        data: {
+          category: category || "admin",
+          targetRole: targetRole || "internal",
+        },
       }),
     });
 

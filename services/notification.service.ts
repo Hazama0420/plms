@@ -1,6 +1,6 @@
 // services/notification.service.ts
 import { supabase } from "@/lib/supabase/client";
-import type { Notification, CreateNotificationDto, SendNotificationDto, NotificationType } from "@/types/notification.types";
+import type { Notification, CreateNotificationDto, SendNotificationDto } from "@/types/notification.types";
 
 export const notificationService = {
   // ============================================================
@@ -14,52 +14,88 @@ export const notificationService = {
     const { page = 1, limit = 20, is_read } = params;
     const offset = (page - 1) * limit;
 
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error("User not authenticated");
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
 
-    let query = supabase
-      .from("notifications")
-      .select(`
-        *,
-        sender:sender_id(id, full_name, avatar_url)
-      `, { count: "exact" })
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false })
-      .range(offset, offset + limit - 1);
+      // 🛡️ Jika user belum login (Tamu/Guest), kembalikan data kosong secara aman
+      if (!user) {
+        return {
+          data: [],
+          count: 0,
+          page,
+          totalPages: 1,
+        };
+      }
 
-    if (is_read !== undefined) {
-      query = query.eq("is_read", is_read);
+      let query = supabase
+        .from("notifications")
+        .select(`
+          *,
+          sender:sender_id(id, full_name, avatar_url)
+        `, { count: "exact" })
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+        .range(offset, offset + limit - 1);
+
+      if (is_read !== undefined) {
+        query = query.eq("is_read", is_read);
+      }
+
+      const { data, error, count } = await query;
+
+      if (error) {
+        console.error("Error fetching notifications:", error);
+        return {
+          data: [],
+          count: 0,
+          page,
+          totalPages: 1,
+        };
+      }
+
+      const totalCount = count || 0;
+
+      return {
+        data: (data as Notification[]) || [],
+        count: totalCount,
+        page,
+        totalPages: Math.max(1, Math.ceil(totalCount / limit)),
+      };
+    } catch (err) {
+      console.error("Unexpected error in getNotifications:", err);
+      return {
+        data: [],
+        count: 0,
+        page,
+        totalPages: 1,
+      };
     }
-
-    const { data, error, count } = await query;
-    if (error) throw new Error(error.message);
-
-    return {
-      data: data as Notification[],
-      count: count || 0,
-      page,
-      totalPages: Math.ceil((count || 0) / limit),
-    };
   },
 
   // ============================================================
   // GET UNREAD COUNT – Jumlah notifikasi belum dibaca
   // ============================================================
   async getUnreadCount(): Promise<number> {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return 0;
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return 0;
 
-    const { count, error } = await supabase
-      .from("notifications")
-      .select("*", { count: "exact", head: true })
-      .eq("user_id", user.id)
-      .eq("is_read", false);
+      const { count, error } = await supabase
+        .from("notifications")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", user.id)
+        .eq("is_read", false);
 
-    if (error) {
-      console.error("Error fetching unread count:", error);
+      if (error) {
+        console.error("Error fetching unread count:", error);
+        return 0;
+      }
+
+      return count || 0;
+    } catch (err) {
+      console.error("Unexpected error in getUnreadCount:", err);
       return 0;
     }
-    return count || 0;
   },
 
   // ============================================================
@@ -67,7 +103,7 @@ export const notificationService = {
   // ============================================================
   async markAsRead(notificationId: string): Promise<void> {
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error("User not authenticated");
+    if (!user) return;
 
     const { error } = await supabase
       .from("notifications")
@@ -83,7 +119,7 @@ export const notificationService = {
   // ============================================================
   async markAllAsRead(): Promise<void> {
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error("User not authenticated");
+    if (!user) return;
 
     const { error } = await supabase
       .from("notifications")
@@ -99,7 +135,7 @@ export const notificationService = {
   // ============================================================
   async createNotification(data: CreateNotificationDto): Promise<Notification> {
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error("User not authenticated");
+    if (!user) throw new Error("Pengguna tidak terautentikasi");
 
     // Cek role (hanya admin/super_admin yang bisa create)
     const { data: userData } = await supabase
@@ -137,7 +173,7 @@ export const notificationService = {
   // ============================================================
   async sendNotification(data: SendNotificationDto): Promise<Notification[]> {
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error("User not authenticated");
+    if (!user) throw new Error("Pengguna tidak terautentikasi");
 
     // Cek role
     const { data: userData } = await supabase
@@ -195,7 +231,7 @@ export const notificationService = {
   // ============================================================
   async deleteNotification(notificationId: string): Promise<void> {
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error("User not authenticated");
+    if (!user) return;
 
     const { error } = await supabase
       .from("notifications")

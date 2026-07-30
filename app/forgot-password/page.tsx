@@ -3,13 +3,14 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { supabase } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { Mail, ArrowLeft, CheckCircle } from "lucide-react";
+import { Mail, ArrowLeft, CheckCircle, Loader2, RefreshCw } from "lucide-react";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
@@ -28,11 +29,10 @@ export default function ForgotPasswordPage() {
       if (error) throw error;
 
       setSent(true);
-      toast.success("Email reset password telah dikirim!");
+      toast.success("Email instruksi reset password telah dikirim!");
     } catch (error: any) {
-      console.error("Reset password error:", error);
       toast.error("Gagal mengirim email reset password", {
-        description: error.message || "Silakan coba lagi.",
+        description: error.message || "Silakan periksa kembali email Anda.",
       });
     } finally {
       setLoading(false);
@@ -47,56 +47,103 @@ export default function ForgotPasswordPage() {
         backgroundAttachment: "fixed",
       }}
     >
-      <div className="absolute inset-0 bg-black/30 backdrop-blur-[2px]" />
+      {/* OVERLAY GELAP ELEGANT */}
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-[3px]" />
 
-      <Card className="relative z-10 w-full max-w-md border-0 bg-white/10 backdrop-blur-xl backdrop-saturate-150 shadow-2xl rounded-2xl overflow-hidden">
-        <CardHeader className="space-y-1 text-center pt-8">
-          <Link href="/" className="absolute left-4 top-4 text-white/70 hover:text-white transition">
-            <ArrowLeft size={20} />
+      <Card className="relative z-10 w-full max-w-md border border-white/20 shadow-2xl rounded-3xl bg-slate-950/75 backdrop-blur-xl text-white overflow-hidden my-auto">
+        
+        {/* TOMBOL KEMBALI KE LOGIN */}
+        <div className="absolute left-5 top-5 z-20">
+          <Link 
+            href="/login" 
+            className="flex items-center gap-1.5 text-xs text-slate-300 hover:text-white transition bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-xl border border-white/10"
+          >
+            <ArrowLeft size={14} /> Kembali
           </Link>
-          <div className="mx-auto w-16 h-16 bg-gradient-to-br from-amber-500 to-orange-600 rounded-2xl flex items-center justify-center shadow-lg shadow-amber-500/30 mb-4">
-            <span className="text-2xl font-bold text-white">P</span>
+        </div>
+
+        <CardHeader className="text-center space-y-1 pt-6 pb-3">
+          
+          {/* LOGO GAMBAR */}
+          <div className="mx-auto flex items-center justify-center -mb-1">
+            <Image
+              src="/logo.png"
+              alt="Inland Property Logo"
+              width={180}
+              height={70}
+              className="h-18 w-auto object-contain drop-shadow-md"
+              priority
+            />
           </div>
-          <CardTitle className="text-2xl font-bold text-white tracking-tight">
-            Lupa Password
-          </CardTitle>
-          <p className="text-sm text-white/70">
-            Masukkan email Anda untuk mereset password
-          </p>
+
+          {/* TEKS NAMA WEB & DESKRIPSI */}
+          <div className="space-y-0.5">
+            <CardTitle className="text-2xl font-black tracking-tight">
+              <span className="text-emerald-400">Inland</span> <span className="text-white">Property</span>
+            </CardTitle>
+            <CardDescription className="text-xs text-slate-300">
+              Pemulihan Kata Sandi
+            </CardDescription>
+          </div>
         </CardHeader>
 
-        <CardContent className="px-8 pb-8">
+        <CardContent className="px-6 sm:px-8 pb-8">
           {sent ? (
-            <div className="text-center space-y-4">
+            <div className="text-center space-y-4 py-2">
               <div className="flex justify-center">
-                <CheckCircle className="h-16 w-16 text-emerald-400" />
+                <div className="w-16 h-16 bg-emerald-500/20 border border-emerald-500/40 rounded-2xl flex items-center justify-center shadow-lg shadow-emerald-500/20">
+                  <CheckCircle className="h-8 w-8 text-emerald-400" />
+                </div>
               </div>
-              <h3 className="text-lg font-semibold text-white">Email Terkirim!</h3>
-              <p className="text-sm text-white/70">
-                Kami telah mengirim link reset password ke <strong className="text-white">{email}</strong>
-              </p>
-              <p className="text-xs text-white/50">
-                Cek folder spam jika email tidak ditemukan.
-              </p>
-              <Link href="/" className="block mt-4 text-white/70 hover:text-white transition">
-                Kembali ke Login
-              </Link>
+              
+              <div className="space-y-1">
+                <h3 className="text-lg font-bold text-white">Tautan Terkirim!</h3>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Kami telah mengirimkan instruksi dan tautan reset password ke email:<br />
+                  <strong className="text-emerald-400 font-semibold">{email}</strong>
+                </p>
+              </div>
+
+              <div className="p-3 bg-white/5 border border-white/10 rounded-2xl text-[11px] text-slate-400">
+                Periksa folder kotak masuk (*inbox*) atau spam Anda.
+              </div>
+
+              <div className="pt-2 space-y-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setSent(false)}
+                  className="w-full h-10 text-xs font-semibold rounded-xl bg-white/10 border-white/20 text-white hover:bg-white/20 gap-2 cursor-pointer"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" /> Salah ketik email? Coba lagi
+                </Button>
+
+                <Link 
+                  href="/login" 
+                  className="block text-center text-xs text-emerald-400 hover:underline font-bold pt-1"
+                >
+                  ← Kembali ke Halaman Login
+                </Link>
+              </div>
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="email" className="text-sm font-medium text-white/80">
-                  Email
+              <p className="text-xs text-slate-300 leading-relaxed text-center">
+                Masukkan alamat email terdaftar Anda untuk menerima tautan pemulihan kata sandi.
+              </p>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="email" className="text-xs font-semibold text-slate-200">
+                  Email Akun
                 </Label>
                 <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/50" />
+                  <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                   <Input
                     id="email"
                     type="email"
-                    placeholder="admin@plms.com"
+                    placeholder="nama@email.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="pl-10 h-11 bg-white/10 border-white/20 text-white placeholder:text-white/40 focus:ring-white/30 focus:border-white/40"
+                    className="pl-10 h-10 text-xs rounded-xl bg-white/10 border-white/20 text-white placeholder:text-slate-400 focus-visible:ring-emerald-400"
                     required
                   />
                 </div>
@@ -104,22 +151,25 @@ export default function ForgotPasswordPage() {
 
               <Button
                 type="submit"
-                className="w-full h-11 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white font-semibold shadow-lg shadow-amber-500/25 transition-all duration-300 hover:shadow-xl hover:shadow-amber-500/30"
+                className="w-full h-10 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs rounded-xl shadow-lg shadow-emerald-600/30 transition-all cursor-pointer gap-2 mt-1"
                 disabled={loading}
               >
                 {loading ? (
-                  <span className="flex items-center gap-2">
-                    <span className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
-                    Mengirim...
-                  </span>
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Mengirim Tautan...
+                  </>
                 ) : (
-                  "Kirim Email Reset"
+                  <>
+                    <Mail className="w-4 w-4" /> Kirim Email Reset Password
+                  </>
                 )}
               </Button>
 
-              <p className="text-center text-sm text-white/60">
-                <Link href="/" className="text-white hover:underline transition">
-                  Kembali ke Login
+              <p className="text-center text-xs text-slate-300 pt-3">
+                Sudah ingat password Anda?{" "}
+                <Link href="/login" className="text-emerald-400 hover:underline font-bold">
+                  Masuk di sini
                 </Link>
               </p>
             </form>

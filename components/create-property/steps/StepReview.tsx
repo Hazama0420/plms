@@ -1,4 +1,3 @@
-// components/create-property/steps/StepReview.tsx
 "use client";
 
 import { useState } from "react";
@@ -111,25 +110,9 @@ export function StepReview({
         village_id: cleanId(formData.village_id || formData.address?.village_id),
       };
 
-      const safeUpsert = async (primaryTable: string, fallbackTable: string, payload: any) => {
-        let { error } = await supabase.from(primaryTable).upsert(payload, { onConflict: "property_id" });
-        if (error && fallbackTable) {
-          const res = await supabase.from(fallbackTable).upsert(payload, { onConflict: "property_id" });
-          error = res.error;
-        }
-        return error;
-      };
-
-      const safeInsert = async (primaryTable: string, fallbackTable: string, payload: any) => {
-        let { error } = await supabase.from(primaryTable).insert(payload);
-        if (error && fallbackTable) {
-          const res = await supabase.from(fallbackTable).insert(payload);
-          error = res.error;
-        }
-        return error;
-      };
-
+      // ==========================================
       // MODE EDIT
+      // ==========================================
       if (mode === "edit" && propertyId) {
         const { error: propertyError } = await supabase
           .from("properties")
@@ -148,57 +131,106 @@ export function StepReview({
 
         if (propertyError) throw new Error(`Gagal update properti: ${propertyError.message}`);
 
+        // UPSERT ALAMAT (Tanpa 404 / 409)
         if (formData.address) {
-          await safeUpsert("addresses", "property_address", {
-            property_id: propertyId,
-            ...addressPayload,
-          });
+          await supabase.from("property_address").upsert(
+            { property_id: propertyId, ...addressPayload },
+            { onConflict: "property_id" }
+          );
         }
 
+        // UPSERT HARGA
         if (formData.selling_price || formData.rental_price) {
-          await safeUpsert("prices", "property_price", {
-            property_id: propertyId,
-            selling_price: formData.selling_price ? parseFloat(formData.selling_price) : null,
-            rental_price: formData.rental_price ? parseFloat(formData.rental_price) : null,
-            service_charge: formData.service_charge ? parseFloat(formData.service_charge) : null,
-            maintenance_fee: formData.maintenance_fee ? parseFloat(formData.maintenance_fee) : null,
-            negotiable: formData.negotiable || false,
-          });
+          await supabase.from("property_price").upsert(
+            {
+              property_id: propertyId,
+              selling_price: formData.selling_price ? parseFloat(formData.selling_price) : null,
+              rental_price: formData.rental_price ? parseFloat(formData.rental_price) : null,
+              service_charge: formData.service_charge ? parseFloat(formData.service_charge) : null,
+              maintenance_fee: formData.maintenance_fee ? parseFloat(formData.maintenance_fee) : null,
+              negotiable: formData.negotiable || false,
+            },
+            { onConflict: "property_id" }
+          );
         }
 
-        await safeUpsert("specifications", "property_specifications", {
-          property_id: propertyId,
-          bedroom: formData.bedroom ? parseInt(formData.bedroom) : formData.bedrooms ? parseInt(formData.bedrooms) : null,
-          bathroom: formData.bathroom ? parseInt(formData.bathroom) : formData.bathrooms ? parseInt(formData.bathrooms) : null,
-          garage: formData.garage ? parseInt(formData.garage) : null,
-          carport: formData.carport ? parseInt(formData.carport) : null,
-          floor: formData.floor ? parseInt(formData.floor) : null,
-          electricity: formData.electricity ? parseInt(formData.electricity) : null,
-          water_source: formData.water_source || null,
-          certificate: formData.certificate || null,
-          facing: formData.facing || null,
-          condition: formData.condition || null,
-          furnishing: formData.furnishing || null,
-          year_built: formData.year_built ? parseInt(formData.year_built) : null,
-        });
+        // UPSERT SPESIFIKASI
+        await supabase.from("property_specifications").upsert(
+          {
+            property_id: propertyId,
+            bedroom: formData.bedroom ? parseInt(formData.bedroom) : formData.bedrooms ? parseInt(formData.bedrooms) : null,
+            bathroom: formData.bathroom ? parseInt(formData.bathroom) : formData.bathrooms ? parseInt(formData.bathrooms) : null,
+            garage: formData.garage ? parseInt(formData.garage) : null,
+            carport: formData.carport ? parseInt(formData.carport) : null,
+            floor: formData.floor ? parseInt(formData.floor) : null,
+            electricity: formData.electricity ? parseInt(formData.electricity) : null,
+            water_source: formData.water_source || null,
+            certificate: formData.certificate || null,
+            facing: formData.facing || null,
+            condition: formData.condition || null,
+            furnishing: formData.furnishing || null,
+            year_built: formData.year_built ? parseInt(formData.year_built) : null,
+          },
+          { onConflict: "property_id" }
+        );
 
+        // UPSERT LUAS TANAH
         if (formData.land_area) {
-          await safeUpsert("land", "property_land", {
-            property_id: propertyId,
-            land_area: parseFloat(formData.land_area),
-            land_unit: "m²",
-            land_width: formData.land_width ? parseFloat(formData.land_width) : null,
-            land_length: formData.land_length ? parseFloat(formData.land_length) : null,
-          });
+          await supabase.from("property_land").upsert(
+            {
+              property_id: propertyId,
+              land_area: parseFloat(formData.land_area),
+              land_unit: "m²",
+              land_width: formData.land_width ? parseFloat(formData.land_width) : null,
+              land_length: formData.land_length ? parseFloat(formData.land_length) : null,
+            },
+            { onConflict: "property_id" }
+          );
         }
 
+        // UPSERT BANGUNAN
         if (formData.building_area) {
-          await safeUpsert("building", "property_building", {
-            property_id: propertyId,
-            building_area: parseFloat(formData.building_area),
-            building_width: formData.building_width ? parseFloat(formData.building_width) : null,
-            building_length: formData.building_length ? parseFloat(formData.building_length) : null,
-          });
+          await supabase.from("property_building").upsert(
+            {
+              property_id: propertyId,
+              building_area: parseFloat(formData.building_area),
+              building_width: formData.building_width ? parseFloat(formData.building_width) : null,
+              building_length: formData.building_length ? parseFloat(formData.building_length) : null,
+            },
+            { onConflict: "property_id" }
+          );
+        }
+
+        // INSERT / RE-SYNC MEDIA FOTO
+        if (Array.isArray(formData.photos) && formData.photos.length > 0) {
+          await supabase.from("property_media").delete().eq("property_id", propertyId);
+
+          const mediaPayload = formData.photos.map((p: any, idx: number) => {
+            if (typeof p === "string") {
+              return {
+                property_id: propertyId,
+                public_url: p,
+                storage_path: p,
+                media_type: "image",
+                is_primary: idx === 0,
+              };
+            }
+            return {
+              property_id: propertyId,
+              public_url: p.public_url || p.preview || p.url || "",
+              storage_path: p.storage_path || p.public_url || p.preview || "",
+              media_type: "image",
+              file_name: p.file_name || null,
+              original_name: p.original_name || null,
+              mime_type: p.mime_type || null,
+              file_size: p.file_size || null,
+              is_primary: idx === 0,
+            };
+          }).filter((m: any) => m.public_url !== "");
+
+          if (mediaPayload.length > 0) {
+            await supabase.from("property_media").insert(mediaPayload);
+          }
         }
 
         toast.success("Properti berhasil diperbarui!", { duration: 4000 });
@@ -207,7 +239,9 @@ export function StepReview({
         return;
       }
 
+      // ==========================================
       // MODE CREATE
+      // ==========================================
       let ownerId = null;
       if (formData.owner_name) {
         const { data: owner } = await supabase
@@ -254,57 +288,106 @@ export function StepReview({
 
       if (propertyError) throw new Error(`Gagal menyimpan properti: ${propertyError.message}`);
 
+      const newPropertyId = property.id;
+
+      // UPSERT ALAMAT DENGAN PROPERTY_ADDRESS
       if (formData.address) {
-        await safeInsert("addresses", "property_address", {
-          property_id: property.id,
-          ...addressPayload,
-        });
+        await supabase.from("property_address").upsert(
+          { property_id: newPropertyId, ...addressPayload },
+          { onConflict: "property_id" }
+        );
       }
 
+      // UPSERT HARGA DENGAN PROPERTY_PRICE
       if (formData.selling_price || formData.rental_price) {
-        await safeInsert("prices", "property_price", {
-          property_id: property.id,
-          selling_price: formData.selling_price ? parseFloat(formData.selling_price) : null,
-          rental_price: formData.rental_price ? parseFloat(formData.rental_price) : null,
-          service_charge: formData.service_charge ? parseFloat(formData.service_charge) : null,
-          maintenance_fee: formData.maintenance_fee ? parseFloat(formData.maintenance_fee) : null,
-          negotiable: formData.negotiable || false,
-        });
+        await supabase.from("property_price").upsert(
+          {
+            property_id: newPropertyId,
+            selling_price: formData.selling_price ? parseFloat(formData.selling_price) : null,
+            rental_price: formData.rental_price ? parseFloat(formData.rental_price) : null,
+            service_charge: formData.service_charge ? parseFloat(formData.service_charge) : null,
+            maintenance_fee: formData.maintenance_fee ? parseFloat(formData.maintenance_fee) : null,
+            negotiable: formData.negotiable || false,
+          },
+          { onConflict: "property_id" }
+        );
       }
 
-      await safeInsert("specifications", "property_specifications", {
-        property_id: property.id,
-        bedroom: formData.bedroom ? parseInt(formData.bedroom) : formData.bedrooms ? parseInt(formData.bedrooms) : null,
-        bathroom: formData.bathroom ? parseInt(formData.bathroom) : formData.bathrooms ? parseInt(formData.bathrooms) : null,
-        garage: formData.garage ? parseInt(formData.garage) : null,
-        carport: formData.carport ? parseInt(formData.carport) : null,
-        floor: formData.floor ? parseInt(formData.floor) : null,
-        electricity: formData.electricity ? parseInt(formData.electricity) : null,
-        water_source: formData.water_source || null,
-        certificate: formData.certificate || null,
-        facing: formData.facing || null,
-        condition: formData.condition || null,
-        furnishing: formData.furnishing || null,
-        year_built: formData.year_built ? parseInt(formData.year_built) : null,
-      });
+      // UPSERT SPESIFIKASI DENGAN PROPERTY_SPECIFICATIONS
+      await supabase.from("property_specifications").upsert(
+        {
+          property_id: newPropertyId,
+          bedroom: formData.bedroom ? parseInt(formData.bedroom) : formData.bedrooms ? parseInt(formData.bedrooms) : null,
+          bathroom: formData.bathroom ? parseInt(formData.bathroom) : formData.bathrooms ? parseInt(formData.bathrooms) : null,
+          garage: formData.garage ? parseInt(formData.garage) : null,
+          carport: formData.carport ? parseInt(formData.carport) : null,
+          floor: formData.floor ? parseInt(formData.floor) : null,
+          electricity: formData.electricity ? parseInt(formData.electricity) : null,
+          water_source: formData.water_source || null,
+          certificate: formData.certificate || null,
+          facing: formData.facing || null,
+          condition: formData.condition || null,
+          furnishing: formData.furnishing || null,
+          year_built: formData.year_built ? parseInt(formData.year_built) : null,
+        },
+        { onConflict: "property_id" }
+      );
 
+      // UPSERT LUAS TANAH
       if (formData.land_area) {
-        await safeInsert("land", "property_land", {
-          property_id: property.id,
-          land_area: parseFloat(formData.land_area),
-          land_unit: "m²",
-          land_width: formData.land_width ? parseFloat(formData.land_width) : null,
-          land_length: formData.land_length ? parseFloat(formData.land_length) : null,
-        });
+        await supabase.from("property_land").upsert(
+          {
+            property_id: newPropertyId,
+            land_area: parseFloat(formData.land_area),
+            land_unit: "m²",
+            land_width: formData.land_width ? parseFloat(formData.land_width) : null,
+            land_length: formData.land_length ? parseFloat(formData.land_length) : null,
+          },
+          { onConflict: "property_id" }
+        );
       }
 
+      // UPSERT BANGUNAN
       if (formData.building_area) {
-        await safeInsert("building", "property_building", {
-          property_id: property.id,
-          building_area: parseFloat(formData.building_area),
-          building_width: formData.building_width ? parseFloat(formData.building_width) : null,
-          building_length: formData.building_length ? parseFloat(formData.building_length) : null,
-        });
+        await supabase.from("property_building").upsert(
+          {
+            property_id: newPropertyId,
+            building_area: parseFloat(formData.building_area),
+            building_width: formData.building_width ? parseFloat(formData.building_width) : null,
+            building_length: formData.building_length ? parseFloat(formData.building_length) : null,
+          },
+          { onConflict: "property_id" }
+        );
+      }
+
+      // SIMPAN MEDIA FOTO KE TABEL PROPERTY_MEDIA
+      if (Array.isArray(formData.photos) && formData.photos.length > 0) {
+        const mediaPayload = formData.photos.map((p: any, idx: number) => {
+          if (typeof p === "string") {
+            return {
+              property_id: newPropertyId,
+              public_url: p,
+              storage_path: p,
+              media_type: "image",
+              is_primary: idx === 0,
+            };
+          }
+          return {
+            property_id: newPropertyId,
+            public_url: p.public_url || p.preview || p.url || "",
+            storage_path: p.storage_path || p.public_url || p.preview || "",
+            media_type: "image",
+            file_name: p.file_name || null,
+            original_name: p.original_name || null,
+            mime_type: p.mime_type || null,
+            file_size: p.file_size || null,
+            is_primary: idx === 0,
+          };
+        }).filter((m: any) => m.public_url !== "");
+
+        if (mediaPayload.length > 0) {
+          await supabase.from("property_media").insert(mediaPayload);
+        }
       }
 
       toast.success("Properti berhasil dipublikasikan!", { duration: 4000 });
@@ -334,7 +417,7 @@ export function StepReview({
         </p>
       </div>
 
-      {/* 📌 INDIKATOR SKOR KUALITAS LISTING (SAFE TAILWIND PROGRESS BAR) */}
+      {/* INDIKATOR SKOR KUALITAS LISTING */}
       <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white shadow-lg border border-indigo-500/30">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-2">
           <div className="flex items-center gap-2">
@@ -348,7 +431,7 @@ export function StepReview({
           </span>
         </div>
 
-        {/* Custom Progress Bar */}
+        {/* Progress Bar */}
         <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
           <div
             className="bg-emerald-500 h-2 rounded-full transition-all duration-500"
@@ -361,16 +444,15 @@ export function StepReview({
         </p>
       </div>
 
-      {/* 📌 LAYOUT PREVIEW & DETAILS */}
+      {/* LAYOUT PREVIEW & DETAILS */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* KARTU PREVIEW PROPERTI (5 COLS) */}
+        {/* KARTU PREVIEW PROPERTI */}
         <div className="lg:col-span-5 space-y-3">
           <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block">
             Preview Kartu Listing
           </label>
 
           <div className="overflow-hidden border border-slate-200 dark:border-slate-800 bg-card shadow-lg rounded-2xl group">
-            {/* GAMBAR COVER UTAMA */}
             <div className="relative aspect-[4/3] bg-slate-950 overflow-hidden">
               {coverPhoto ? (
                 <img
@@ -385,7 +467,6 @@ export function StepReview({
                 </div>
               )}
 
-              {/* OVERLAY BADGES */}
               <div className="absolute top-3 left-3 flex flex-wrap gap-1.5 z-10">
                 <span className="bg-emerald-600 text-white font-bold text-[10px] uppercase px-2 py-0.5 rounded-md shadow-md">
                   {formData.listing_type === "sewa" ? "📋 Sewa" : "💰 Jual"}
@@ -402,7 +483,6 @@ export function StepReview({
               )}
             </div>
 
-            {/* DETAIL KARTU */}
             <div className="p-4 space-y-3">
               <div>
                 <h3 className="text-base font-bold text-slate-900 dark:text-white line-clamp-1">
@@ -414,7 +494,6 @@ export function StepReview({
                 </p>
               </div>
 
-              {/* HARGA */}
               <div className="pt-2 border-t flex items-baseline justify-between">
                 <div>
                   <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider block">Harga Penawaran</span>
@@ -433,7 +512,6 @@ export function StepReview({
                 )}
               </div>
 
-              {/* FITUR UTAMA CARD */}
               <div className="grid grid-cols-4 gap-2 pt-2 border-t text-[11px] text-slate-600 dark:text-slate-300 text-center font-medium">
                 <div className="p-1.5 bg-slate-50 dark:bg-slate-900 rounded-lg">
                   <Bed className="w-3.5 h-3.5 mx-auto mb-1 text-slate-500" />
@@ -456,14 +534,13 @@ export function StepReview({
           </div>
         </div>
 
-        {/* DETAILS & RINGKASAN DATA (7 COLS) */}
+        {/* DETAILS & RINGKASAN DATA */}
         <div className="lg:col-span-7 space-y-3">
           <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block">
             Rincian Lengkap Formulir
           </label>
 
           <div className="space-y-3">
-            {/* SPESIFIKASI KELENGKAPAN */}
             <div className="p-4 rounded-2xl bg-slate-50/80 dark:bg-slate-900/40 border border-slate-200/80 dark:border-slate-800 space-y-2.5">
               <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
                 <Building2 className="w-4 h-4 text-emerald-600" /> Spesifikasi & Bangunan
@@ -488,7 +565,6 @@ export function StepReview({
               </div>
             </div>
 
-            {/* FASILITAS TERPILIH */}
             <div className="p-4 rounded-2xl bg-slate-50/80 dark:bg-slate-900/40 border border-slate-200/80 dark:border-slate-800 space-y-2.5">
               <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
                 <Layers className="w-4 h-4 text-emerald-600" /> Fasilitas Terpasang
@@ -506,7 +582,6 @@ export function StepReview({
               )}
             </div>
 
-            {/* INFORMASI PEMILIK */}
             <div className="p-4 rounded-2xl bg-slate-50/80 dark:bg-slate-900/40 border border-slate-200/80 dark:border-slate-800 space-y-2.5">
               <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
                 <UserCheck className="w-4 h-4 text-emerald-600" /> Informasi Pemilik Properti (Internal Agen)

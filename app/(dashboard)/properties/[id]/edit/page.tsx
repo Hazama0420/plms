@@ -1,4 +1,3 @@
-// app/(dashboard)/properties/[id]/edit/page.tsx
 "use client";
 
 import { useState, useEffect, use } from "react";
@@ -18,7 +17,7 @@ interface EditPropertyPageProps {
 export default function EditPropertyPage({ params }: EditPropertyPageProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [property, setProperty] = useState<any>(null);
+  const [initialData, setInitialData] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Unwrap params dengan React.use()
@@ -55,10 +54,7 @@ export default function EditPropertyPage({ params }: EditPropertyPageProps) {
 
         // 3. Cek Hak Akses Edit
         const isAdmin = userRole === "super_admin" || userRole === "admin" || userRole === "superadmin";
-        // ✅ PERBAIKI: gunakan data.created_by, bukan data.user_id
         const isOwner = userRole === "agent" && (data.created_by === user.id);
-        // Tambahkan juga kemungkinan assigned_to jika diperlukan
-        // const isAssignedAgent = userRole === "agent" && data.assigned_to === user.id;
 
         if (userRole === "reviewer" || (!isAdmin && !isOwner)) {
           toast.error("Anda tidak memiliki izin untuk mengedit listingan ini.");
@@ -66,7 +62,10 @@ export default function EditPropertyPage({ params }: EditPropertyPageProps) {
           return;
         }
 
-        setProperty(data);
+        // 4. Transformasikan data & Auto-Fetch Nama Lokasi
+        const formatted = await mapPropertyToForm(data);
+        setInitialData(formatted);
+
       } catch (err: any) {
         console.error("Error fetching property or checking permissions:", err);
         setError(err.message || "Gagal memuat data properti");
@@ -83,7 +82,6 @@ export default function EditPropertyPage({ params }: EditPropertyPageProps) {
   const extractPhotos = (data: any) => {
     let rawList: any[] = [];
 
-    // 1. Ambil dari data.media (Tabel media Supabase)
     if (Array.isArray(data.media) && data.media.length > 0) {
       rawList = data.media.map((m: any, idx: number) => {
         const url = m.public_url || m.url || m.file_path;
@@ -96,7 +94,6 @@ export default function EditPropertyPage({ params }: EditPropertyPageProps) {
       });
     }
 
-    // 2. Fallback dari data.images
     if (rawList.length === 0 && data.images) {
       if (Array.isArray(data.images)) {
         rawList = data.images.map((img: any, idx: number) => {
@@ -130,7 +127,6 @@ export default function EditPropertyPage({ params }: EditPropertyPageProps) {
       }
     }
 
-    // 3. Fallback dari data.image_url
     if (rawList.length === 0 && data.image_url) {
       rawList = [{ id: "fallback-1", preview: data.image_url, url: data.image_url, isExisting: true }];
     }
@@ -138,9 +134,49 @@ export default function EditPropertyPage({ params }: EditPropertyPageProps) {
     return rawList;
   };
 
-  // ===== MAP DATA KE FORM WIZARD =====
-  const mapPropertyToForm = (data: any) => {
+  // ===== MAP DATA KE FORM WIZARD (ASYNC & AUTO-FETCH NAMA LOKASI) =====
+  const mapPropertyToForm = async (data: any) => {
     const existingPhotos = extractPhotos(data);
+
+    // 🔴 TANGANI JIKA address BERUPA ARRAY ATAU OBJEK
+    let addr = data.address || data.property_address || {};
+    if (Array.isArray(addr)) {
+      addr = addr[0] || {};
+    }
+
+    // Ekstrak ID Lokasi
+    const provId = addr.province_id || data.province_id || "";
+    const cityId = addr.city_id || data.city_id || "";
+    const distId = addr.district_id || data.district_id || "";
+    const villId = addr.village_id || data.village_id || "";
+
+    // Ekstrak Nama dari JOIN query jika ada
+    let provName = addr.province_name || addr.provinces?.name || data.province_name || data.provinces?.name || "";
+    let cityName = addr.city_name || addr.cities?.name || data.city_name || data.cities?.name || "";
+    let distName = addr.district_name || addr.districts?.name || data.district_name || data.districts?.name || "";
+    let villName = addr.village_name || addr.villages?.name || data.village_name || data.villages?.name || "";
+
+    // 🟢 JIKA ID ADA TAPI NAMA TEKS KOSONG, QUERY SUPABASE SEKARANG JUGA!
+    try {
+      if (provId && !provName) {
+        const { data: p } = await supabase.from("provinces").select("name").eq("id", provId).maybeSingle();
+        if (p?.name) provName = p.name;
+      }
+      if (cityId && !cityName) {
+        const { data: c } = await supabase.from("cities").select("name").eq("id", cityId).maybeSingle();
+        if (c?.name) cityName = c.name;
+      }
+      if (distId && !distName) {
+        const { data: d } = await supabase.from("districts").select("name").eq("id", distId).maybeSingle();
+        if (d?.name) distName = d.name;
+      }
+      if (villId && !villName) {
+        const { data: v } = await supabase.from("villages").select("name").eq("id", villId).maybeSingle();
+        if (v?.name) villName = v.name;
+      }
+    } catch (err) {
+      console.warn("Gagal auto-fetch nama lokasi:", err);
+    }
 
     return {
       // Basic
@@ -155,69 +191,74 @@ export default function EditPropertyPage({ params }: EditPropertyPageProps) {
       rental_period: data.rental_period || "",
       assigned_to: data.assigned_to || "",
 
-      // Location
-      country_id: data.address?.country_id || "",
-      province_id: data.address?.province_id || "",
-      city_id: data.address?.city_id || "",
-      district_id: data.address?.district_id || "",
-      village_id: data.address?.village_id || "",
-      address: data.address?.address || "",
-      postal_code: data.address?.postal_code || "",
-      latitude: data.address?.latitude?.toString() || "",
-      longitude: data.address?.longitude?.toString() || "",
+      // 📍 LOCATION DATA
+      country_id: addr.country_id || data.country_id || "",
+      province_id: provId,
+      city_id: cityId,
+      district_id: distId,
+      village_id: villId,
+
+      province_name: provName,
+      city_name: cityName,
+      district_name: distName,
+      village_name: villName,
+
+      address: typeof addr === "string" ? addr : addr.address || data.address || "",
+      postal_code: addr.postal_code || data.postal_code || "",
+      latitude: addr.latitude?.toString() || data.latitude?.toString() || "",
+      longitude: addr.longitude?.toString() || data.longitude?.toString() || "",
 
       // Price
-      selling_price: data.price?.selling_price?.toString() || "",
-      rental_price: data.price?.rental_price?.toString() || "",
-      service_charge: data.price?.service_charge?.toString() || "",
-      maintenance_fee: data.price?.maintenance_fee?.toString() || "",
-      negotiable: data.price?.negotiable || false,
+      selling_price: data.price?.selling_price?.toString() || data.selling_price?.toString() || "",
+      rental_price: data.price?.rental_price?.toString() || data.rental_price?.toString() || "",
+      service_charge: data.price?.service_charge?.toString() || data.service_charge?.toString() || "",
+      maintenance_fee: data.price?.maintenance_fee?.toString() || data.maintenance_fee?.toString() || "",
+      negotiable: data.price?.negotiable ?? data.negotiable ?? false,
 
       // Specifications
-      bedroom: data.specifications?.bedroom?.toString() || "",
-      bathroom: data.specifications?.bathroom?.toString() || "",
-      garage: data.specifications?.garage?.toString() || "",
-      carport: data.specifications?.carport?.toString() || "",
-      floor: data.specifications?.floor?.toString() || "",
-      electricity: data.specifications?.electricity?.toString() || "",
-      water_source: data.specifications?.water_source || "",
-      certificate: data.specifications?.certificate || "",
-      facing: data.specifications?.facing || "",
-      condition: data.specifications?.condition || "",
-      furnishing: data.specifications?.furnishing || "",
-      year_built: data.specifications?.year_built?.toString() || "",
+      bedroom: data.specifications?.bedroom?.toString() || data.bedroom?.toString() || "",
+      bathroom: data.specifications?.bathroom?.toString() || data.bathroom?.toString() || "",
+      garage: data.specifications?.garage?.toString() || data.garage?.toString() || "",
+      carport: data.specifications?.carport?.toString() || data.carport?.toString() || "",
+      floor: data.specifications?.floor?.toString() || data.floor?.toString() || "",
+      electricity: data.specifications?.electricity?.toString() || data.electricity?.toString() || "",
+      water_source: data.specifications?.water_source || data.water_source || "",
+      certificate: data.specifications?.certificate || data.certificate || "",
+      facing: data.specifications?.facing || data.facing || "",
+      condition: data.specifications?.condition || data.condition || "",
+      furnishing: data.specifications?.furnishing || data.furnishing || "",
+      year_built: data.specifications?.year_built?.toString() || data.year_built?.toString() || "",
 
       // Land
-      land_area: data.land?.land_area?.toString() || "",
-      land_unit: data.land?.land_unit || "m²",
-      land_width: data.land?.land_width?.toString() || "",
-      land_length: data.land?.land_length?.toString() || "",
+      land_area: data.land?.land_area?.toString() || data.land_area?.toString() || "",
+      land_unit: data.land?.land_unit || data.land_unit || "m²",
+      land_width: data.land?.land_width?.toString() || data.land_width?.toString() || "",
+      land_length: data.land?.land_length?.toString() || data.land_length?.toString() || "",
 
       // Building
-      building_area: data.building?.building_area?.toString() || "",
-      building_width: data.building?.building_width?.toString() || "",
-      building_length: data.building?.building_length?.toString() || "",
+      building_area: data.building?.building_area?.toString() || data.building_area?.toString() || "",
+      building_width: data.building?.building_width?.toString() || data.building_width?.toString() || "",
+      building_length: data.building?.building_length?.toString() || data.building_length?.toString() || "",
 
       // Owner
-      owner_name: data.owner?.full_name || "",
-      owner_phone: data.owner?.phone || "",
-      owner_whatsapp: data.owner?.whatsapp || "",
-      owner_email: data.owner?.email || "",
-      owner_identity_type: data.owner?.identity_type || "KTP",
-      owner_identity_number: data.owner?.identity_number || "",
-      owner_address: data.owner?.address || "",
-      owner_notes: data.owner?.notes || "",
+      owner_name: data.owner?.full_name || data.owner_name || "",
+      owner_phone: data.owner?.phone || data.owner_phone || "",
+      owner_whatsapp: data.owner?.whatsapp || data.owner_whatsapp || "",
+      owner_email: data.owner?.email || data.owner_email || "",
+      owner_identity_type: data.owner?.identity_type || data.owner_identity_type || "KTP",
+      owner_identity_number: data.owner?.identity_number || data.owner_identity_number || "",
+      owner_address: data.owner?.address || data.owner_address || "",
+      owner_notes: data.owner?.notes || data.owner_notes || "",
 
       // Facilities
       facilities: data.facilities || [],
 
-      // 📸 FIX PENTING FOTO MODE EDIT:
+      // Photos
       photos: existingPhotos,
-      // Selalu nyalakan photos_uploaded jika mode edit / foto ada
       photos_uploaded: true,
       media_completed: true,
-      co_broke: false,
-      youtube_url: "",
+      co_broke: data.co_broke || false,
+      youtube_url: data.youtube_url || "",
     };
   };
 
@@ -232,7 +273,7 @@ export default function EditPropertyPage({ params }: EditPropertyPageProps) {
     );
   }
 
-  if (error || !property) {
+  if (error || !initialData) {
     return (
       <div className="flex h-screen items-center justify-center">
         <div className="text-center space-y-4 p-6 max-w-md bg-white dark:bg-slate-900 rounded-2xl border shadow-sm">
@@ -251,8 +292,6 @@ export default function EditPropertyPage({ params }: EditPropertyPageProps) {
       </div>
     );
   }
-
-  const initialData = mapPropertyToForm(property);
 
   return (
     <CreatePropertyWizard

@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { usePermissions } from "@/hooks/use-permissions";
 import { userService } from "@/services/user.service";
 import { notificationService } from "@/services/notification.service";
-import { supabase } from "@/lib/supabase/client"; // ✅ tambahkan import supabase
+import { supabase } from "@/lib/supabase/client";
 import { USER_ROLES, type UserRole, type UserWithRole } from "@/types/user.types";
 import { toast } from "sonner";
 import {
@@ -20,10 +20,16 @@ import {
   Trash2,
   Eye,
   Bell,
+  UserCheck,
+  UserPlus,
+  RefreshCw,
+  Building2,
+  Sparkles,
+  Send,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -58,25 +64,25 @@ import {
 import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 
-// ---------- IKON & BADGE ----------
+// ---------- IKON & BADGE CONFIG ----------
 const ROLE_ICONS: Record<UserRole, React.ReactNode> = {
-  super_admin: <ShieldAlert className="h-4 w-4 text-red-500" />,
-  admin: <ShieldCheck className="h-4 w-4 text-blue-500" />,
-  agent: <Shield className="h-4 w-4 text-green-500" />,
-  marketing: <ShieldEllipsis className="h-4 w-4 text-yellow-500" />,
-  viewer: <Eye className="h-4 w-4 text-gray-500" />,
+  super_admin: <ShieldAlert className="h-3.5 w-3.5 text-rose-500" />,
+  admin: <ShieldCheck className="h-3.5 w-3.5 text-purple-500" />,
+  agent: <Shield className="h-3.5 w-3.5 text-emerald-500" />,
+  marketing: <ShieldEllipsis className="h-3.5 w-3.5 text-amber-500" />,
+  viewer: <Eye className="h-3.5 w-3.5 text-slate-400" />,
 };
 
-const ROLE_BADGE: Record<UserRole, "default" | "secondary" | "destructive" | "outline"> = {
-  super_admin: "destructive",
-  admin: "default",
-  agent: "secondary",
-  marketing: "outline",
-  viewer: "secondary",
+const ROLE_BADGE_STYLE: Record<UserRole, string> = {
+  super_admin: "bg-rose-500/10 text-rose-600 border-rose-500/30 dark:bg-rose-950/40 dark:text-rose-400",
+  admin: "bg-purple-500/10 text-purple-600 border-purple-500/30 dark:bg-purple-950/40 dark:text-purple-400",
+  agent: "bg-emerald-500/10 text-emerald-600 border-emerald-500/30 dark:bg-emerald-950/40 dark:text-emerald-400",
+  marketing: "bg-amber-500/10 text-amber-600 border-amber-500/30 dark:bg-amber-950/40 dark:text-amber-400",
+  viewer: "bg-slate-500/10 text-slate-600 border-slate-500/30 dark:bg-slate-800 dark:text-slate-400",
 };
 
-// ---------- KOMPONEN UTAMA ----------
 export default function AdminUsersPage() {
   const { userRole, isLoading: roleLoading } = usePermissions();
   const [users, setUsers] = useState<UserWithRole[]>([]);
@@ -101,7 +107,7 @@ export default function AdminUsersPage() {
   });
   const [sendingNotification, setSendingNotification] = useState(false);
 
-  const isSuperAdmin = userRole === "super_admin";
+  const isSuperAdmin = userRole === "super_admin"
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   // Ambil current user ID
@@ -117,7 +123,7 @@ export default function AdminUsersPage() {
     setLoading(true);
     try {
       const data = await userService.getAllUsers();
-      setUsers(data);
+      setUsers(data || []);
     } catch (error) {
       toast.error("Gagal memuat daftar user");
     } finally {
@@ -131,11 +137,24 @@ export default function AdminUsersPage() {
     }
   }, [userRole, fetchUsers]);
 
-  const filteredUsers = users.filter(
-    (u) =>
-      u.full_name?.toLowerCase().includes(search.toLowerCase()) ||
-      u.email?.toLowerCase().includes(search.toLowerCase())
-  );
+  // Metric Stats
+  const metrics = useMemo(() => {
+    const total = users.length;
+    const superAdmins = users.filter((u) => u.role === "super_admin" || (u.role as any) === "superadmin").length;
+    const admins = users.filter((u) => u.role === "admin").length;
+    const agents = users.filter((u) => u.role === "agent").length;
+    const viewers = users.filter((u) => u.role === "viewer").length;
+    return { total, superAdmins, admins, agents, viewers };
+  }, [users]);
+
+  const filteredUsers = useMemo(() => {
+    return users.filter(
+      (u) =>
+        u.full_name?.toLowerCase().includes(search.toLowerCase()) ||
+        u.email?.toLowerCase().includes(search.toLowerCase()) ||
+        u.role?.toLowerCase().includes(search.toLowerCase())
+    );
+  }, [users, search]);
 
   const handleEdit = (user: UserWithRole) => {
     setSelectedUser(user);
@@ -148,25 +167,22 @@ export default function AdminUsersPage() {
     setSaving(true);
     try {
       await userService.updateUserRole(selectedUser.id, editingRole);
-      toast.success(`Role ${selectedUser.full_name} berhasil diupdate`);
+      toast.success(`Role ${selectedUser.full_name || selectedUser.email} berhasil diperbarui`);
       setShowEditDialog(false);
       fetchUsers();
     } catch {
-      toast.error("Gagal update role");
+      toast.error("Gagal memperbarui role");
     } finally {
       setSaving(false);
     }
   };
 
-  // ✅ PERBAIKAN: HANDLE DELETE
   const handleDelete = (user: UserWithRole) => {
-    // 1. Jangan izinkan hapus Super Admin
-    if (user.role === "super_admin") {
-      toast.error("Tidak dapat menghapus Super Admin!");
+    if (user.role === "super_admin" || (user.role as any) === "superadmin") {
+      toast.error("Tidak dapat menghapus akun Super Admin!");
       return;
     }
 
-    // 2. Jangan izinkan hapus diri sendiri
     if (currentUserId && user.id === currentUserId) {
       toast.error("Anda tidak dapat menghapus akun sendiri!");
       return;
@@ -176,54 +192,39 @@ export default function AdminUsersPage() {
     setShowDeleteDialog(true);
   };
 
-  // ✅ PERBAIKAN: KONFIRMASI HAPUS
+  // 🚀 KONFIRMASI HAPUS TOTAL VIA API SERVER
   const handleConfirmDelete = async () => {
     if (!selectedUser) return;
 
-    // Validasi ulang
-    if (selectedUser.role === "super_admin") {
-      toast.error("Tidak dapat menghapus Super Admin!");
-      setShowDeleteDialog(false);
-      return;
-    }
-
-    if (currentUserId && selectedUser.id === currentUserId) {
-      toast.error("Anda tidak dapat menghapus akun sendiri!");
-      setShowDeleteDialog(false);
-      return;
-    }
-
     setDeleting(true);
     try {
-      // ✅ Gunakan supabase langsung (bukan userService)
-      const { error } = await supabase
-        .from("users")
-        .delete()
-        .eq("id", selectedUser.id);
+      const res = await fetch("/api/admin/users/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ targetUserId: selectedUser.id }),
+      });
 
-      if (error) throw error;
+      const json = await res.json();
 
-      toast.success(`User ${selectedUser.full_name} berhasil dihapus`);
+      if (!res.ok) {
+        // Tampilkan error dari API secara halus tanpa melempar (throw) Exception
+        toast.error("Gagal Menghapus User", {
+          description: json.error || "Terjadi kesalahan pada server.",
+        });
+        return;
+      }
+
+      toast.success(`User ${selectedUser.full_name || selectedUser.email} telah dihapus permanen!`);
       setShowDeleteDialog(false);
-      fetchUsers(); // refresh list
+      fetchUsers();
     } catch (error: any) {
       console.error("Delete error:", error);
-      
-      // Jika error karena RLS
-      if (error.message?.includes("row-level security policy")) {
-        toast.error(
-          "Gagal hapus user karena kebijakan keamanan (RLS). " +
-          "Hubungi administrator untuk menambahkan policy DELETE di Supabase."
-        );
-      } else {
-        toast.error(error.message || "Gagal menghapus user");
-      }
+      toast.error(error.message || "Gagal terhubung ke server");
     } finally {
       setDeleting(false);
     }
   };
 
-  // ---------- HANDLE SEND NOTIFICATION ----------
   const handleSendNotification = async () => {
     if (!notificationForm.title || !notificationForm.message) {
       toast.error("Judul dan pesan wajib diisi");
@@ -258,33 +259,34 @@ export default function AdminUsersPage() {
   };
 
   const getInitials = (name: string) =>
-    name
+    (name || "U")
       .split(" ")
       .map((n) => n[0])
       .join("")
       .toUpperCase()
       .slice(0, 2);
 
-  const getRoleLabel = (role: UserRole) => USER_ROLES[role]?.label || role;
+  const getRoleLabel = (role: UserRole) => USER_ROLES[role]?.label || role.replace("_", " ");
 
-  // ---------- LOADING & AKSES ----------
   if (roleLoading) {
     return (
-      <div className="flex h-[calc(100vh-4rem)] items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      <div className="flex h-[60vh] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-emerald-600" />
       </div>
     );
   }
 
   if (!isSuperAdmin) {
     return (
-      <div className="flex h-[calc(100vh-4rem)] items-center justify-center">
-        <Card className="max-w-md text-center">
-          <CardContent className="pt-6">
-            <ShieldAlert className="h-12 w-12 mx-auto text-destructive mb-4" />
-            <h3 className="text-lg font-semibold">Akses Ditolak</h3>
-            <p className="text-muted-foreground text-sm mt-2">
-              Halaman ini hanya dapat diakses oleh Super Admin.
+      <div className="flex h-[60vh] items-center justify-center p-4">
+        <Card className="max-w-md text-center border-rose-500/30 rounded-2xl shadow-xs">
+          <CardContent className="pt-6 space-y-3">
+            <div className="w-12 h-12 bg-rose-500/10 text-rose-600 rounded-2xl flex items-center justify-center mx-auto">
+              <ShieldAlert className="h-6 w-6" />
+            </div>
+            <h3 className="text-base font-bold text-foreground">Akses Terbatas</h3>
+            <p className="text-muted-foreground text-xs leading-relaxed">
+              Modul Manajemen User dan Kontrol Hak Akses Sistem ini hanya dapat diakses oleh Super Admin.
             </p>
           </CardContent>
         </Card>
@@ -292,118 +294,186 @@ export default function AdminUsersPage() {
     );
   }
 
-  // ---------- RENDER ----------
   return (
-    <div className="container mx-auto py-6 space-y-6 max-w-7xl">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+    <div className="space-y-5 max-w-7xl mx-auto px-4 sm:px-6 pb-12 text-xs sm:text-sm">
+      
+      {/* 🔴 HEADER BARIS RINGKAS */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-card/85 backdrop-blur-md border border-border/70 p-4 rounded-2xl shadow-2xs">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-            <Users className="h-8 w-8" />
-            Manajemen User
-          </h1>
-          <p className="text-muted-foreground mt-1">Kelola user dan role akses di PLMS</p>
+          <div className="flex items-center gap-2">
+            <h1 className="text-lg sm:text-xl font-black text-foreground tracking-tight flex items-center gap-2">
+              <UserCog className="h-5 w-5 text-emerald-600" /> Manajemen User & Akses
+            </h1>
+            <Badge variant="outline" className="text-[10px] font-mono border-emerald-500/30 text-emerald-600">
+              {users.length} Akun
+            </Badge>
+          </div>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Atur hierarki otorisasi role, kirim broadcast pesan, dan kelola akun pengguna PLMS.
+          </p>
         </div>
-        <div className="flex items-center gap-3 flex-wrap">
-          <Badge variant="outline" className="px-3 py-1">Total {users.length} user</Badge>
-          {isSuperAdmin && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowSendNotification(true)}
-              className="gap-2 border-blue-200 text-blue-600 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-400 dark:hover:bg-blue-950"
-            >
-              <Bell className="h-4 w-4 mr-2" />
-              Kirim Notifikasi
-            </Button>
-          )}
+
+        <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={fetchUsers}
+            className="h-8 text-xs rounded-xl gap-1.5 border-border/80 cursor-pointer"
+          >
+            <RefreshCw className={cn("h-3.5 w-3.5 text-muted-foreground", loading && "animate-spin")} />
+            <span className="hidden sm:inline">Refresh</span>
+          </Button>
+
+          <Button
+            size="sm"
+            onClick={() => setShowSendNotification(true)}
+            className="h-8 text-xs font-semibold rounded-xl bg-blue-600 hover:bg-blue-700 text-white gap-1.5 shadow-2xs cursor-pointer"
+          >
+            <Bell className="h-3.5 w-3.5" />
+            <span>Kirim Notifikasi</span>
+          </Button>
         </div>
       </div>
 
-      {/* Search */}
-      <Card>
-        <CardContent className="pt-6">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+      {/* 🟢 METRIC BENTO GRID (4 KOLOM RINGKAS) */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <Card className="border shadow-2xs rounded-xl bg-card p-3">
+          <div className="flex items-center justify-between text-muted-foreground">
+            <span className="text-[11px] font-semibold">Total Pengguna</span>
+            <Users className="w-4 h-4 text-emerald-600" />
+          </div>
+          <p className="text-lg font-bold font-mono text-foreground mt-1">{metrics.total}</p>
+        </Card>
+
+        <Card className="border shadow-2xs rounded-xl bg-card p-3">
+          <div className="flex items-center justify-between text-muted-foreground">
+            <span className="text-[11px] font-semibold">Tim Agen</span>
+            <Shield className="w-4 h-4 text-emerald-500" />
+          </div>
+          <p className="text-lg font-bold font-mono text-emerald-600 dark:text-emerald-400 mt-1">{metrics.agents}</p>
+        </Card>
+
+        <Card className="border shadow-2xs rounded-xl bg-card p-3">
+          <div className="flex items-center justify-between text-muted-foreground">
+            <span className="text-[11px] font-semibold">Admin / Super Admin</span>
+            <ShieldCheck className="w-4 h-4 text-purple-600" />
+          </div>
+          <p className="text-lg font-bold font-mono text-purple-600 dark:text-purple-400 mt-1">
+            {metrics.admins + metrics.superAdmins}
+          </p>
+        </Card>
+
+        <Card className="border shadow-2xs rounded-xl bg-card p-3">
+          <div className="flex items-center justify-between text-muted-foreground">
+            <span className="text-[11px] font-semibold">Klien / Viewer</span>
+            <Eye className="w-4 h-4 text-slate-400" />
+          </div>
+          <p className="text-lg font-bold font-mono text-slate-600 dark:text-slate-300 mt-1">{metrics.viewers}</p>
+        </Card>
+      </div>
+
+      {/* 🟢 TOOLBAR SEARCH & DIRECTORY TABLE */}
+      <Card className="border shadow-2xs rounded-2xl bg-card overflow-hidden">
+        <CardHeader className="p-3.5 border-b bg-muted/20 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+          <div>
+            <CardTitle className="text-xs sm:text-sm font-bold flex items-center gap-2 text-foreground">
+              <Users className="w-4 h-4 text-emerald-600" /> Direktori Pengguna Sistem
+            </CardTitle>
+          </div>
+
+          <div className="relative w-full sm:w-64">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
             <Input
-              placeholder="Cari user..."
+              placeholder="Cari nama, email, atau role..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="pl-9"
+              className="pl-8 h-8 text-xs rounded-xl bg-background border-border/80"
             />
           </div>
-        </CardContent>
-      </Card>
-
-      {/* Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Daftar User</CardTitle>
-          <CardDescription>Semua user yang terdaftar di PLMS</CardDescription>
         </CardHeader>
-        <CardContent>
+
+        <CardContent className="p-0">
           {loading ? (
-            <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin" /></div>
+            <div className="flex flex-col items-center justify-center py-12 text-muted-foreground gap-2">
+              <Loader2 className="h-6 w-6 animate-spin text-emerald-600" />
+              <span className="text-xs font-medium">Memuat data pengguna...</span>
+            </div>
           ) : filteredUsers.length === 0 ? (
-            <div className="text-center py-12 text-muted-foreground">
-              <Users className="h-12 w-12 mx-auto mb-3 opacity-50" />
-              <p>Tidak ada user ditemukan</p>
+            <div className="text-center py-10 text-muted-foreground space-y-1">
+              <Users className="h-8 w-8 mx-auto opacity-30 text-slate-400" />
+              <p className="text-xs font-semibold">Tidak ada user ditemukan</p>
             </div>
           ) : (
-            <div className="border rounded-lg overflow-hidden">
+            <div className="overflow-x-auto">
               <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>User</TableHead>
-                    <TableHead>Email</TableHead>
-                    <TableHead>Role</TableHead>
-                    <TableHead>Bergabung</TableHead>
-                    <TableHead className="text-right">Aksi</TableHead>
+                <TableHeader className="bg-muted/40">
+                  <TableRow className="border-border/60">
+                    <TableHead className="text-[11px] font-bold py-2.5">User Profile</TableHead>
+                    <TableHead className="text-[11px] font-bold py-2.5">Email</TableHead>
+                    <TableHead className="text-[11px] font-bold py-2.5">Role Akses</TableHead>
+                    <TableHead className="text-[11px] font-bold py-2.5">Tanggal Registrasi</TableHead>
+                    <TableHead className="text-[11px] font-bold py-2.5 text-right">Aksi</TableHead>
                   </TableRow>
                 </TableHeader>
-                <TableBody>
+                <TableBody className="divide-y divide-border/40 text-xs">
                   {filteredUsers.map((user) => {
-                    // Cek apakah user ini super_admin (jangan tampilkan tombol hapus)
-                    const isSuperAdminUser = user.role === "super_admin";
+                    const isSuperAdminUser = user.role === "super_admin" 
                     const isCurrentUser = currentUserId === user.id;
                     const canDelete = isSuperAdmin && !isSuperAdminUser && !isCurrentUser;
 
                     return (
-                      <TableRow key={user.id}>
-                        <TableCell>
-                          <div className="flex items-center gap-3">
-                            <Avatar className="h-8 w-8">
+                      <TableRow key={user.id} className="hover:bg-muted/30 transition">
+                        <TableCell className="py-2.5">
+                          <div className="flex items-center gap-2.5">
+                            <Avatar className="h-7 w-7 border border-border/80">
                               <AvatarImage src={user.avatar_url || undefined} />
-                              <AvatarFallback>{getInitials(user.full_name || user.email)}</AvatarFallback>
+                              <AvatarFallback className="text-[10px] bg-emerald-500/10 text-emerald-600 font-bold">
+                                {getInitials(user.full_name || user.email)}
+                              </AvatarFallback>
                             </Avatar>
-                            <span className="font-medium">{user.full_name || "Tanpa Nama"}</span>
+                            <div className="flex flex-col">
+                              <span className="font-bold text-foreground line-clamp-1">
+                                {user.full_name || "Tanpa Nama"}
+                              </span>
+                              {isCurrentUser && (
+                                <span className="text-[9px] font-bold text-emerald-600 font-mono">(Akun Anda)</span>
+                              )}
+                            </div>
                           </div>
                         </TableCell>
-                        <TableCell className="text-muted-foreground">{user.email}</TableCell>
-                        <TableCell>
-                          <Badge variant={ROLE_BADGE[user.role] || "secondary"} className="gap-1">
-                            {ROLE_ICONS[user.role]}
+                        <TableCell className="py-2.5 font-mono text-[11px] text-muted-foreground">
+                          {user.email}
+                        </TableCell>
+                        <TableCell className="py-2.5">
+                          <Badge
+                            variant="outline"
+                            className={cn(
+                              "gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border shadow-2xs capitalize",
+                              ROLE_BADGE_STYLE[user.role] || ROLE_BADGE_STYLE.viewer
+                            )}
+                          >
+                            {ROLE_ICONS[user.role] || ROLE_ICONS.viewer}
                             {getRoleLabel(user.role)}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
-                          {new Date(user.created_at).toLocaleDateString("id-ID")}
+                        <TableCell className="py-2.5 font-mono text-[11px] text-muted-foreground">
+                          {user.created_at ? new Date(user.created_at).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" }) : "-"}
                         </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="py-2.5 text-right">
                           <DropdownMenu>
-                            <DropdownMenuTrigger className="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 hover:bg-accent hover:text-accent-foreground h-10 w-10">
+                            <DropdownMenuTrigger className="inline-flex items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground h-7 w-7 transition cursor-pointer">
                               <MoreHorizontal className="h-4 w-4" />
                             </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => handleEdit(user)}>
-                                <UserCog className="h-4 w-4 mr-2" /> Edit Role
+                            <DropdownMenuContent align="end" className="w-36 rounded-xl text-xs">
+                              <DropdownMenuItem onClick={() => handleEdit(user)} className="gap-2 cursor-pointer">
+                                <UserCog className="h-3.5 w-3.5 text-purple-600" /> Edit Role
                               </DropdownMenuItem>
                               {canDelete && (
                                 <DropdownMenuItem
                                   onClick={() => handleDelete(user)}
-                                  className="text-destructive"
+                                  className="gap-2 text-rose-600 focus:text-rose-600 focus:bg-rose-500/10 cursor-pointer"
                                 >
-                                  <Trash2 className="h-4 w-4 mr-2" /> Hapus User
+                                  <Trash2 className="h-3.5 w-3.5" /> Hapus User
                                 </DropdownMenuItem>
                               )}
                             </DropdownMenuContent>
@@ -419,25 +489,31 @@ export default function AdminUsersPage() {
         </CardContent>
       </Card>
 
-      {/* Dialog Edit Role */}
+      {/* 🟢 DIALOG EDIT ROLE */}
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Edit Role User</DialogTitle>
-            <DialogDescription>Ubah role akses untuk {selectedUser?.full_name}</DialogDescription>
+        <DialogContent className="max-w-sm rounded-2xl p-5 text-xs">
+          <DialogHeader className="pb-2">
+            <DialogTitle className="text-sm font-bold flex items-center gap-2">
+              <UserCog className="w-4 h-4 text-purple-600" /> Edit Role User
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Ubah hak akses otorisasi untuk <strong className="text-foreground">{selectedUser?.full_name || selectedUser?.email}</strong>.
+            </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label>Role Baru</Label>
+
+          <div className="space-y-3 py-2">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">Pilih Role Akses Baru</Label>
               <Select value={editingRole} onValueChange={(v) => setEditingRole(v as UserRole)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
+                <SelectTrigger className="h-9 text-xs rounded-xl">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl text-xs">
                   {Object.entries(USER_ROLES).map(([key, value]) => (
-                    <SelectItem key={key} value={key}>
+                    <SelectItem key={key} value={key} className="text-xs cursor-pointer">
                       <div className="flex items-center gap-2">
                         {ROLE_ICONS[key as UserRole]}
-                        {value.label}
-                        <span className="text-xs text-muted-foreground">- {value.description}</span>
+                        <span className="font-bold">{value.label}</span>
                       </div>
                     </SelectItem>
                   ))}
@@ -445,75 +521,111 @@ export default function AdminUsersPage() {
               </Select>
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowEditDialog(false)}>Batal</Button>
-            <Button onClick={handleSaveRole} disabled={saving}>
-              {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null} Simpan
+
+          <DialogFooter className="gap-2 pt-2">
+            <Button variant="outline" size="sm" onClick={() => setShowEditDialog(false)} className="h-8 text-xs rounded-xl">
+              Batal
+            </Button>
+            <Button onClick={handleSaveRole} disabled={saving} size="sm" className="h-8 text-xs bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold gap-1.5">
+              {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Simpan
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Dialog Delete */}
+      {/* 🔴 DIALOG KONFIRMASI HAPUS (PERMANEN API SERVER) */}
       <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Hapus User</DialogTitle>
-            <DialogDescription>
-              Yakin ingin menghapus {selectedUser?.full_name}? Tindakan ini tidak bisa dibatalkan.
+        <DialogContent className="max-w-sm rounded-2xl p-5 text-xs">
+          <DialogHeader className="pb-2">
+            <DialogTitle className="text-sm font-bold text-rose-600 flex items-center gap-2">
+              <Trash2 className="w-4 h-4" /> Hapus User Permanen
+            </DialogTitle>
+            <DialogDescription className="text-xs leading-relaxed">
+              Yakin ingin menghapus <strong className="text-foreground">{selectedUser?.full_name || selectedUser?.email}</strong>? User akan dihapus secara permanen dari Supabase Auth dan tidak akan pernah bisa login lagi.
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>Batal</Button>
-            <Button variant="destructive" onClick={handleConfirmDelete} disabled={deleting}>
-              {deleting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null} Hapus
+
+          <DialogFooter className="gap-2 pt-3">
+            <Button variant="outline" size="sm" onClick={() => setShowDeleteDialog(false)} className="h-8 text-xs rounded-xl">
+              Batal
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={handleConfirmDelete}
+              disabled={deleting}
+              className="h-8 text-xs bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-semibold gap-1.5 cursor-pointer"
+            >
+              {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+              <span>Hapus Permanen</span>
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Dialog Kirim Notifikasi */}
+      {/* 🔵 DIALOG KIRIM NOTIFIKASI BROADCAST */}
       <Dialog open={showSendNotification} onOpenChange={setShowSendNotification}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Bell className="h-5 w-5 text-blue-500" />
-              Kirim Notifikasi
+        <DialogContent className="max-w-md rounded-2xl p-5 text-xs">
+          <DialogHeader className="pb-1">
+            <DialogTitle className="text-sm font-bold flex items-center gap-2">
+              <Bell className="h-4 w-4 text-blue-600" /> Broadcast Notifikasi Tim
             </DialogTitle>
-            <DialogDescription>
-              Kirim pengumuman atau instruksi ke agen atau semua user
+            <DialogDescription className="text-xs">
+              Kirim instruksi, pengumuman, atau pengingat tugas ke akun pengguna.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
-            {/* Penerima */}
-            <div className="space-y-2">
-              <Label>Penerima</Label>
-              <Select
-                value={notificationForm.recipient_type}
-                onValueChange={(val) =>
-                  setNotificationForm((prev) => ({
-                    ...prev,
-                    recipient_type: val as any,
-                    user_ids: [],
-                  }))
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Pilih penerima" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all_agents">Semua Agen</SelectItem>
-                  <SelectItem value="all_admins">Semua Admin</SelectItem>
-                  <SelectItem value="all_users">Semua User</SelectItem>
-                  <SelectItem value="specific">Pilih User Spesifik</SelectItem>
-                </SelectContent>
-              </Select>
+
+          <div className="space-y-3 py-2">
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold">Penerima Pesan</Label>
+                <Select
+                  value={notificationForm.recipient_type}
+                  onValueChange={(val) =>
+                    setNotificationForm((prev) => ({
+                      ...prev,
+                      recipient_type: val as any,
+                      user_ids: [],
+                    }))
+                  }
+                >
+                  <SelectTrigger className="h-8 text-xs rounded-xl">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl text-xs">
+                    <SelectItem value="all_agents">Semua Agen</SelectItem>
+                    <SelectItem value="all_admins">Semua Admin</SelectItem>
+                    <SelectItem value="all_users">Semua User</SelectItem>
+                    <SelectItem value="specific">Pilih User Spesifik</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold">Tipe Notifikasi</Label>
+                <Select
+                  value={notificationForm.type}
+                  onValueChange={(val) =>
+                    setNotificationForm((prev) => ({ ...prev, type: val as any }))
+                  }
+                >
+                  <SelectTrigger className="h-8 text-xs rounded-xl">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl text-xs">
+                    <SelectItem value="announcement">📢 Pengumuman</SelectItem>
+                    <SelectItem value="task">📋 Tugas</SelectItem>
+                    <SelectItem value="reminder">⏰ Pengingat</SelectItem>
+                    <SelectItem value="assignment">👤 Penugasan</SelectItem>
+                    <SelectItem value="property_update">🏠 Update Properti</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
-            {/* Pilih User Spesifik */}
             {notificationForm.recipient_type === "specific" && (
-              <div className="space-y-2">
-                <Label>Pilih User</Label>
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold">Pilih User Spesifik</Label>
                 <Select
                   value={notificationForm.user_ids[0] || ""}
                   onValueChange={(val) =>
@@ -523,10 +635,10 @@ export default function AdminUsersPage() {
                     }))
                   }
                 >
-                  <SelectTrigger>
+                  <SelectTrigger className="h-8 text-xs rounded-xl">
                     <SelectValue placeholder="Pilih user" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="rounded-xl text-xs">
                     {users.map((u) => (
                       <SelectItem key={u.id} value={u.id}>
                         {u.full_name || u.email}
@@ -537,92 +649,45 @@ export default function AdminUsersPage() {
               </div>
             )}
 
-            {/* Tipe Notifikasi */}
-            <div className="space-y-2">
-              <Label>Tipe Notifikasi</Label>
-              <Select
-                value={notificationForm.type}
-                onValueChange={(val) =>
-                  setNotificationForm((prev) => ({ ...prev, type: val as any }))
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Pilih tipe" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="announcement">📢 Pengumuman</SelectItem>
-                  <SelectItem value="task">📋 Tugas</SelectItem>
-                  <SelectItem value="reminder">⏰ Pengingat</SelectItem>
-                  <SelectItem value="assignment">👤 Penugasan</SelectItem>
-                  <SelectItem value="property_update">🏠 Update Properti</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Judul */}
-            <div className="space-y-2">
-              <Label htmlFor="notif-title">Judul <span className="text-rose-500">*</span></Label>
+            <div className="space-y-1">
+              <Label className="text-[11px] font-semibold">Judul Notifikasi <span className="text-rose-500">*</span></Label>
               <Input
-                id="notif-title"
-                placeholder="Contoh: Meeting Agen Besok"
+                placeholder="Contoh: Meeting Evaluasi Agen"
                 value={notificationForm.title}
-                onChange={(e) =>
-                  setNotificationForm((prev) => ({ ...prev, title: e.target.value }))
-                }
+                onChange={(e) => setNotificationForm((prev) => ({ ...prev, title: e.target.value }))}
+                className="h-8 text-xs rounded-xl"
               />
             </div>
 
-            {/* Pesan */}
-            <div className="space-y-2">
-              <Label htmlFor="notif-message">Pesan <span className="text-rose-500">*</span></Label>
+            <div className="space-y-1">
+              <Label className="text-[11px] font-semibold">Isi Pesan <span className="text-rose-500">*</span></Label>
               <Textarea
-                id="notif-message"
                 placeholder="Tulis pesan notifikasi..."
                 value={notificationForm.message}
-                onChange={(e) =>
-                  setNotificationForm((prev) => ({ ...prev, message: e.target.value }))
-                }
-                rows={4}
-              />
-            </div>
-
-            {/* Link (opsional) */}
-            <div className="space-y-2">
-              <Label htmlFor="notif-link">Link (opsional)</Label>
-              <Input
-                id="notif-link"
-                placeholder="/properties atau /crm/leads/123"
-                value={notificationForm.link}
-                onChange={(e) =>
-                  setNotificationForm((prev) => ({ ...prev, link: e.target.value }))
-                }
+                onChange={(e) => setNotificationForm((prev) => ({ ...prev, message: e.target.value }))}
+                rows={3}
+                className="text-xs rounded-xl"
               />
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowSendNotification(false)}>
+
+          <DialogFooter className="gap-2 pt-2">
+            <Button variant="outline" size="sm" onClick={() => setShowSendNotification(false)} className="h-8 text-xs rounded-xl">
               Batal
             </Button>
             <Button
+              size="sm"
               onClick={handleSendNotification}
               disabled={sendingNotification || !notificationForm.title || !notificationForm.message}
-              className="bg-blue-600 hover:bg-blue-700"
+              className="h-8 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold gap-1.5"
             >
-              {sendingNotification ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                  Mengirim...
-                </>
-              ) : (
-                <>
-                  <Bell className="h-4 w-4 mr-2" />
-                  Kirim Notifikasi
-                </>
-              )}
+              {sendingNotification ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+              <span>Kirim Notifikasi</span>
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
     </div>
   );
 }

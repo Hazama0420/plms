@@ -21,11 +21,24 @@ export function useNotifications() {
         limit: 20,
         is_read,
       });
-      setNotifications(result.data);
-      setTotalPages(result.totalPages);
+
+      // 🛡️ Safeguard: Penanganan jika result berupa object { data, totalPages }, Array [], atau null
+      if (Array.isArray(result)) {
+        setNotifications(result);
+        setTotalPages(1);
+      } else if (result && typeof result === "object") {
+        setNotifications(result.data || []);
+        setTotalPages(result.totalPages || 1);
+      } else {
+        setNotifications([]);
+        setTotalPages(1);
+      }
+
       setCurrentPage(page);
     } catch (error: any) {
-      console.error("Error fetching notifications:", error);
+      // Set fallback kosong dengan aman jika user belum login/terjadi error
+      setNotifications([]);
+      setTotalPages(1);
     } finally {
       setLoading(false);
     }
@@ -34,9 +47,9 @@ export function useNotifications() {
   const fetchUnreadCount = useCallback(async () => {
     try {
       const count = await notificationService.getUnreadCount();
-      setUnreadCount(count);
+      setUnreadCount(typeof count === "number" ? count : 0);
     } catch (error) {
-      console.error("Error fetching unread count:", error);
+      setUnreadCount(0);
     }
   }, []);
 
@@ -50,7 +63,9 @@ export function useNotifications() {
       );
       setUnreadCount((prev) => Math.max(0, prev - 1));
     } catch (error: any) {
-      toast.error("Gagal menandai dibaca", { description: error.message });
+      toast.error("Gagal menandai dibaca", { 
+        description: error?.message || "Terjadi kesalahan" 
+      });
     }
   }, []);
 
@@ -63,7 +78,9 @@ export function useNotifications() {
       setUnreadCount(0);
       toast.success("Semua notifikasi telah dibaca");
     } catch (error: any) {
-      toast.error("Gagal menandai semua dibaca", { description: error.message });
+      toast.error("Gagal menandai semua dibaca", { 
+        description: error?.message || "Terjadi kesalahan" 
+      });
     }
   }, []);
 

@@ -3,21 +3,23 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-// Fungsi sederhana untuk cek akses
+// Fungsi pengecekan hak akses rute untuk user yang sudah login
 function canAccessRoute(role: string | null | undefined, path: string): boolean {
-  if (!role) return false;
-  if (role === "super_admin") return true;
+  const safeRole = (role || "viewer").toLowerCase();
+
+  if (safeRole === "super_admin" || safeRole === "superadmin") return true;
+
   if (path.startsWith("/dashboard/admin")) {
-    return role === "admin" || role === "super_admin";
+    return safeRole === "admin" || safeRole === "super_admin" || safeRole === "superadmin";
   }
   if (path.startsWith("/dashboard/reports")) {
-    return ["super_admin", "admin", "agent", "marketing"].includes(role);
+    return ["super_admin", "superadmin", "admin", "agent", "marketing"].includes(safeRole);
   }
-  if (path.startsWith("/dashboard/properties")) {
-    return ["super_admin", "admin", "agent", "marketing", "viewer"].includes(role);
+  if (path.startsWith("/dashboard/properties") || path.startsWith("/properties")) {
+    return ["super_admin", "superadmin", "admin", "agent", "marketing", "viewer"].includes(safeRole);
   }
   if (path.startsWith("/dashboard/crm")) {
-    return ["super_admin", "admin", "agent", "marketing"].includes(role);
+    return ["super_admin", "superadmin", "admin", "agent", "marketing"].includes(safeRole);
   }
   if (path.startsWith("/dashboard/profile") || path.startsWith("/dashboard/settings")) {
     return true;
@@ -46,19 +48,27 @@ export async function middleware(req: NextRequest) {
   const path = req.nextUrl.pathname;
 
   const isAuthPage = path === "/" || path === "/register";
+  
+  // 🟢 HANYA HALAMAN PRIVAT TERTENTU YANG DIKUNCI UNTUK TAMU
+  // /dashboard (utama) dan /properties dibebaskan agar bisa dilihat tamu.
   const isProtectedPage =
-    path.startsWith("/dashboard") ||
-    path.startsWith("/properties") ||
+    path.startsWith("/dashboard/crm") ||
+    path.startsWith("/dashboard/reports") ||
+    path.startsWith("/dashboard/admin") ||
     path.startsWith("/profile") ||
     path.startsWith("/settings");
 
+  // 1. Jika Tamu (Belum Login) mencoba buka halaman privat (CRM, Settings, Profile, dll) -> Lempar ke login (/)
   if (!session && isProtectedPage) {
     return NextResponse.redirect(new URL("/", req.url));
   }
+
+  // 2. Jika Sudah Login tapi buka halaman login (/) -> Lempar ke /dashboard
   if (session && isAuthPage) {
     return NextResponse.redirect(new URL("/dashboard", req.url));
   }
 
+  // 3. Validasi Role untuk user yang sudah login jika mengakses halaman privat
   if (session && isProtectedPage) {
     try {
       const { data: userData } = await supabase
@@ -66,31 +76,14 @@ export async function middleware(req: NextRequest) {
         .select("role")
         .eq("id", session.user.id)
         .maybeSingle();
+      
       const userRole = userData?.role || "viewer";
+      
       if (!canAccessRoute(userRole, path)) {
         return NextResponse.redirect(new URL("/dashboard", req.url));
       }
     } catch (error) {
-      // jika error, biarkan akses
-    }
-  }
-
-  if (path.startsWith("/api/admin")) {
-    if (!session) {
-      return new NextResponse(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { "Content-Type": "application/json" } });
-    }
-    try {
-      const { data: userData } = await supabase
-        .from("users")
-        .select("role")
-        .eq("id", session.user.id)
-        .maybeSingle();
-      const userRole = userData?.role || "viewer";
-      if (!["super_admin", "admin"].includes(userRole)) {
-        return new NextResponse(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
-      }
-    } catch {
-      return new NextResponse(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
+      // Abaikan jika error koneksi database
     }
   }
 

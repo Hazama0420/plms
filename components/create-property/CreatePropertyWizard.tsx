@@ -1,10 +1,10 @@
-// components/create-property/CreatePropertyWizard.tsx
 "use client";
 
 import { useState, useCallback, useEffect, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
-import { Save, Sparkles, ArrowLeft, ArrowRight, CheckCircle2, ShieldCheck } from "lucide-react";
+import { Save, Sparkles, ArrowLeft, ArrowRight, CheckCircle2 } from "lucide-react";
 
 import { SidebarStepper } from "./SidebarStepper";
 import { PropertyScoreCard } from "./PropertyScoreCard";
@@ -19,9 +19,7 @@ import { StepReview } from "./steps/StepReview";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 
-// ============================================================
 // STEP DEFINITION
-// ============================================================
 export const steps = [
   { id: "category", label: "Kategori & Foto", icon: "Grid" },
   { id: "specification", label: "Spesifikasi", icon: "Ruler" },
@@ -32,9 +30,7 @@ export const steps = [
   { id: "review", label: "Preview & Publish", icon: "CheckCircle" },
 ];
 
-// ============================================================
 // DEFAULT FORM DATA
-// ============================================================
 const defaultFormData = {
   // Category
   property_type: "",
@@ -42,7 +38,7 @@ const defaultFormData = {
   property_status: "",
   co_broke: false,
   youtube_url: "",
-  photos: [] as string[],
+  photos: [] as any[],
   photos_uploaded: false,
   title: "",
   listing_code: "",
@@ -117,6 +113,7 @@ export function CreatePropertyWizard({
   propertyId,
   onSuccess,
 }: CreatePropertyWizardProps) {
+  const router = useRouter();
   const [currentStep, setCurrentStep] = useState(0);
   const [formData, setFormData] = useState<Record<string, any>>(() => ({
     ...defaultFormData,
@@ -125,7 +122,7 @@ export function CreatePropertyWizard({
   const [score, setScore] = useState(0);
   const [isSavingDraft, setIsSavingDraft] = useState(false);
 
-  // ===== HITUNG SKOR KELENGKAPAN LISTING =====
+  // HITUNG SKOR KELENGKAPAN LISTING
   const calculateScore = useCallback((data: Record<string, any>) => {
     let total = 0;
     if (data.property_type) total += 10;
@@ -148,12 +145,12 @@ export function CreatePropertyWizard({
     setScore(calculateScore(formData));
   }, [formData, calculateScore]);
 
-  // ===== UPDATE FORM DATA =====
+  // UPDATE FORM DATA
   const updateFormData = useCallback((data: Partial<typeof defaultFormData>) => {
     setFormData((prev) => ({ ...prev, ...data }));
   }, []);
 
-  // ===== NAVIGATION =====
+  // NAVIGATION
   const nextStep = () => {
     setCurrentStep((prev) => Math.min(prev + 1, steps.length - 1));
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -169,7 +166,7 @@ export function CreatePropertyWizard({
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  // ===== SAVE DRAFT FUNCTIONALITY =====
+  // SAVE DRAFT FUNCTIONALITY
   const handleSaveDraft = async () => {
     setIsSavingDraft(true);
     try {
@@ -189,7 +186,7 @@ export function CreatePropertyWizard({
     return Math.round(((currentStep + 1) / steps.length) * 100);
   }, [currentStep]);
 
-  // ===== RENDER ACTIVE STEP =====
+  // RENDER ACTIVE STEP
   const renderStep = () => {
     const props = {
       formData,
@@ -222,22 +219,49 @@ export function CreatePropertyWizard({
   };
 
   return (
-    <div className="w-full max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-      {/* MOBILE STEP PROGRESS BAR (Tampil hanya di Mobile/Tablet Kecil) */}
-      <div className="lg:hidden bg-card border rounded-2xl p-4 shadow-xs space-y-2">
+    <div className="w-full max-w-[1440px] mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-4 sm:space-y-6">
+      
+      {/* ⬅️ HEADER PAGE WITH BACK BUTTON */}
+      <div className="flex items-center justify-between border-b pb-4 dark:border-border">
+        <div className="flex items-center gap-3">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={() => router.back()}
+            className="h-9 w-9 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 shrink-0"
+            title="Kembali ke halaman sebelumnya"
+          >
+            <ArrowLeft className="h-5 w-5 text-slate-700 dark:text-slate-300" />
+          </Button>
+          <div>
+            <h1 className="text-lg sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
+              {mode === "edit" ? "Edit Data Properti" : "Tambah Properti Baru"}
+            </h1>
+            <p className="text-xs sm:text-sm text-muted-foreground">
+              {mode === "edit"
+                ? "Perbarui informasi dan spesifikasi properti Anda"
+                : "Lengkapi data spesifikasi, lokasi, dan foto properti"}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* 📱 MOBILE STEP PROGRESS BAR (KHUSUS HP) */}
+      <div className="lg:hidden bg-card border rounded-2xl p-3.5 shadow-xs space-y-2">
         <div className="flex items-center justify-between text-xs font-semibold">
           <span className="text-emerald-600 font-bold flex items-center gap-1.5">
             <CheckCircle2 className="w-4 h-4" /> Langkah {currentStep + 1} dari {steps.length}
           </span>
-          <span className="text-muted-foreground">{steps[currentStep].label}</span>
+          <span className="text-muted-foreground font-mono">{steps[currentStep].label}</span>
         </div>
         <Progress value={stepProgressPercentage} className="h-2 bg-muted" />
       </div>
 
-      {/* DESKTOP LAYOUT (GRID 12 COLUMNS: SIDEBAR 3.5 COL, KONTEN 8.5 COL) */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        {/* SIDEBAR STEPPER & SCORE CARD (LEBAR PROPOSIONAL 3.5 KOLOM) */}
-        <div className="lg:col-span-4 xl:col-span-3 sticky top-6 space-y-5">
+      {/* 💻 DESKTOP & MOBILE GRID LAYOUT */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
+        {/* SIDEBAR STEPPER & SCORE CARD (DESKTOP) */}
+        <div className="hidden lg:block lg:col-span-4 xl:col-span-3 lg:sticky lg:top-6 space-y-5">
           <div className="bg-card border rounded-2xl p-4 shadow-xs">
             <SidebarStepper
               steps={steps}
@@ -248,9 +272,9 @@ export function CreatePropertyWizard({
           <PropertyScoreCard score={score} />
         </div>
 
-        {/* MAIN FORM CONTAINER (LEBAR LUAS 8.5 KOLOM SEHINGGA FORM TIDAK TERJEPIT) */}
-        <div className="lg:col-span-8 xl:col-span-9">
-          <div className="bg-card rounded-2xl shadow-sm border border-border p-6 sm:p-10 space-y-6">
+        {/* MAIN FORM CONTAINER */}
+        <div className="lg:col-span-8 xl:col-span-9 w-full">
+          <div className="bg-card rounded-2xl shadow-sm border border-border p-4 sm:p-8 lg:p-10 space-y-6">
             <AnimatePresence mode="wait">
               <motion.div
                 key={currentStep}
@@ -263,8 +287,8 @@ export function CreatePropertyWizard({
               </motion.div>
             </AnimatePresence>
 
-            {/* NAVIGASI BOTTOM ACTION BUTTONS DENGAN TAMPILAN ELEGAN */}
-            <div className="mt-12 pt-6 border-t border-border/80 flex flex-col sm:flex-row justify-between items-center gap-4">
+            {/* NAVIGASI BOTTOM ACTION BUTTONS */}
+            <div className="mt-8 sm:mt-12 pt-6 border-t border-border/80 flex flex-col sm:flex-row justify-between items-center gap-3 sm:gap-4">
               <Button
                 type="button"
                 variant="outline"
@@ -275,7 +299,7 @@ export function CreatePropertyWizard({
                 <ArrowLeft className="h-4 w-4" /> Langkah Sebelumnya
               </Button>
 
-              <div className="w-full sm:w-auto flex flex-col sm:flex-row gap-3 order-1 sm:order-2">
+              <div className="w-full sm:w-auto flex flex-col sm:flex-row gap-2.5 sm:gap-3 order-1 sm:order-2">
                 <Button
                   type="button"
                   variant="secondary"

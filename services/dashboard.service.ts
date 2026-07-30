@@ -1,4 +1,3 @@
-// services/dashboard.service.ts
 import { supabase } from "@/lib/supabase/client";
 
 export interface DashboardStats {
@@ -12,7 +11,7 @@ export interface DashboardStats {
   totalPublished: number;
   totalReview: number;
   monthlyData: { month: string; properties: number; sold: number }[];
-  recentActivities: { id: string; description: string; time: string; type: string }[];
+  recentActivities: { id: string; description: string; time: string; type: string; user_name?: string }[];
   recentProperties: {
     id: string;
     title: string;
@@ -27,54 +26,51 @@ export interface DashboardStats {
     value: number;
     icon: string;
     trend: number;
-    color: 'blue' | 'green' | 'orange' | 'purple';
+    color: "blue" | "green" | "orange" | "purple";
     subtitle: string;
   }[];
 }
 
 export const dashboardService = {
   async getStats(): Promise<DashboardStats> {
-    // ===== TOTAL PROPERTIES (default 0) =====
-    const { count: totalPropertiesRaw, error: totalError } = await supabase
+    // ===== TOTAL PROPERTIES =====
+    const { count: totalPropertiesRaw } = await supabase
       .from("properties")
       .select("*", { count: "exact", head: true });
-    if (totalError) throw new Error(totalError.message);
     const totalProperties = totalPropertiesRaw ?? 0;
 
-    // ===== ACTIVE LISTINGS (default 0) =====
-    const { count: activeListingsRaw, error: activeError } = await supabase
+    // ===== ACTIVE LISTINGS =====
+    const { count: activeListingsRaw } = await supabase
       .from("properties")
       .select("*", { count: "exact", head: true })
       .eq("status", "published");
-    if (activeError) throw new Error(activeError.message);
     const activeListings = activeListingsRaw ?? 0;
 
-    // ===== TODAY'S LEADS (default 0) =====
+    // ===== TODAY'S LEADS =====
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const { count: todayLeadsRaw, error: leadError } = await supabase
+    const { count: todayLeadsRaw } = await supabase
       .from("crm_leads")
       .select("*", { count: "exact", head: true })
       .gte("created_at", today.toISOString());
-    if (leadError) throw new Error(leadError.message);
     const todayLeads = todayLeadsRaw ?? 0;
 
-    // ===== REGISTERED AGENTS (default 0) =====
-    const { count: registeredAgentsRaw, error: agentError } = await supabase
+    // ===== REGISTERED AGENTS =====
+    const { count: registeredAgentsRaw } = await supabase
       .from("users")
       .select("*", { count: "exact", head: true })
       .eq("role", "agent");
-    if (agentError) throw new Error(agentError.message);
     const registeredAgents = registeredAgentsRaw ?? 0;
 
     // ===== STATUS COUNTS =====
-    const { data: statusData, error: statusError } = await supabase
+    const { data: statusData } = await supabase
       .from("properties")
       .select("status");
-    if (statusError) throw new Error(statusError.message);
 
-    const statusCounts = statusData.reduce((acc, curr) => {
-      acc[curr.status] = (acc[curr.status] || 0) + 1;
+    const statusCounts = (statusData || []).reduce((acc, curr) => {
+      if (curr.status) {
+        acc[curr.status] = (acc[curr.status] || 0) + 1;
+      }
       return acc;
     }, {} as Record<string, number>);
 
@@ -86,12 +82,11 @@ export const dashboardService = {
 
     // ===== MONTHLY DATA =====
     const currentYear = new Date().getFullYear();
-    const { data: monthlyRaw, error: monthlyError } = await supabase
+    const { data: monthlyRaw } = await supabase
       .from("properties")
       .select("created_at, status")
       .gte("created_at", `${currentYear}-01-01`)
       .lte("created_at", `${currentYear}-12-31`);
-    if (monthlyError) throw new Error(monthlyError.message);
 
     const months = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
     const monthlyMap: Record<string, { properties: number; sold: number }> = {};
@@ -114,23 +109,45 @@ export const dashboardService = {
       sold: monthlyMap[month].sold,
     }));
 
-    // ===== RECENT ACTIVITIES =====
-    const { data: activities, error: actError } = await supabase
-      .from("crm_activities")
-      .select("id, activity_type, notes, created_at")
-      .order("created_at", { ascending: false })
-      .limit(6);
-    if (actError) throw new Error(actError.message);
+    // ===== RECENT ACTIVITIES (PRIORITAS DARI activity_logs, FALLBACK KE crm_activities) =====
+    let recentActivities: { id: string; description: string; time: string; type: string; user_name?: string }[] = [];
 
-    const recentActivities = activities?.map((act) => ({
-      id: act.id,
-      description: act.notes || act.activity_type,
-      time: act.created_at,
-      type: act.activity_type,
-    })) || [];
+    try {
+      const { data: logData, error: logErr } = await supabase
+        .from("activity_logs")
+        .select("id, action, description, created_at, user_name")
+        .order("created_at", { ascending: false })
+        .limit(6);
+
+      if (!logErr && logData && logData.length > 0) {
+        recentActivities = logData.map((act) => ({
+          id: act.id,
+          description: act.description,
+          time: act.created_at,
+          type: act.action || "LOG",
+          user_name: act.user_name || "Sistem",
+        }));
+      } else {
+        const { data: crmAct } = await supabase
+          .from("crm_activities")
+          .select("id, activity_type, notes, created_at")
+          .order("created_at", { ascending: false })
+          .limit(6);
+
+        recentActivities = (crmAct || []).map((act) => ({
+          id: act.id,
+          description: act.notes || act.activity_type || "Aktivitas CRM",
+          time: act.created_at,
+          type: act.activity_type || "CRM",
+          user_name: "Sistem",
+        }));
+      }
+    } catch {
+      recentActivities = [];
+    }
 
     // ===== RECENT PROPERTIES =====
-    const { data: recentProps, error: recentError } = await supabase
+    const { data: recentProps } = await supabase
       .from("properties")
       .select(`
         id,
@@ -143,7 +160,6 @@ export const dashboardService = {
       `)
       .order("created_at", { ascending: false })
       .limit(5);
-    if (recentError) throw new Error(recentError.message);
 
     const recentProperties = recentProps?.map((p) => {
       const primaryMedia = p.media?.find((m: any) => m.is_primary);
@@ -168,19 +184,17 @@ export const dashboardService = {
     currMonthStart.setDate(1);
     currMonthStart.setHours(0, 0, 0, 0);
 
-    const { count: currTotalRaw, error: currTotalErr } = await supabase
+    const { count: currTotalRaw } = await supabase
       .from("properties")
       .select("*", { count: "exact", head: true })
       .gte("created_at", currMonthStart.toISOString());
-    if (currTotalErr) throw new Error(currTotalErr.message);
     const currTotal = currTotalRaw ?? 0;
 
-    const { count: prevTotalRaw, error: prevTotalErr } = await supabase
+    const { count: prevTotalRaw } = await supabase
       .from("properties")
       .select("*", { count: "exact", head: true })
       .gte("created_at", prevMonthStart.toISOString())
       .lt("created_at", currMonthStart.toISOString());
-    if (prevTotalErr) throw new Error(prevTotalErr.message);
     const prevTotal = prevTotalRaw ?? 0;
 
     const totalTrend = prevTotal > 0 ? Math.round(((currTotal - prevTotal) / prevTotal) * 100) : 0;

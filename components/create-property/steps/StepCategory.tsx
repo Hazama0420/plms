@@ -1,4 +1,3 @@
-// components/create-property/steps/StepCategory.tsx
 "use client";
 
 import { useState, useRef, useEffect } from "react";
@@ -35,12 +34,13 @@ import {
   ZoomIn,
   ZoomOut,
   Check,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
+import { compressImage } from "@/lib/imageCompressor";
+import { supabase } from "@/lib/supabase/client";
 
-// ============================================================
 // DATA STATIS
-// ============================================================
 const propertyTypes = [
   { value: "rumah", label: "🏠 Rumah" },
   { value: "apartemen", label: "🏢 Apartemen" },
@@ -66,13 +66,16 @@ const statusOptions = [
   { value: "aset_bank", label: "Aset Bank" },
 ];
 
-// ============================================================
-// INTERFACE
-// ============================================================
 interface PhotoItem {
   id: string;
-  file?: File;
   preview: string;
+  public_url?: string;
+  media_type?: string;
+  file_name?: string;
+  original_name?: string;
+  storage_path?: string;
+  mime_type?: string;
+  file_size?: number;
   isCover?: boolean;
   uploaded?: boolean;
   isExisting?: boolean;
@@ -84,7 +87,6 @@ interface StepCategoryProps {
   nextStep: () => void;
 }
 
-// Helper konversi DataURL ke File object
 function dataURLtoFile(dataurl: string, filename: string): File {
   const arr = dataurl.split(",");
   const mime = arr[0].match(/:(.*?);/)?.[1] || "image/jpeg";
@@ -97,70 +99,69 @@ function dataURLtoFile(dataurl: string, filename: string): File {
   return new File([u8arr], filename, { type: mime });
 }
 
-// ============================================================
-// MAIN COMPONENT
-// ============================================================
 export function StepCategory({ formData, updateFormData, nextStep }: StepCategoryProps) {
-  // ===== AI PARSE STATE =====
   const [parseText, setParseText] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
 
-  // ===== CO-BROKE & YOUTUBE =====
   const [showCoBrok, setShowCoBrok] = useState(formData.co_broke || false);
   const [youtubeUrl, setYoutubeUrl] = useState(formData.youtube_url || "");
 
-  // ===== PHOTOS STATE & DRAG =====
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
-  const [isDragging, setIsDragging] = useState(false);
+  const [isCompressing, setIsCompressing] = useState(false);
+  const [isDropzoneActive, setIsDropzoneActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // ===== PREVIEW & CROPPER STATE =====
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [isCropping, setIsCropping] = useState(false);
   const [cropZoom, setCropZoom] = useState(1);
   const [cropRotation, setCropRotation] = useState(0);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // Sync Normalisasi Foto
-  useEffect(() => {
-    if (formData.photos && Array.isArray(formData.photos)) {
-      const normalized = formData.photos.map((p: any, idx: number) => {
-        if (typeof p === "string") {
-          return {
-            id: `existing-${idx}`,
-            preview: p,
-            isCover: idx === 0,
-            uploaded: true,
-            isExisting: true,
-          };
-        }
+  // Sync Photos dari formData ke Local State saat inisialisasi/edit
+ useEffect(() => {
+  if (formData.photos && Array.isArray(formData.photos)) {
+    const normalized = formData.photos.map((p: any, idx: number) => {
+      if (typeof p === "string") {
         return {
-          id: p.id || `photo-${idx}`,
-          file: p.file,
-          preview: p.preview || p.url || "",
-          isCover: idx === 0, // ⭐ Urutan 0 selalu Cover
-          uploaded: p.uploaded || p.isExisting || false,
-          isExisting: p.isExisting || false,
+          id: `existing-${idx}`,
+          preview: p,
+          public_url: p,
+          media_type: "image",
+          isCover: idx === 0,
+          uploaded: true,
+          isExisting: true,
         };
-      });
-      setPhotos(normalized);
-    }
-  }, [formData.photos]);
+      }
+      return {
+        id: p.id || `photo-${idx}`,
+        preview: p.public_url || p.preview || p.url || "",
+        public_url: p.public_url || p.preview || p.url || "",
+        media_type: p.media_type || "image",
+        file_name: p.file_name,
+        original_name: p.original_name,
+        storage_path: p.storage_path,
+        mime_type: p.mime_type,
+        file_size: p.file_size,
+        isCover: idx === 0,
+        uploaded: true,
+        isExisting: p.isExisting || false,
+      };
+    });
+    setPhotos(normalized);
+  }
+}, [formData.photos]);
 
-  // Update State Pusat dan tetapkan urutan 0 sebagai Cover
+  // Update State Utama & Form Data
   const syncPhotosWithCover = (newPhotos: PhotoItem[]) => {
     const updated = newPhotos.map((p, idx) => ({
       ...p,
       isCover: idx === 0,
     }));
     setPhotos(updated);
-    updateFormData({ photos: updated, photos_uploaded: updated.length > 0 });
+    updateFormData({ photos: updated });
   };
 
-  // ============================================================
-  // DRAG & DROP REORDERING HANDLERS
-  // ============================================================
   const handleDragStart = (index: number) => {
     setDraggedIndex(index);
   };
@@ -181,26 +182,117 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
     setDraggedIndex(null);
   };
 
-  // ============================================================
-  // HANDLER FILE INPUT
-  // ============================================================
+  // Helper Upload File langsung ke Supabase Storage Bucket 'property-media'
+  const uploadToStorage = async (file: File, originalName: string): Promise<PhotoItem | null> => {
+  try {
+    const ext = file.name.split(".").pop() || "jpg";
+    const cleanOriginalName = originalName.replace(/[^a-zA-Z0-9.-]/g, "_");
+    const fileName = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}.${ext}`;
+    const storagePath = `listings/${fileName}`;
+
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from("property-media")
+      .upload(storagePath, file, {
+        cacheControl: "3600",
+        upsert: true,
+        contentType: file.type || "image/jpeg",
+      });
+
+    if (uploadError) {
+      console.error("Gagal upload foto ke Supabase Storage:", uploadError.message);
+      return null;
+    }
+
+    const { data: publicUrlData } = supabase.storage
+      .from("property-media")
+      .getPublicUrl(uploadData.path);
+
+    const publicUrl = publicUrlData.publicUrl;
+
+    return {
+      id: `photo-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      preview: publicUrl,
+      public_url: publicUrl,
+      media_type: "image",
+      file_name: fileName,
+      original_name: cleanOriginalName,
+      storage_path: uploadData.path,
+      mime_type: file.type || "image/jpeg",
+      file_size: file.size,
+      uploaded: true,
+      isExisting: false,
+    };
+  } catch (err) {
+    console.error("Error uploadToStorage:", err);
+    return null;
+  }
+};
+
+  // Kompresi Gambar & Tambah File dengan Auto-Upload ke Storage
+  const processAndAddFiles = async (files: File[]) => {
+    const validFiles = files.filter((file) => file.type.startsWith("image/"));
+    if (validFiles.length === 0) return;
+
+    setIsCompressing(true);
+    const loadingToast = toast.loading("Mengompresi & mengunggah foto ke storage...");
+
+    try {
+      const uploadedPhotos: PhotoItem[] = [];
+
+      for (const file of validFiles) {
+        // 1. Kompresi Gambar
+        const compressedFile = await compressImage(file, {
+          maxWidth: 1920,
+          maxHeight: 1080,
+          quality: 0.8,
+        });
+
+        // 2. Upload langsung ke Supabase Storage
+        const uploadedItem = await uploadToStorage(compressedFile, file.name);
+        if (uploadedItem) {
+          uploadedPhotos.push(uploadedItem);
+        }
+      }
+
+      if (uploadedPhotos.length > 0) {
+        syncPhotosWithCover([...photos, ...uploadedPhotos]);
+        toast.success(`${uploadedPhotos.length} foto berhasil diunggah & tersimpan!`, {
+          id: loadingToast,
+        });
+      } else {
+        toast.error("Gagal mengunggah foto ke storage Supabase.", { id: loadingToast });
+      }
+    } catch (error) {
+      console.error("Gagal memproses & mengunggah foto:", error);
+      toast.error("Terjadi kesalahan saat memproses foto.", { id: loadingToast });
+    } finally {
+      setIsCompressing(false);
+    }
+  };
+
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       const files = Array.from(e.target.files);
-      const validFiles = files.filter((file) => file.type.startsWith("image/"));
-
-      if (validFiles.length > 0) {
-        const newPhotos: PhotoItem[] = validFiles.map((file) => ({
-          id: `new-${Math.random().toString(36).slice(2)}`,
-          file,
-          preview: URL.createObjectURL(file),
-          uploaded: false,
-          isExisting: false,
-        }));
-
-        syncPhotosWithCover([...photos, ...newPhotos]);
-      }
+      processAndAddFiles(files);
       e.target.value = "";
+    }
+  };
+
+  const handleDropzoneDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDropzoneActive(true);
+  };
+
+  const handleDropzoneDragLeave = () => {
+    setIsDropzoneActive(false);
+  };
+
+  const handleDropzoneDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDropzoneActive(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const files = Array.from(e.dataTransfer.files);
+      processAndAddFiles(files);
     }
   };
 
@@ -212,10 +304,7 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
     }
   };
 
-  // ============================================================
-  // CROPPER ENGINE (CANVAS)
-  // ============================================================
-  const applyCrop = () => {
+  const applyCrop = async () => {
     if (previewIndex === null || !photos[previewIndex]) return;
 
     const currentPhoto = photos[previewIndex];
@@ -223,7 +312,7 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
     image.crossOrigin = "anonymous";
     image.src = currentPhoto.preview;
 
-    image.onload = () => {
+    image.onload = async () => {
       const canvas = canvasRef.current;
       if (!canvas) return;
 
@@ -251,28 +340,33 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
       );
       ctx.restore();
 
-      const croppedDataUrl = canvas.toDataURL("image/jpeg", 0.92);
-      const croppedFile = dataURLtoFile(croppedDataUrl, `cropped-${Date.now()}.jpg`);
+      const croppedDataUrl = canvas.toDataURL("image/jpeg", 0.85);
+      const rawCroppedFile = dataURLtoFile(croppedDataUrl, `cropped-${Date.now()}.jpg`);
 
-      const updated = [...photos];
-      updated[previewIndex] = {
-        ...updated[previewIndex],
-        preview: croppedDataUrl,
-        file: croppedFile,
-        isExisting: false,
-      };
+      const compressedCropped = await compressImage(rawCroppedFile, {
+        maxWidth: 1920,
+        maxHeight: 1080,
+        quality: 0.8,
+      });
 
-      syncPhotosWithCover(updated);
-      setIsCropping(false);
-      setCropZoom(1);
-      setCropRotation(0);
-      toast.success("Foto berhasil dipotong & diperbarui!");
+      const cropToast = toast.loading("Mengunggah foto hasil crop...");
+      const uploadedCropped = await uploadToStorage(compressedCropped, `cropped_${Date.now()}.jpg`);
+
+      if (uploadedCropped) {
+        const updated = [...photos];
+        updated[previewIndex] = uploadedCropped;
+
+        syncPhotosWithCover(updated);
+        setIsCropping(false);
+        setCropZoom(1);
+        setCropRotation(0);
+        toast.success("Foto berhasil dipotong & diunggah ulang!", { id: cropToast });
+      } else {
+        toast.error("Gagal mengunggah foto hasil crop.", { id: cropToast });
+      }
     };
   };
 
-  // ============================================================
-  // AI PARSE HANDLER
-  // ============================================================
   const handleAIParse = async () => {
     if (!parseText.trim()) {
       toast.warning("Silakan tempelkan teks deskripsi listing terlebih dahulu.");
@@ -306,7 +400,7 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
         if (parsed.selling_point) updates.selling_point = parsed.selling_point;
         if (parsed.address) updates.address = parsed.address;
         if (parsed.selling_price) updates.selling_price = parsed.selling_price.toString();
-        if (parsed.rental_price) updates.rental_price = parsed.rental_price.toString();
+        if (parsed.rental_price) updates.rental_price = parsed.rental_period.toString();
 
         updateFormData(updates);
         toast.success("✨ Data berhasil diekstrak AI!");
@@ -323,7 +417,6 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
 
   return (
     <div className="space-y-8">
-      {/* HEADER UTAMA */}
       <div>
         <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
           <Building2 className="w-6 h-6 text-emerald-600" />
@@ -334,7 +427,7 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
         </p>
       </div>
 
-      {/* 📌 BANNER AI AUTO-FILL */}
+      {/* BANNER AI AUTO-FILL */}
       <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-950 via-slate-900 to-emerald-950 p-5 text-white shadow-xl border border-indigo-500/30">
         <div className="relative z-10 space-y-3">
           <div className="flex items-center justify-between">
@@ -368,7 +461,7 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
             >
               {aiLoading ? (
                 <>
-                  <span className="animate-spin rounded-full h-3.5 w-3.5 border-2 border-white border-t-transparent" />
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
                   Mengekstrak Data...
                 </>
               ) : (
@@ -382,9 +475,8 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
         </div>
       </div>
 
-      {/* 📌 SEKSI PILIHAN KATEGORI */}
+      {/* SEKSI PILIHAN KATEGORI */}
       <div className="space-y-6">
-        {/* Tipe Properti */}
         <div className="space-y-3">
           <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">
             Tipe Properti <span className="text-rose-500">*</span>
@@ -411,7 +503,6 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
           </div>
         </div>
 
-        {/* Jual / Sewa */}
         <div className="space-y-3">
           <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">
             Tipe Listing <span className="text-rose-500">*</span>
@@ -435,7 +526,6 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
           </div>
         </div>
 
-        {/* Status Properti */}
         <div className="space-y-3">
           <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">
             Kondisi Properti
@@ -459,7 +549,6 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
           </div>
         </div>
 
-        {/* Co-Broke & Youtube */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
           <div className="p-4 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border flex items-center justify-between">
             <div className="space-y-0.5">
@@ -492,7 +581,7 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
         </div>
       </div>
 
-      {/* 📌 SEKSI MANAJEMEN FOTO (DRAG & DROP + AUTO COVER + CROP) */}
+      {/* SEKSI MANAJEMEN FOTO */}
       <div className="space-y-4 pt-4 border-t">
         <div className="flex items-center justify-between">
           <div>
@@ -508,8 +597,17 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
 
         {/* DROPZONE FOTO */}
         <div
-          onClick={() => fileInputRef.current?.click()}
-          className="border-2 border-dashed border-slate-300 dark:border-slate-800 hover:border-emerald-400 bg-muted/20 rounded-2xl p-6 text-center transition cursor-pointer relative"
+          onClick={() => !isCompressing && fileInputRef.current?.click()}
+          onDragOver={handleDropzoneDragOver}
+          onDragLeave={handleDropzoneDragLeave}
+          onDrop={handleDropzoneDrop}
+          className={cn(
+            "border-2 border-dashed rounded-2xl p-6 text-center transition cursor-pointer relative",
+            isDropzoneActive
+              ? "border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/30"
+              : "border-slate-300 dark:border-slate-800 hover:border-emerald-400 bg-muted/20",
+            isCompressing && "opacity-60 cursor-not-allowed"
+          )}
         >
           <input
             ref={fileInputRef}
@@ -517,14 +615,23 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
             multiple
             accept="image/*"
             onChange={handleFileInputChange}
+            disabled={isCompressing}
             className="hidden"
           />
           <div className="flex flex-col items-center justify-center space-y-2">
             <div className="p-3 bg-emerald-100 dark:bg-emerald-950 text-emerald-600 rounded-full">
-              <Upload className="w-5 h-5" />
+              {isCompressing ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : (
+                <Upload className="w-5 h-5" />
+              )}
             </div>
-            <p className="text-xs font-semibold">Klik atau seret file foto ke area ini</p>
-            <p className="text-[10px] text-muted-foreground">Format JPG, PNG, WEBP hingga 10MB per foto</p>
+            <p className="text-xs font-semibold">
+              {isCompressing ? "Sedang Mengompresi & Mengunggah Foto..." : "Klik atau seret file foto ke area ini"}
+            </p>
+            <p className="text-[10px] text-muted-foreground">
+              Format JPG, PNG, WEBP — Foto otomatis dikompresi & disimpan ke Supabase Storage
+            </p>
           </div>
         </div>
 
@@ -546,7 +653,6 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
                   idx === 0 && "ring-2 ring-amber-500 border-transparent shadow-md"
                 )}
               >
-                {/* Visual Drag Handle Icon */}
                 <div className="absolute top-1.5 left-1.5 z-20 bg-black/60 backdrop-blur-xs p-1 rounded text-white opacity-80 group-hover:opacity-100 transition">
                   <GripVertical className="w-3.5 h-3.5" />
                 </div>
@@ -557,7 +663,6 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
                   className="w-full h-full object-cover"
                 />
 
-                {/* Badge Status Auto Cover & Database */}
                 <div className="absolute top-1.5 right-1.5 flex flex-col items-end gap-1 z-10">
                   {idx === 0 && (
                     <Badge className="bg-amber-500 text-white text-[9px] px-1.5 py-0 border-0 flex items-center gap-1 font-bold shadow-sm">
@@ -571,7 +676,6 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
                   )}
                 </div>
 
-                {/* Overlay Aksi (Preview & Delete) */}
                 <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-2 z-20">
                   <button
                     type="button"
@@ -601,7 +705,7 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
         )}
       </div>
 
-      {/* 📌 MODAL PREVIEW & CROPPER FOTO (RESPONSIVE DESKTOP & MOBILE) */}
+      {/* MODAL PREVIEW & CROPPER FOTO */}
       <Dialog
         open={previewIndex !== null}
         onOpenChange={(open) => {
@@ -623,7 +727,6 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
 
           {previewIndex !== null && photos[previewIndex] && (
             <div className="space-y-4 py-2">
-              {/* AREA TAMPILAN FOTO / CROP CANVAS (LEBIH BESAR DI DESKTOP) */}
               <div className="relative w-full h-[50vh] sm:h-[65vh] md:h-[72vh] lg:h-[78vh] bg-black/90 rounded-xl overflow-hidden flex items-center justify-center border border-slate-800 shadow-inner">
                 {!isCropping ? (
                   <img
@@ -651,7 +754,6 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
                 )}
               </div>
 
-              {/* CONTROLS BAR CROP */}
               {isCropping ? (
                 <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-slate-900 rounded-xl border border-slate-800 text-xs">
                   <div className="flex items-center gap-3">
@@ -708,7 +810,7 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
               ) : (
                 <div className="flex justify-between items-center pt-1">
                   <p className="text-xs text-slate-400">
-                    {photos[previewIndex].isExisting ? "Foto tersimpan di database" : "Foto baru siap diunggah"}
+                    {photos[previewIndex].uploaded ? "Foto tersimpan di Supabase Storage" : "Foto siap diunggah"}
                   </p>
                   <Button
                     size="sm"
@@ -725,7 +827,6 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
         </DialogContent>
       </Dialog>
 
-      {/* CANVAS HIDDEN UNTUK PROSES CROP EXPORT */}
       <canvas ref={canvasRef} className="hidden" />
 
       {/* FOOTER NAVIGASI */}

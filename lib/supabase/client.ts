@@ -1,4 +1,3 @@
-// lib/supabase/client.ts
 import { createBrowserClient } from "@supabase/ssr";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -10,4 +9,10 @@ if (!supabaseUrl || !supabaseAnonKey) {
   );
 }
 
+// 1. Export berupa fungsi createClient() (Sesuai standar Next.js Supabase SSR)
+export function createClient() {
+  return createBrowserClient(supabaseUrl!, supabaseAnonKey!);
+}
+
+// 2. Export berupa objek singleton 'supabase' (Untuk kompatibilitas kode lama)
 export const supabase = createBrowserClient(supabaseUrl, supabaseAnonKey);

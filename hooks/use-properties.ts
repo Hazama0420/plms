@@ -3,9 +3,10 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import propertyService, { type PropertyFilter } from "@/services/property.service";
+import { supabase } from "@/lib/supabase/client";
 
 // ============================================================
-// TIPE LOKAL (menggantikan import dari @/types/property.types)
+// TIPE LOKAL
 // ============================================================
 interface AdvancedFilter {
   priceMin?: number | null;
@@ -23,12 +24,8 @@ interface AdvancedFilter {
   furnishing?: string | null;
 }
 
-// Gunakan any untuk Property karena import bermasalah
 type Property = any;
 
-// ============================================================
-// DEFAULT FILTERS
-// ============================================================
 const DEFAULT_FILTERS: PropertyFilter = {
   page: 1,
   limit: 12,
@@ -41,11 +38,7 @@ const DEFAULT_FILTERS: PropertyFilter = {
   advanced: {},
 };
 
-// ============================================================
-// HOOK
-// ============================================================
 export function useProperties(initialFilters: PropertyFilter = {}) {
-  // ===== STATE =====
   const [filters, setFilters] = useState<PropertyFilter>({
     ...DEFAULT_FILTERS,
     ...initialFilters,
@@ -56,6 +49,37 @@ export function useProperties(initialFilters: PropertyFilter = {}) {
   const [error, setError] = useState<string | null>(null);
   const [totalItems, setTotalItems] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
+
+  // 🔹 DETEKSI ROLE USER SECARA OTOMATIS UNTUK KEAMANAN DATA VIEWER
+  useEffect(() => {
+    async function checkUserRoleAndAdjustFilters() {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data: profile } = await supabase
+            .from("users")
+            .select("role")
+            .eq("id", user.id)
+            .maybeSingle();
+
+          const role = (profile?.role || user.user_metadata?.role || "").toLowerCase();
+          
+          // Jika yang login adalah VIEWER, kunci status default hanya "published" / "available"
+          if (role === "viewer") {
+            setFilters((prev) => {
+              if (prev.status === "all" || !prev.status) {
+                return { ...prev, status: "published" };
+              }
+              return prev;
+            });
+          }
+        }
+      } catch (err) {
+        console.error("Gagal mendeteksi role di useProperties:", err);
+      }
+    }
+    checkUserRoleAndAdjustFilters();
+  }, []);
 
   // ===== COUNT ACTIVE ADVANCED FILTERS =====
   const activeFilterCount = useMemo(() => {
@@ -85,7 +109,7 @@ export function useProperties(initialFilters: PropertyFilter = {}) {
 
     try {
       const result = await propertyService.getList(filters);
-      setData(result.data);
+      setData(result.data || []);
       setTotalItems(result.count || 0);
       setTotalPages(result.totalPages || Math.ceil((result.count || 0) / (filters.limit || 12)));
     } catch (err) {
@@ -134,7 +158,6 @@ export function useProperties(initialFilters: PropertyFilter = {}) {
 
   // ===== NEXT PAGE =====
   const nextPage = useCallback(() => {
-    // ✅ Perbaiki: gunakan nullish coalescing untuk fallback ke 1 jika undefined
     const currentPage = filters.page ?? 1;
     if (currentPage < totalPages) {
       goToPage(currentPage + 1);
@@ -143,7 +166,6 @@ export function useProperties(initialFilters: PropertyFilter = {}) {
 
   // ===== PREVIOUS PAGE =====
   const prevPage = useCallback(() => {
-    // ✅ Perbaiki: gunakan nullish coalescing untuk fallback ke 1 jika undefined
     const currentPage = filters.page ?? 1;
     if (currentPage > 1) {
       goToPage(currentPage - 1);
@@ -167,24 +189,17 @@ export function useProperties(initialFilters: PropertyFilter = {}) {
 
   // ===== RETURN =====
   return {
-    // Data
     data,
     loading,
     error,
     totalItems,
     totalPages,
-
-    // Filters
     filters,
     activeFilterCount,
     hasActiveFilters,
-
-    // Navigation
     goToPage,
     nextPage,
     prevPage,
-
-    // Actions
     updateFilters,
     updateAdvancedFilters,
     resetFilters,

@@ -5,6 +5,8 @@ import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { OneSignalProvider } from "@/components/providers/onesignal-provider";
 import { Toaster } from "@/components/ui/sonner";
+import AIChatWidget from "@/components/AIChatWidget";
+import FloatingCS from "@/components/FloatingCS";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -20,7 +22,6 @@ export default function RootLayout({
 }) {
   return (
     <html lang="id" suppressHydrationWarning>
-      {/* Tambahkan suppressHydrationWarning di tag body */}
       <body className={inter.className} suppressHydrationWarning>
         <ThemeProvider
           attribute="class"
@@ -31,6 +32,11 @@ export default function RootLayout({
           <OneSignalProvider>
             {children}
             <Toaster richColors position="top-right" />
+            
+            {/* FITUR TAMBAHAN: Agnes AI Chatbot & Floating CS WhatsApp */}
+            <AIChatWidget />
+            <FloatingCS />
+            
           </OneSignalProvider>
         </ThemeProvider>
       </body>

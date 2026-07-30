@@ -33,6 +33,7 @@ import {
   CalendarCheck,
   Plus,
   Calculator,
+  Sparkles,
 } from "lucide-react";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -48,7 +49,6 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -81,7 +81,7 @@ const NAV_ITEMS: NavItem[] = [
     label: "Properties",
     icon: Home,
     href: "/properties",
-    createHref: "/properties/create", // Tombol create akan otomatis disembunyikan untuk viewer di logic render
+    createHref: "/properties/create",
     roles: ["super_admin", "admin", "agent", "marketing", "viewer"],
   },
   {
@@ -94,7 +94,6 @@ const NAV_ITEMS: NavItem[] = [
     label: "CRM",
     icon: Users,
     href: "/crm",
-    // 🔒 Viewer tidak diizinkan mengakses menu CRM
     roles: ["super_admin", "admin", "agent", "marketing"],
     children: [
       { label: "Leads", icon: Users, href: "/crm/leads", roles: ["super_admin", "admin", "agent", "marketing"] },
@@ -153,10 +152,6 @@ const NAV_ITEMS: NavItem[] = [
   },
 ];
 
-// ============================================================
-// MAIN COMPONENT
-// ============================================================
-
 interface AppSidebarProps {
   onClose?: () => void;
 }
@@ -213,7 +208,7 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
   const handleLogout = async () => {
     try {
       await supabase.auth.signOut();
-      toast.success("Berhasil logout");
+      toast.success("Berhasil keluar sistem");
       router.push("/");
       if (onClose) onClose();
     } catch (error) {
@@ -253,7 +248,7 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
   }, [userRole]);
 
   const getInitials = (name: string) => {
-    if (!name) return "?";
+    if (!name) return "IP";
     return name
       .split(" ")
       .map((n) => n[0])
@@ -273,7 +268,6 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
     const isExpanded = expandedItems[key] ?? false;
     const hasChildActive = hasActiveChild(item);
     
-    // 🔒 Sembunyikan tombol create (+) jika user adalah viewer
     const hasCreateButton = !!item.createHref && !isViewer;
 
     const visibleChildren = hasChildren
@@ -288,20 +282,23 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
             <TooltipTrigger
               onClick={() => navigateAndClose(item.href)}
               className={cn(
-                "flex items-center justify-center w-full h-10 rounded-lg transition-all duration-200 relative cursor-pointer",
+                "flex items-center justify-center w-full h-10 rounded-xl transition-all duration-200 relative cursor-pointer",
                 active || hasChildActive
-                  ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400 font-bold"
-                  : "hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100"
+                  ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-bold shadow-2xs"
+                  : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
               )}
             >
-              <item.icon size={20} />
+              <item.icon size={19} />
+              {(active || hasChildActive) && (
+                <span className="absolute left-0 top-2 bottom-2 w-1 bg-emerald-600 rounded-r-full" />
+              )}
               {hasCreateButton && !isViewer && (
-                <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-emerald-500 text-white flex items-center justify-center text-[8px] font-bold">
+                <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[8px] font-bold">
                   +
                 </span>
               )}
             </TooltipTrigger>
-            <TooltipContent side="right" className="font-medium text-xs">
+            <TooltipContent side="right" className="font-semibold text-xs rounded-lg">
               {item.label}
             </TooltipContent>
           </Tooltip>
@@ -320,38 +317,38 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
         >
           <CollapsibleTrigger
             className={cn(
-              "flex items-center justify-between w-full px-3 py-2.5 rounded-lg transition-all duration-200 text-sm font-medium",
+              "flex items-center justify-between w-full px-3 py-2.5 rounded-xl transition-all duration-200 text-xs font-semibold cursor-pointer",
               active || hasChildActive
-                ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 font-semibold"
-                : "hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100"
+                ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 font-bold"
+                : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
             )}
           >
             <span className="flex items-center gap-3">
-              <item.icon size={18} />
+              <item.icon size={18} className={cn((active || hasChildActive) && "text-emerald-600 dark:text-emerald-400")} />
               <span>{item.label}</span>
             </span>
             {isExpanded ? (
-              <ChevronUp size={16} className="text-slate-400" />
+              <ChevronUp size={15} className="text-muted-foreground" />
             ) : (
-              <ChevronDown size={16} className="text-slate-400" />
+              <ChevronDown size={15} className="text-muted-foreground" />
             )}
           </CollapsibleTrigger>
-          <CollapsibleContent className="space-y-1 ml-4 pl-2 border-l border-slate-200/60 dark:border-slate-700/60">
+          <CollapsibleContent className="space-y-1 ml-4 pl-3 border-l-2 border-emerald-500/20 dark:border-emerald-500/10">
             {visibleChildren.map((child) => (
               <button
                 key={child.href}
                 onClick={() => navigateAndClose(child.href)}
                 className={cn(
-                  "flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 text-sm w-full text-left",
+                  "flex items-center gap-2.5 px-3 py-2 rounded-lg transition-all duration-200 text-xs w-full text-left cursor-pointer",
                   isActive(child)
-                    ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 font-semibold"
-                    : "hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100"
+                    ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 font-bold"
+                    : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
                 )}
               >
-                <child.icon size={16} />
+                <child.icon size={15} />
                 <span>{child.label}</span>
                 {isActive(child) && (
-                  <span className="ml-auto w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                  <span className="ml-auto w-1.5 h-1.5 rounded-full bg-emerald-600 shadow-2xs" />
                 )}
               </button>
             ))}
@@ -366,22 +363,25 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
         <button
           onClick={() => navigateAndClose(item.href)}
           className={cn(
-            "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 text-sm font-medium flex-1 w-full text-left",
+            "flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 text-xs font-semibold flex-1 w-full text-left cursor-pointer relative",
             active
-              ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 font-semibold"
-              : "hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100"
+              ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 font-bold"
+              : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
           )}
         >
-          <item.icon size={18} />
+          {active && (
+            <span className="absolute left-0 top-2 bottom-2 w-1 bg-emerald-600 rounded-r-full" />
+          )}
+          <item.icon size={18} className={cn(active && "text-emerald-600 dark:text-emerald-400")} />
           <span>{item.label}</span>
-          {active && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-emerald-500" />}
+          {active && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-emerald-600 shadow-2xs" />}
         </button>
 
         {hasCreateButton && !isViewer && (
           <Button
             variant="ghost"
             size="icon"
-            className="h-7 w-7 absolute right-2 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-emerald-100 dark:hover:bg-emerald-900/30 rounded-lg"
+            className="h-7 w-7 absolute right-2 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-emerald-500/20 rounded-lg cursor-pointer"
             onClick={(e) => {
               e.stopPropagation();
               navigateAndClose(item.createHref!);
@@ -396,29 +396,29 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
   };
 
   // ============================================================
-  // LOADING STATE
+  // LOADING SKELETON
   // ============================================================
 
   if (isLoading) {
     return (
       <aside
         className={cn(
-          "relative flex flex-col border-r border-slate-200/60 dark:border-slate-800/60 bg-white dark:bg-slate-950 h-screen",
+          "relative flex flex-col border-r border-border/70 bg-card text-card-foreground h-[100dvh] max-h-[100dvh] overflow-hidden shrink-0",
           collapsed ? "w-16" : "w-64"
         )}
       >
-        <div className="flex items-center h-16 px-4 border-b border-slate-200/60 dark:border-slate-800/60 justify-between">
-          <Skeleton className="h-8 w-8 rounded-full" />
-          <Skeleton className="h-6 w-16" />
+        <div className="flex items-center h-16 px-4 border-b border-border/60 justify-between shrink-0">
+          <Skeleton className="h-8 w-8 rounded-xl" />
+          <Skeleton className="h-6 w-20 rounded-lg" />
         </div>
-        <div className="flex-1 px-3 py-4 space-y-2">
+        <div className="flex-1 px-3 py-4 space-y-2 overflow-hidden">
           {[1, 2, 3, 4, 5, 6].map((i) => (
-            <Skeleton key={i} className="h-10 w-full rounded-lg" />
+            <Skeleton key={i} className="h-9 w-full rounded-xl" />
           ))}
         </div>
-        <div className="border-t border-slate-200/60 dark:border-slate-800/60 p-3 space-y-3">
-          <Skeleton className="h-10 w-full rounded-lg" />
-          <Skeleton className="h-10 w-full rounded-lg" />
+        <div className="border-t border-border/60 p-3 space-y-2 shrink-0 bg-muted/20">
+          <Skeleton className="h-9 w-full rounded-xl" />
+          <Skeleton className="h-12 w-full rounded-xl" />
         </div>
       </aside>
     );
@@ -431,122 +431,129 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
   return (
     <aside
       className={cn(
-        "relative flex flex-col border-r border-slate-200/60 dark:border-slate-800/60 bg-white dark:bg-slate-950 transition-all duration-300 h-screen shrink-0",
+        "relative flex flex-col border-r border-border/70 bg-card/95 backdrop-blur-md text-card-foreground transition-all duration-300 h-[100dvh] max-h-[100dvh] overflow-hidden shrink-0 select-none",
         collapsed ? "w-16" : "w-64"
       )}
     >
-      {/* Header Brand */}
+      {/* 1. HEADER BRAND (FIXED SHRINK-0) */}
       <div
         className={cn(
-          "flex items-center h-16 px-4 border-b border-slate-200/60 dark:border-slate-800/60",
+          "flex items-center h-16 px-4 border-b border-border/60 shrink-0 bg-card/50",
           collapsed ? "justify-center" : "justify-between"
         )}
       >
         {!collapsed && (
           <button
             onClick={() => navigateAndClose("/dashboard")}
-            className="flex items-center gap-2.5 text-left"
+            className="flex items-center gap-2.5 text-left cursor-pointer group"
           >
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center shadow-md shadow-emerald-500/25">
-              <span className="text-white font-bold text-sm">IP</span>
+            <div className="w-8 h-8 rounded-xl bg-emerald-600 flex items-center justify-center shadow-md shadow-emerald-600/20 group-hover:scale-105 transition-transform">
+              <span className="text-white font-black text-xs tracking-wider">IP</span>
             </div>
-            <span className="font-bold text-lg text-slate-800 dark:text-white tracking-tight">
-              Inland
-            </span>
-            <Badge
-              variant="outline"
-              className="text-[9px] px-1.5 py-0 h-4 border-emerald-200 text-emerald-600 dark:border-emerald-800 dark:text-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/30 font-medium"
-            >
-              v2
-            </Badge>
+            <div className="flex flex-col">
+              <span className="font-extrabold text-base text-foreground tracking-tight leading-none flex items-center gap-1">
+                Inland <span className="text-emerald-600 dark:text-emerald-400">PLMS</span>
+              </span>
+              <span className="text-[10px] text-muted-foreground font-mono mt-0.5">Property System</span>
+            </div>
           </button>
         )}
+
         {collapsed && (
           <button
             onClick={() => navigateAndClose("/dashboard")}
-            className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center shadow-md shadow-emerald-500/25"
+            className="w-8 h-8 rounded-xl bg-emerald-600 flex items-center justify-center shadow-md shadow-emerald-600/20 cursor-pointer"
           >
-            <span className="text-white font-bold text-sm">IP</span>
+            <span className="text-white font-black text-xs">IP</span>
           </button>
         )}
+
         <Button
           variant="ghost"
           size="icon"
           className={cn(
-            "h-8 w-8 text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800",
+            "h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-accent rounded-xl cursor-pointer",
             collapsed &&
-              "absolute -right-4 top-4 rounded-full border border-slate-200/60 dark:border-slate-700/60 bg-white dark:bg-slate-950 shadow-md hover:shadow-lg z-20"
+              "absolute -right-3.5 top-4 rounded-full border border-border bg-card shadow-md z-20 h-7 w-7"
           )}
           onClick={toggleCollapse}
         >
-          {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+          {collapsed ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}
         </Button>
       </div>
 
-      {/* Navigation Links */}
-      <ScrollArea className="flex-1 px-3 py-4">
+      {/* 2. MIDDLE NAVIGATION LINKS (FLEX-1 MIN-H-0 OVERFLOW-Y-AUTO) */}
+      <div className="flex-1 min-h-0 w-full overflow-y-auto px-3 py-3 space-y-1 scrollbar-thin scrollbar-thumb-border hover:scrollbar-thumb-muted-foreground/30">
         <nav className="space-y-1">
           {filteredNavItems.map((item) => renderNavItem(item))}
         </nav>
-      </ScrollArea>
+      </div>
 
-      {/* Bottom Section (Dark Mode, Profile, Logout) */}
-      <div className="border-t border-slate-200/60 dark:border-slate-800/60 p-3 space-y-2">
-        {/* Toggle Theme */}
+      {/* 3. FOOTER CONTROL BAR (FIXED SHRINK-0 AT BOTTOM) */}
+      <div className="border-t border-border/70 p-3 space-y-2 shrink-0 bg-muted/20">
+        {/* Toggle Dark Mode */}
         <Button
           variant="ghost"
           size={collapsed ? "icon" : "default"}
           className={cn(
-            "w-full justify-start gap-3 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs h-9",
+            "w-full justify-start gap-2.5 text-muted-foreground hover:text-foreground hover:bg-accent text-xs h-9 rounded-xl cursor-pointer",
             collapsed && "justify-center px-0"
           )}
           onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
         >
-          {theme === "dark" ? <Sun size={18} className="text-amber-500" /> : <Moon size={18} className="text-slate-500" />}
+          {theme === "dark" ? (
+            <Sun size={17} className="text-amber-500 shrink-0" />
+          ) : (
+            <Moon size={17} className="text-slate-600 dark:text-slate-400 shrink-0" />
+          )}
           {!collapsed && (
-            <span className="text-xs">{theme === "dark" ? "Mode Terang" : "Mode Gelap"}</span>
+            <span className="text-xs font-semibold">{theme === "dark" ? "Mode Terang" : "Mode Gelap"}</span>
           )}
         </Button>
 
-        {/* Profil User */}
+        {/* User Card */}
         <button
           className={cn(
-            "flex items-center gap-2.5 p-2 rounded-lg transition-colors w-full text-left hover:bg-slate-100 dark:hover:bg-slate-800 group",
-            collapsed && "justify-center"
+            "flex items-center gap-2.5 p-2 rounded-xl transition-all w-full text-left bg-card border border-border/60 hover:border-emerald-500/40 hover:bg-accent/50 cursor-pointer shadow-2xs group",
+            collapsed && "justify-center border-none bg-transparent p-0"
           )}
           onClick={() => navigateAndClose("/profile")}
         >
-          <Avatar className="h-7 w-7 ring-2 ring-emerald-200 dark:ring-emerald-800/60 ring-offset-1 ring-offset-white dark:ring-offset-slate-950">
+          <Avatar className="h-8 w-8 border border-emerald-500/30 shrink-0 shadow-2xs">
             <AvatarImage src={userAvatar || undefined} />
-            <AvatarFallback className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400 text-[10px] font-bold">
+            <AvatarFallback className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold">
               {getInitials(userFullName)}
             </AvatarFallback>
           </Avatar>
           {!collapsed && (
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-semibold text-slate-700 dark:text-slate-200 truncate">
-                {userFullName}
-              </p>
-              <p className="text-[10px] text-slate-400 dark:text-slate-500 truncate">
-                {user?.email}
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-bold text-foreground truncate group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
+                  {userFullName}
+                </p>
+              </div>
+              <p className="text-[10px] text-muted-foreground truncate capitalize">
+                {userRole ? userRole.replace("_", " ") : "Pengguna"}
               </p>
             </div>
           )}
         </button>
 
-        {/* Logout Button */}
-        <Button
-          variant="ghost"
-          size={collapsed ? "icon" : "default"}
-          className={cn(
-            "w-full justify-start gap-3 text-slate-500 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 text-xs h-9",
-            collapsed && "justify-center px-0"
-          )}
-          onClick={handleLogout}
-        >
-          <LogOut size={18} />
-          {!collapsed && <span className="text-xs">Keluar Log</span>}
-        </Button>
+        {/* Logout Button (Hanya tampil jika user sudah login / bukan tamu) */}
+        {user && (
+          <Button
+            variant="ghost"
+            size={collapsed ? "icon" : "default"}
+            className={cn(
+              "w-full justify-start gap-2.5 text-muted-foreground hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-500/10 text-xs h-9 rounded-xl cursor-pointer",
+              collapsed && "justify-center px-0"
+            )}
+            onClick={handleLogout}
+          >
+            <LogOut size={17} className="shrink-0" />
+            {!collapsed && <span className="text-xs font-semibold">Keluar Akun</span>}
+          </Button>
+        )}
       </div>
     </aside>
   );

@@ -1,7 +1,6 @@
-// components/create-property/steps/StepLocation.tsx
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -19,8 +18,11 @@ import {
   Building2,
   Navigation,
   Globe2,
+  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
+import { supabase } from "@/lib/supabase/client";
 
 interface LocationResult {
   id: string;
@@ -48,97 +50,176 @@ interface StepLocationProps {
   prevStep: () => void;
 }
 
+// Helper untuk mengecek apakah string berupa UUID valid
+const isUUID = (str?: string) => {
+  if (!str) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+};
+
 export function StepLocation({ formData, updateFormData, nextStep, prevStep }: StepLocationProps) {
   const [manualEdit, setManualEdit] = useState(false);
   const [selectedLocation, setSelectedLocation] = useState<LocationResult | null>(null);
+  const [isLocating, setIsLocating] = useState(false);
+  const [isLoadingNames, setIsLoadingNames] = useState(false);
 
-  // Helper untuk mendapatkan nama lokasi manusia (bukan raw ID/UUID)
+  // 🔄 NORMALISASI DATA SAAT MODE EDIT & AUTO-FETCH NAMA DARI SUPABASE
+  useEffect(() => {
+    async function syncAndFetchLocationNames() {
+      const updates: Record<string, any> = {};
+
+      // 1. Jika formData.address adalah Objek Relasi Supabase, ekstrak ke Root Level
+      if (formData.address && typeof formData.address === "object") {
+        const addrObj = formData.address;
+        updates.address = addrObj.address || "";
+        if (addrObj.province_id) updates.province_id = addrObj.province_id;
+        if (addrObj.city_id) updates.city_id = addrObj.city_id;
+        if (addrObj.district_id) updates.district_id = addrObj.district_id;
+        if (addrObj.village_id) updates.village_id = addrObj.village_id;
+        if (addrObj.postal_code) updates.postal_code = addrObj.postal_code;
+        if (addrObj.latitude) updates.latitude = String(addrObj.latitude);
+        if (addrObj.longitude) updates.longitude = String(addrObj.longitude);
+      }
+
+      // Ambil nilai ID terkini (baik dari root maupun dari objek address)
+      const provId = updates.province_id || formData.province_id;
+      const cityId = updates.city_id || formData.city_id;
+      const distId = updates.district_id || formData.district_id;
+      const villId = updates.village_id || formData.village_id;
+
+      // 2. Jika ada ID UUID tetapi Nama belum terisi (Kasus Mode Edit Load Data)
+      setIsLoadingNames(true);
+      try {
+        if (provId && isUUID(provId) && !formData.province_name) {
+          const { data } = await supabase.from("provinces").select("name").eq("id", provId).maybeSingle();
+          if (data?.name) updates.province_name = data.name;
+        }
+
+        if (cityId && isUUID(cityId) && !formData.city_name) {
+          const { data } = await supabase.from("cities").select("name").eq("id", cityId).maybeSingle();
+          if (data?.name) updates.city_name = data.name;
+        }
+
+        if (distId && isUUID(distId) && !formData.district_name) {
+          const { data } = await supabase.from("districts").select("name").eq("id", distId).maybeSingle();
+          if (data?.name) updates.district_name = data.name;
+        }
+
+        if (villId && isUUID(villId) && !formData.village_name) {
+          const { data } = await supabase.from("villages").select("name").eq("id", villId).maybeSingle();
+          if (data?.name) updates.village_name = data.name;
+        }
+      } catch (err) {
+        console.error("Gagal memuat nama lokasi:", err);
+      } finally {
+        setIsLoadingNames(false);
+      }
+
+      if (Object.keys(updates).length > 0) {
+        updateFormData(updates);
+      }
+    }
+
+    syncAndFetchLocationNames();
+  }, [formData.province_id, formData.city_id, formData.district_id, formData.address]);
+
+  // Safe getter untuk Textarea Alamat Lengkap
+  const getAddressText = () => {
+    if (typeof formData.address === "string") return formData.address;
+    if (formData.address && typeof formData.address === "object" && formData.address.address) {
+      return formData.address.address;
+    }
+    return "";
+  };
+
+  // Helper untuk mendapatkan nama tampilan lokasi manusia
   const getDisplayName = (field: "province" | "city" | "district" | "village") => {
-    return (
-      formData[`${field}_name`] ||
-      formData[field] ||
-      (typeof formData[`${field}_id`] === "string" && !formData[`${field}_id`].includes("-")
-        ? formData[`${field}_id`]
-        : "")
-    );
+    if (formData[`${field}_name`]) return formData[`${field}_name`];
+
+    const val = formData[field];
+    if (val && typeof val === "string" && !isUUID(val)) {
+      return val;
+    }
+
+    if (formData.address && typeof formData.address === "object") {
+      if (formData.address[`${field}_name`]) return formData.address[`${field}_name`];
+      if (formData.address[field]?.name) return formData.address[field].name;
+    }
+
+    return "";
   };
 
   const handleLocationSelect = (location: LocationResult) => {
     setSelectedLocation(location);
     setManualEdit(false);
 
-    // Ambil komponen nama jika tersedia dari autocomplete
-    const parts = location.fullAddress ? location.fullAddress.split(",").map((s) => s.trim()) : [];
+    const provName = location.province_name || (location.type === "province" ? location.name : "");
+    const cityName = location.city_name || (location.type === "city" ? location.name : "");
+    const distName = location.district_name || (location.type === "district" ? location.name : "");
+    const villName = location.village_name || (location.type === "village" ? location.name : "");
 
-    const provName = location.province_name || parts[parts.length - 1] || location.name;
-    const cityName = location.city_name || parts[parts.length - 2] || "";
-    const distName = location.district_name || parts[parts.length - 3] || "";
-    const villName = location.village_name || parts[0] || "";
+    const provId = location.province_id || (location.type === "province" ? location.id : "");
+    const cityId = location.city_id || (location.type === "city" ? location.id : "");
+    const distId = location.district_id || (location.type === "district" ? location.id : "");
+    const villId = location.village_id || (location.type === "village" ? location.id : "");
 
-    // Update form data dengan ID dan Nama yang ramah dibaca
-    updateFormData({
-      province_id: location.province_id || location.id || "",
-      province_name: provName,
-      city_id: location.city_id || "",
-      city_name: cityName,
-      district_id: location.district_id || "",
-      district_name: distName,
-      village_id: location.village_id || "",
-      village_name: villName,
-      address: location.fullAddress || location.name,
+    const updatePayload: Record<string, any> = {
+      province_name: provName || formData.province_name || "",
+      city_name: cityName || formData.city_name || "",
+      district_name: distName || formData.district_name || "",
+      village_name: villName || formData.village_name || "",
+
+      province_id: isUUID(provId) ? provId : formData.province_id || "",
+      city_id: isUUID(cityId) ? cityId : formData.city_id || "",
+      district_id: isUUID(distId) ? distId : formData.district_id || "",
+      village_id: isUUID(villId) ? villId : formData.village_id || "",
+
       latitude: location.latitude ? String(location.latitude) : formData.latitude || "",
       longitude: location.longitude ? String(location.longitude) : formData.longitude || "",
       postal_code: location.postal_code || formData.postal_code || "",
-    });
+    };
 
-    // Reset bidang anak jika memilih tingkat atas
-    if (location.type === "province") {
-      updateFormData({
-        city_id: "",
-        city_name: "",
-        district_id: "",
-        district_name: "",
-        village_id: "",
-        village_name: "",
-      });
-    } else if (location.type === "city") {
-      updateFormData({
-        district_id: "",
-        district_name: "",
-        village_id: "",
-        village_name: "",
-      });
-    } else if (location.type === "district") {
-      updateFormData({
-        village_id: "",
-        village_name: "",
-      });
+    if (!getAddressText() || getAddressText().trim() === "") {
+      updatePayload.address = location.fullAddress || location.name;
     }
+
+    updateFormData(updatePayload);
+    toast.success("Wilayah berhasil dipilih!");
   };
 
-  // Toggle mode edit manual
   const toggleManualEdit = () => {
     setManualEdit(!manualEdit);
   };
 
-  // Simulasi ambil lokasi GPS
   const handleGetCurrentLocation = () => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          updateFormData({
-            latitude: position.coords.latitude.toFixed(6),
-            longitude: position.coords.longitude.toFixed(6),
-          });
-        },
-        (error) => {
-          console.warn("Gagal mengambil posisi GPS:", error);
-        }
-      );
+    if (!navigator.geolocation) {
+      toast.error("Browser Anda tidak mendukung fitur Geolocation GPS.");
+      return;
     }
+
+    setIsLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const lat = position.coords.latitude.toFixed(6);
+        const lng = position.coords.longitude.toFixed(6);
+
+        updateFormData({
+          latitude: lat,
+          longitude: lng,
+        });
+
+        setIsLocating(false);
+        toast.success("Koordinat GPS berhasil diambil!");
+      },
+      (error) => {
+        setIsLocating(false);
+        console.warn("Gagal mengambil posisi GPS:", error);
+        toast.error("Gagal mengambil lokasi GPS. Pastikan izin lokasi diaktifkan.");
+      },
+      { timeout: 10000, enableHighAccuracy: true }
+    );
   };
 
-  const isFieldLocked = !manualEdit && (selectedLocation || formData.province_name);
+  const isFieldLocked = !manualEdit && (selectedLocation || formData.province_name || formData.province_id);
 
   return (
     <div className="space-y-6">
@@ -150,7 +231,7 @@ export function StepLocation({ formData, updateFormData, nextStep, prevStep }: S
               📍 Lokasi Properti
             </h2>
             <Badge variant="secondary" className="bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border-emerald-200 text-xs">
-              Langkah 2 dari 5
+              Langkah 3 dari 7
             </Badge>
           </div>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
@@ -173,6 +254,11 @@ export function StepLocation({ formData, updateFormData, nextStep, prevStep }: S
                 </CardDescription>
               </div>
             </div>
+            {isLoadingNames && (
+              <Badge variant="outline" className="text-[10px] gap-1 text-blue-600 animate-pulse">
+                <Loader2 className="w-3 h-3 animate-spin" /> Memuat Nama Lokasi...
+              </Badge>
+            )}
           </div>
         </CardHeader>
 
@@ -181,10 +267,9 @@ export function StepLocation({ formData, updateFormData, nextStep, prevStep }: S
           <div className="space-y-2">
             <AddressAutocomplete
               onSelect={handleLocationSelect}
-              placeholder="Ketik lokasi (Contoh: BSD City, Serpong, Jakarta Selatan...)"
+              placeholder="Ketik lokasi (Contoh: BSD City, Serpong, Kebayoran Baru, Jakarta Selatan...)"
             />
 
-            {/* Badge Indikator Terpilih */}
             {selectedLocation && (
               <div className="mt-3 p-3 rounded-lg bg-emerald-50/80 dark:bg-emerald-950/30 border border-emerald-200/60 dark:border-emerald-800/60 flex items-start gap-3 text-xs text-emerald-800 dark:text-emerald-300">
                 <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400 mt-0.5 shrink-0" />
@@ -212,7 +297,7 @@ export function StepLocation({ formData, updateFormData, nextStep, prevStep }: S
             </div>
           </div>
 
-          {/* Section Header with Manual Toggle */}
+          {/* Section Header dengan Manual Toggle */}
           <div className="flex items-center justify-between pt-1">
             <div className="flex items-center gap-2 text-sm font-medium text-slate-800 dark:text-slate-200">
               <Building2 className="w-4 h-4 text-slate-500" />
@@ -254,7 +339,7 @@ export function StepLocation({ formData, updateFormData, nextStep, prevStep }: S
                 onChange={(e) =>
                   updateFormData({
                     province_name: e.target.value,
-                    province_id: e.target.value,
+                    province_id: "",
                   })
                 }
               />
@@ -277,7 +362,7 @@ export function StepLocation({ formData, updateFormData, nextStep, prevStep }: S
                 onChange={(e) =>
                   updateFormData({
                     city_name: e.target.value,
-                    city_id: e.target.value,
+                    city_id: "",
                   })
                 }
               />
@@ -286,13 +371,13 @@ export function StepLocation({ formData, updateFormData, nextStep, prevStep }: S
             {/* Kecamatan */}
             <div className="space-y-1.5">
               <Label htmlFor="district_name" className="text-xs font-medium text-slate-700 dark:text-slate-300">
-                Kecamatan
+                Kecamatan / Area Kawasan
               </Label>
               <Input
                 id="district_name"
                 value={getDisplayName("district")}
                 disabled={!manualEdit}
-                placeholder={isFieldLocked ? "Otomatis dari lokasi" : "Masukkan nama kecamatan"}
+                placeholder={isFieldLocked ? "Otomatis dari lokasi" : "Masukkan nama kecamatan/kawasan"}
                 className={cn(
                   "h-9 text-xs transition-colors",
                   isFieldLocked && "bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-400 cursor-not-allowed border-slate-200 dark:border-slate-800"
@@ -300,7 +385,7 @@ export function StepLocation({ formData, updateFormData, nextStep, prevStep }: S
                 onChange={(e) =>
                   updateFormData({
                     district_name: e.target.value,
-                    district_id: e.target.value,
+                    district_id: "",
                   })
                 }
               />
@@ -323,7 +408,7 @@ export function StepLocation({ formData, updateFormData, nextStep, prevStep }: S
                 onChange={(e) =>
                   updateFormData({
                     village_name: e.target.value,
-                    village_id: e.target.value,
+                    village_id: "",
                   })
                 }
               />
@@ -338,7 +423,7 @@ export function StepLocation({ formData, updateFormData, nextStep, prevStep }: S
             <Textarea
               id="address"
               placeholder="Contoh: Jl. BSD Raya Barat No. 88, Cluster Foresta, Blok A1/12"
-              value={formData.address || ""}
+              value={getAddressText()}
               onChange={(e) => updateFormData({ address: e.target.value })}
               rows={3}
               className="text-xs resize-none focus-visible:ring-emerald-500"
@@ -359,10 +444,19 @@ export function StepLocation({ formData, updateFormData, nextStep, prevStep }: S
                 type="button"
                 variant="ghost"
                 size="sm"
+                disabled={isLocating}
                 onClick={handleGetCurrentLocation}
                 className="h-7 text-xs text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 gap-1.5"
               >
-                <Navigation className="w-3 h-3" /> Ambil Posisi GPS Saat Ini
+                {isLocating ? (
+                  <>
+                    <Loader2 className="w-3 h-3 animate-spin" /> Mengambil GPS...
+                  </>
+                ) : (
+                  <>
+                    <Navigation className="w-3 h-3" /> Ambil Posisi GPS Saat Ini
+                  </>
+                )}
               </Button>
             </div>
 
@@ -374,7 +468,7 @@ export function StepLocation({ formData, updateFormData, nextStep, prevStep }: S
                 <Input
                   id="postal_code"
                   placeholder="15310"
-                  value={formData.postal_code || ""}
+                  value={formData.postal_code || (typeof formData.address === "object" ? formData.address.postal_code || "" : "")}
                   onChange={(e) => updateFormData({ postal_code: e.target.value })}
                   className="h-9 text-xs focus-visible:ring-emerald-500"
                 />
@@ -387,7 +481,7 @@ export function StepLocation({ formData, updateFormData, nextStep, prevStep }: S
                 <Input
                   id="latitude"
                   placeholder="-6.300641"
-                  value={formData.latitude || ""}
+                  value={formData.latitude || (typeof formData.address === "object" ? formData.address.latitude || "" : "")}
                   onChange={(e) => updateFormData({ latitude: e.target.value })}
                   className="h-9 text-xs focus-visible:ring-emerald-500 font-mono"
                 />
@@ -400,7 +494,7 @@ export function StepLocation({ formData, updateFormData, nextStep, prevStep }: S
                 <Input
                   id="longitude"
                   placeholder="106.638531"
-                  value={formData.longitude || ""}
+                  value={formData.longitude || (typeof formData.address === "object" ? formData.address.longitude || "" : "")}
                   onChange={(e) => updateFormData({ longitude: e.target.value })}
                   className="h-9 text-xs focus-visible:ring-emerald-500 font-mono"
                 />
@@ -409,23 +503,6 @@ export function StepLocation({ formData, updateFormData, nextStep, prevStep }: S
           </div>
         </CardContent>
       </Card>
-
-      {/* Tombol Navigasi Bawah */}
-      <div className="flex items-center justify-between pt-2">
-        <Button
-          variant="outline"
-          onClick={prevStep}
-          className="text-xs font-medium hover:bg-slate-100 dark:hover:bg-slate-800"
-        >
-          ← Kembali ke Informasi Utama
-        </Button>
-        <Button
-          onClick={nextStep}
-          className="text-xs font-medium bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20 gap-2"
-        >
-          Lanjut ke Fasilitas & Fitur →
-        </Button>
-      </div>
     </div>
   );
 }

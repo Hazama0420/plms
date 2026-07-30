@@ -8,6 +8,12 @@ export function OneSignalProvider({ children }: { children: React.ReactNode }) {
   const initialized = useRef(false);
 
   useEffect(() => {
+    // 🛑 Jangan jalankan OneSignal di localhost untuk menghindari error Service Worker
+    if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
+      console.log("OneSignal dilewati di mode development (localhost).");
+      return;
+    }
+
     if (initialized.current) return;
     initialized.current = true;
 

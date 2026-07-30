@@ -1,9 +1,29 @@
-// components/create-property/SidebarStepper.tsx
 "use client";
 
 import { cn } from "@/lib/utils";
-import { Check, LucideIcon } from "lucide-react";
-import * as Icons from "lucide-react";
+import {
+  Check,
+  Grid,
+  Ruler,
+  MapPin,
+  Home,
+  DollarSign,
+  User,
+  CheckCircle,
+  HelpCircle,
+  type LucideIcon,
+} from "lucide-react";
+
+// Pemetaan Ikon Explicit untuk Mencegah Bundle Size Membengkak & Error Dynamic Lookup
+const iconMap: Record<string, LucideIcon> = {
+  Grid,
+  Ruler,
+  MapPin,
+  Home,
+  DollarSign,
+  User,
+  CheckCircle,
+};
 
 interface Step {
   id: string;
@@ -46,7 +66,7 @@ export function SidebarStepper({ steps, currentStep, onStepClick }: SidebarStepp
         {steps.map((step, index) => {
           const isActive = index === currentStep;
           const isCompleted = index < currentStep;
-          const Icon = Icons[step.icon as keyof typeof Icons] as LucideIcon;
+          const StepIcon = iconMap[step.icon] || HelpCircle;
 
           return (
             <div key={step.id} className="relative">
@@ -109,18 +129,16 @@ export function SidebarStepper({ steps, currentStep, onStepClick }: SidebarStepp
                 </div>
 
                 {/* IKON LUCIDE */}
-                {Icon && (
-                  <Icon
-                    className={cn(
-                      "h-4 w-4 shrink-0 transition-colors",
-                      isActive
-                        ? "text-emerald-600 dark:text-emerald-400"
-                        : isCompleted
-                        ? "text-slate-500 dark:text-slate-400"
-                        : "text-slate-300 dark:text-slate-600"
-                    )}
-                  />
-                )}
+                <StepIcon
+                  className={cn(
+                    "h-4 w-4 shrink-0 transition-colors",
+                    isActive
+                      ? "text-emerald-600 dark:text-emerald-400"
+                      : isCompleted
+                      ? "text-slate-500 dark:text-slate-400"
+                      : "text-slate-300 dark:text-slate-600"
+                  )}
+                />
               </button>
             </div>
           );

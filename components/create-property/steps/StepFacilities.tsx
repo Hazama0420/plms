@@ -1,7 +1,7 @@
 // components/create-property/steps/StepFacilities.tsx
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -91,6 +91,20 @@ export function StepFacilities({ formData, updateFormData, nextStep, prevStep }:
 
   const selected: string[] = formData.facilities || [];
 
+  // 🟢 PERBAIKAN UTAMA: Sinkronisasi otomatis fasilitas kustom & bawaan dari database/formData saat mode edit
+  useEffect(() => {
+    if (formData.facilities && Array.isArray(formData.facilities)) {
+      const presetLabels = facilityCategories.map((f) => f.label.toLowerCase());
+      // Cari fasilitas yang tidak ada di daftar preset bawaan (kustom)
+      const existingCustom = formData.facilities.filter(
+        (fac: string) => !presetLabels.includes(fac.toLowerCase())
+      );
+      if (existingCustom.length > 0) {
+        setCustomFacilities((prev) => Array.from(new Set([...prev, ...existingCustom])));
+      }
+    }
+  }, [formData.facilities]);
+
   // Toggle Pilihan Fasilitas
   const toggleFacility = (facilityLabel: string) => {
     const newSelected = selected.includes(facilityLabel)
@@ -161,6 +175,7 @@ export function StepFacilities({ formData, updateFormData, nextStep, prevStep }:
           />
           {search && (
             <button
+              type="button"
               onClick={() => setSearch("")}
               className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
             >
@@ -317,7 +332,7 @@ export function StepFacilities({ formData, updateFormData, nextStep, prevStep }:
           type="button"
           variant="outline"
           onClick={prevStep}
-          className="gap-2 text-xs h-9 border-slate-300 dark:border-slate-700"
+          className="gap-2 text-xs h-9 border-slate-300 dark:border-slate-700 cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />
           <span>Kembali</span>
@@ -326,7 +341,7 @@ export function StepFacilities({ formData, updateFormData, nextStep, prevStep }:
         <Button
           type="button"
           onClick={nextStep}
-          className="gap-2 text-xs h-9 bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20 font-semibold"
+          className="gap-2 text-xs h-9 bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20 font-semibold cursor-pointer"
         >
           <span>Lanjut ke Deskripsi & Catatan</span>
           <ArrowRight className="w-4 h-4" />

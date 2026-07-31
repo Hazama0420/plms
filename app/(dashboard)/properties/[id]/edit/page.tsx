@@ -1,3 +1,4 @@
+// app/(dashboard)/properties/[id]/edit/page.tsx
 "use client";
 
 import { useState, useEffect, use } from "react";
@@ -84,11 +85,18 @@ export default function EditPropertyPage({ params }: EditPropertyPageProps) {
 
     if (Array.isArray(data.media) && data.media.length > 0) {
       rawList = data.media.map((m: any, idx: number) => {
-        const url = m.public_url || m.url || m.file_path;
+        const url = m.public_url || m.file_url || m.url || m.file_path || "";
         return {
           id: m.id || `media-${idx}`,
           preview: url,
           url: url,
+          public_url: m.public_url || url,
+          storage_path: m.storage_path || url,
+          media_type: m.media_type || "image",
+          file_name: m.file_name || `existing_${idx}_${Date.now()}.jpg`,
+          original_name: m.original_name || m.file_name || `existing_${idx}.jpg`,
+          mime_type: m.mime_type || "image/jpeg",
+          file_size: m.file_size || null,
           isExisting: true,
         };
       });
@@ -97,11 +105,18 @@ export default function EditPropertyPage({ params }: EditPropertyPageProps) {
     if (rawList.length === 0 && data.images) {
       if (Array.isArray(data.images)) {
         rawList = data.images.map((img: any, idx: number) => {
-          const url = typeof img === "string" ? img : img.url || img.preview;
+          const url = typeof img === "string" ? img : img.public_url || img.url || img.preview || img.file_url || "";
           return {
             id: `img-${idx}`,
             preview: url,
             url: url,
+            public_url: url,
+            storage_path: url,
+            media_type: "image",
+            file_name: `existing_img_${idx}_${Date.now()}.jpg`,
+            original_name: `existing_img_${idx}.jpg`,
+            mime_type: "image/jpeg",
+            file_size: null,
             isExisting: true,
           };
         });
@@ -110,25 +125,68 @@ export default function EditPropertyPage({ params }: EditPropertyPageProps) {
           const parsed = JSON.parse(data.images);
           if (Array.isArray(parsed)) {
             rawList = parsed.map((img: any, idx: number) => {
-              const url = typeof img === "string" ? img : img.url || img.preview;
+              const url = typeof img === "string" ? img : img.public_url || img.url || img.preview || img.file_url || "";
               return {
                 id: `parsed-${idx}`,
                 preview: url,
                 url: url,
+                public_url: url,
+                storage_path: url,
+                media_type: "image",
+                file_name: `existing_parsed_${idx}_${Date.now()}.jpg`,
+                original_name: `existing_parsed_${idx}.jpg`,
+                mime_type: "image/jpeg",
+                file_size: null,
                 isExisting: true,
               };
             });
           } else {
-            rawList = [{ id: "single-1", preview: data.images, url: data.images, isExisting: true }];
+            rawList = [{
+              id: "single-1",
+              preview: data.images,
+              url: data.images,
+              public_url: data.images,
+              storage_path: data.images,
+              media_type: "image",
+              file_name: `existing_single_${Date.now()}.jpg`,
+              original_name: `existing_single.jpg`,
+              mime_type: "image/jpeg",
+              file_size: null,
+              isExisting: true,
+            }];
           }
         } catch {
-          rawList = [{ id: "string-1", preview: data.images, url: data.images, isExisting: true }];
+          rawList = [{
+            id: "string-1",
+            preview: data.images,
+            url: data.images,
+            public_url: data.images,
+            storage_path: data.images,
+            media_type: "image",
+            file_name: `existing_string_${Date.now()}.jpg`,
+            original_name: `existing_string.jpg`,
+            mime_type: "image/jpeg",
+            file_size: null,
+            isExisting: true,
+          }];
         }
       }
     }
 
     if (rawList.length === 0 && data.image_url) {
-      rawList = [{ id: "fallback-1", preview: data.image_url, url: data.image_url, isExisting: true }];
+      rawList = [{
+        id: "fallback-1",
+        preview: data.image_url,
+        url: data.image_url,
+        public_url: data.image_url,
+        storage_path: data.image_url,
+        media_type: "image",
+        file_name: `existing_fallback_${Date.now()}.jpg`,
+        original_name: `existing_fallback.jpg`,
+        mime_type: "image/jpeg",
+        file_size: null,
+        isExisting: true,
+      }];
     }
 
     return rawList;
@@ -138,25 +196,21 @@ export default function EditPropertyPage({ params }: EditPropertyPageProps) {
   const mapPropertyToForm = async (data: any) => {
     const existingPhotos = extractPhotos(data);
 
-    // 🔴 TANGANI JIKA address BERUPA ARRAY ATAU OBJEK
     let addr = data.address || data.property_address || {};
     if (Array.isArray(addr)) {
       addr = addr[0] || {};
     }
 
-    // Ekstrak ID Lokasi
     const provId = addr.province_id || data.province_id || "";
     const cityId = addr.city_id || data.city_id || "";
     const distId = addr.district_id || data.district_id || "";
     const villId = addr.village_id || data.village_id || "";
 
-    // Ekstrak Nama dari JOIN query jika ada
     let provName = addr.province_name || addr.provinces?.name || data.province_name || data.provinces?.name || "";
     let cityName = addr.city_name || addr.cities?.name || data.city_name || data.cities?.name || "";
     let distName = addr.district_name || addr.districts?.name || data.district_name || data.districts?.name || "";
     let villName = addr.village_name || addr.villages?.name || data.village_name || data.villages?.name || "";
 
-    // 🟢 JIKA ID ADA TAPI NAMA TEKS KOSONG, QUERY SUPABASE SEKARANG JUGA!
     try {
       if (provId && !provName) {
         const { data: p } = await supabase.from("provinces").select("name").eq("id", provId).maybeSingle();
@@ -179,7 +233,6 @@ export default function EditPropertyPage({ params }: EditPropertyPageProps) {
     }
 
     return {
-      // Basic
       title: data.title || "",
       listing_code: data.listing_code || "",
       property_type: data.property_type || "",
@@ -188,10 +241,9 @@ export default function EditPropertyPage({ params }: EditPropertyPageProps) {
       status: data.status || "published",
       description: data.description || "",
       selling_point: data.selling_point || "",
-      rental_period: data.rental_period || "",
+      rental_period: data.rental_period || "per_tahun",
       assigned_to: data.assigned_to || "",
 
-      // 📍 LOCATION DATA
       country_id: addr.country_id || data.country_id || "",
       province_id: provId,
       city_id: cityId,
@@ -208,14 +260,12 @@ export default function EditPropertyPage({ params }: EditPropertyPageProps) {
       latitude: addr.latitude?.toString() || data.latitude?.toString() || "",
       longitude: addr.longitude?.toString() || data.longitude?.toString() || "",
 
-      // Price
       selling_price: data.price?.selling_price?.toString() || data.selling_price?.toString() || "",
       rental_price: data.price?.rental_price?.toString() || data.rental_price?.toString() || "",
       service_charge: data.price?.service_charge?.toString() || data.service_charge?.toString() || "",
       maintenance_fee: data.price?.maintenance_fee?.toString() || data.maintenance_fee?.toString() || "",
       negotiable: data.price?.negotiable ?? data.negotiable ?? false,
 
-      // Specifications
       bedroom: data.specifications?.bedroom?.toString() || data.bedroom?.toString() || "",
       bathroom: data.specifications?.bathroom?.toString() || data.bathroom?.toString() || "",
       garage: data.specifications?.garage?.toString() || data.garage?.toString() || "",
@@ -229,18 +279,15 @@ export default function EditPropertyPage({ params }: EditPropertyPageProps) {
       furnishing: data.specifications?.furnishing || data.furnishing || "",
       year_built: data.specifications?.year_built?.toString() || data.year_built?.toString() || "",
 
-      // Land
       land_area: data.land?.land_area?.toString() || data.land_area?.toString() || "",
       land_unit: data.land?.land_unit || data.land_unit || "m²",
       land_width: data.land?.land_width?.toString() || data.land_width?.toString() || "",
       land_length: data.land?.land_length?.toString() || data.land_length?.toString() || "",
 
-      // Building
       building_area: data.building?.building_area?.toString() || data.building_area?.toString() || "",
       building_width: data.building?.building_width?.toString() || data.building_width?.toString() || "",
       building_length: data.building?.building_length?.toString() || data.building_length?.toString() || "",
 
-      // Owner
       owner_name: data.owner?.full_name || data.owner_name || "",
       owner_phone: data.owner?.phone || data.owner_phone || "",
       owner_whatsapp: data.owner?.whatsapp || data.owner_whatsapp || "",
@@ -250,13 +297,12 @@ export default function EditPropertyPage({ params }: EditPropertyPageProps) {
       owner_address: data.owner?.address || data.owner_address || "",
       owner_notes: data.owner?.notes || data.owner_notes || "",
 
-      // Facilities
       facilities: data.facilities || [],
 
-      // Photos
+      // 🟢 PERBAIKAN UTAMA: Pastikan data photos diberi flag lengkap agar wizard menganggapnya valid walau tidak disentuh
       photos: existingPhotos,
-      photos_uploaded: true,
-      media_completed: true,
+      photos_uploaded: existingPhotos.length > 0,
+      media_completed: existingPhotos.length > 0,
       co_broke: data.co_broke || false,
       youtube_url: data.youtube_url || "",
     };
@@ -284,7 +330,7 @@ export default function EditPropertyPage({ params }: EditPropertyPageProps) {
           <p className="text-xs text-slate-500">{error || "Properti tidak ditemukan atau Anda tidak memiliki akses edit."}</p>
           <button
             onClick={() => router.back()}
-            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 rounded-lg text-xs font-medium transition"
+            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 rounded-lg text-xs font-medium transition cursor-pointer"
           >
             ← Kembali
           </button>

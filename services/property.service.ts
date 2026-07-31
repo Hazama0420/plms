@@ -15,7 +15,7 @@ export type { PropertyFilter };
 // ============================================================
 const propertyService = {
   // ============================================================
-  // GET LIST – Daftar Properti (dengan Advanced Filter)
+  // GET LIST – Daftar Properti (Dengan Multi-Filter Presisi & Aman)
   // ============================================================
   async getList(filters: PropertyFilter = {}) {
     const {
@@ -40,8 +40,11 @@ const propertyService = {
           owner:property_owners(*),
           address:property_address(
             *,
+            country:countries(name),
+            province:provinces(name),
             city:cities(name),
-            district:districts(name)
+            district:districts(name),
+            village:villages(name)
           ),
           price:property_price(*),
           specifications:property_specifications(*),
@@ -54,7 +57,7 @@ const propertyService = {
       .order(sort_by, { ascending: sort_order === "asc" })
       .range(offset, offset + limit - 1);
 
-    // ===== SEARCH =====
+    // ===== SEARCH (Judul atau Kode Listing) =====
     if (search) {
       query = query.or(
         `title.ilike.%${search}%,listing_code.ilike.%${search}%`
@@ -66,63 +69,76 @@ const propertyService = {
       query = query.eq("status", status);
     }
 
+    // 1. Filter Tipe Transaksi (jual / sewa)
     if (listing_type && listing_type !== "all") {
       query = query.eq("listing_type", listing_type);
     }
 
-    // 🔍 PROPERTY TYPE (CHIPS)
+    // 2. 🟢 FIX UTAMA: Filter Kategori/Jenis Properti (Menggunakan .ilike agar Case-Insensitive)
     if (property_type && property_type !== "all") {
-      query = query.eq("property_type", property_type);
+      query = query.ilike("property_type", property_type);
     }
 
-    // ===== ADVANCED FILTERS =====
-    if (advanced?.priceMin !== null && advanced?.priceMin !== undefined) {
-      query = query.gte("price.selling_price", advanced.priceMin);
-    }
-    if (advanced?.priceMax !== null && advanced?.priceMax !== undefined) {
-      query = query.lte("price.selling_price", advanced.priceMax);
-    }
+    // ===== ADVANCED FILTERS (LANJUTAN) =====
+   // Filter Harga Minimum
+if (advanced?.priceMin !== null && advanced?.priceMin !== undefined && advanced.priceMin !== ("" as any)) {
+  query = query.gte("property_price.selling_price", Number(advanced.priceMin));
+}
 
-    if (advanced?.landAreaMin !== null && advanced?.landAreaMin !== undefined) {
-      query = query.gte("land.land_area", advanced.landAreaMin);
-    }
-    if (advanced?.landAreaMax !== null && advanced?.landAreaMax !== undefined) {
-      query = query.lte("land.land_area", advanced.landAreaMax);
-    }
+// Filter Harga Maksimum (Diperbaiki)
+if (advanced?.priceMax !== null && advanced?.priceMax !== undefined && advanced.priceMax !== ("" as any)) {
+  query = query.lte("property_price.selling_price", Number(advanced.priceMax));
+}
 
-    if (advanced?.buildingAreaMin !== null && advanced?.buildingAreaMin !== undefined) {
-      query = query.gte("building.building_area", advanced.buildingAreaMin);
-    }
-    if (advanced?.buildingAreaMax !== null && advanced?.buildingAreaMax !== undefined) {
-      query = query.lte("building.building_area", advanced.buildingAreaMax);
-    }
+    // Filter Luas Tanah Minimum
+if (advanced?.landAreaMin !== null && advanced?.landAreaMin !== undefined && advanced.landAreaMin !== ("" as any)) {
+  query = query.gte("property_specs.land_area", Number(advanced.landAreaMin));
+}
 
-    if (advanced?.bedroom !== null && advanced?.bedroom !== undefined) {
-      query = query.gte("specifications.bedroom", advanced.bedroom);
-    }
+// Filter Luas Tanah Maksimum
+if (advanced?.landAreaMax !== null && advanced?.landAreaMax !== undefined && advanced.landAreaMax !== ("" as any)) {
+  query = query.lte("property_specs.land_area", Number(advanced.landAreaMax));
+}
 
-    if (advanced?.bathroom !== null && advanced?.bathroom !== undefined) {
-      query = query.gte("specifications.bathroom", advanced.bathroom);
-    }
+   // 3. Filter Luas Bangunan (Building Area)
+if (advanced?.buildingAreaMin != null && !isNaN(Number(advanced.buildingAreaMin))) {
+  query = query.gte("property_specs.building_area", Number(advanced.buildingAreaMin));
+}
+if (advanced?.buildingAreaMax != null && !isNaN(Number(advanced.buildingAreaMax))) {
+  query = query.lte("property_specs.building_area", Number(advanced.buildingAreaMax));
+}
+
+// Filter Kamar Tidur & Mandi
+if (advanced?.bedroom != null && !isNaN(Number(advanced.bedroom))) {
+  query = query.eq("property_specs.bedrooms", Number(advanced.bedroom));
+}
+if (advanced?.bathroom != null && !isNaN(Number(advanced.bathroom))) {
+  query = query.eq("property_specs.bathrooms", Number(advanced.bathroom));
+}
 
     if (advanced?.city_id) {
-      query = query.eq("address.city_id", advanced.city_id);
+      query = query.eq("property_address.city_id", advanced.city_id);
     }
 
-    if (advanced?.property_type) {
-      query = query.eq("property_type", advanced.property_type);
+    // Filter Lokasi Berdasarkan Nama Provinsi & Kota
+if ((advanced as any)?.province_name) {
+  query = query.ilike("property_address.province_name", `%${(advanced as any).province_name}%`);
+}
+
+if ((advanced as any)?.city_name) {
+  query = query.ilike("property_address.city_name", `%${(advanced as any).city_name}%`);
+}
+
+   if (advanced?.year_built !== null && advanced?.year_built !== undefined && advanced.year_built !== ("" as any)) {
+  query = query.eq("property_specifications.year_built", Number(advanced.year_built));
+}
+
+    if (advanced?.certificate && advanced.certificate !== "all") {
+      query = query.eq("property_specifications.certificate", advanced.certificate);
     }
 
-    if (advanced?.year_built !== null && advanced?.year_built !== undefined) {
-      query = query.gte("specifications.year_built", advanced.year_built);
-    }
-
-    if (advanced?.certificate) {
-      query = query.eq("specifications.certificate", advanced.certificate);
-    }
-
-    if (advanced?.furnishing) {
-      query = query.eq("specifications.furnishing", advanced.furnishing);
+    if (advanced?.furnishing && advanced.furnishing !== "all") {
+      query = query.eq("property_specifications.furnishing", advanced.furnishing);
     }
 
     const { data, error, count } = await query;
@@ -211,33 +227,108 @@ const propertyService = {
   },
 
   // ============================================================
-  // DUPLICATE
+  // DUPLICATE (LENGKAP DENGAN DATA RELASI TURUNANNYA)
   // ============================================================
   async duplicate(id: string) {
     const original = await this.getById(id);
     if (!original) throw new Error("Property not found");
 
-    const { data, error } = await supabase
+    const timestamp = Date.now();
+    const newListingCode = `${original.listing_code || "PROP"}-COPY-${timestamp}`;
+
+    const { data: newProperty, error: insertError } = await supabase
       .from("properties")
       .insert({
-        listing_code: `${original.listing_code}-copy-${Date.now()}`,
+        listing_code: newListingCode,
         title: `Copy of ${original.title}`,
-        slug: `${original.slug}-copy-${Date.now()}`,
+        slug: `${original.slug || "prop"}-copy-${timestamp}`,
         property_type: original.property_type,
         listing_type: original.listing_type,
         property_category: original.property_category || null,
         status: "draft",
-        owner_id: original.owner_id,
-        created_by: original.created_by,
-        description: original.description,
-        selling_point: original.selling_point,
-        rental_period: original.rental_period,
+        owner_id: original.owner_id || null,
+        created_by: original.created_by || null,
+        assigned_to: original.assigned_to || null,
+        description: original.description || null,
+        selling_point: original.selling_point || null,
+        rental_period: original.rental_period || null,
       })
       .select()
       .single();
 
-    if (error) throw new Error(error.message);
-    return data as Property;
+    if (insertError || !newProperty) {
+      throw new Error(insertError?.message || "Gagal menduplikasi properti utama.");
+    }
+
+    const newPropertyId = newProperty.id;
+
+    if (original.address) {
+      const addr = Array.isArray(original.address) ? original.address[0] : original.address;
+      if (addr) {
+        const { id: _, property_id: __, country: ___, province: ____, city: _____, district: ______, village: _______, ...cleanAddr } = addr;
+        await supabase.from("property_address").insert({
+          ...cleanAddr,
+          property_id: newPropertyId,
+        });
+      }
+    }
+
+    if (original.price) {
+      const prc = Array.isArray(original.price) ? original.price[0] : original.price;
+      if (prc) {
+        const { id: _, property_id: __, ...cleanPrice } = prc;
+        await supabase.from("property_price").insert({
+          ...cleanPrice,
+          property_id: newPropertyId,
+        });
+      }
+    }
+
+    if (original.specifications) {
+      const spec = Array.isArray(original.specifications) ? original.specifications[0] : original.specifications;
+      if (spec) {
+        const { id: _, property_id: __, ...cleanSpec } = spec;
+        await supabase.from("property_specifications").insert({
+          ...cleanSpec,
+          property_id: newPropertyId,
+        });
+      }
+    }
+
+    if (original.land) {
+      const lnd = Array.isArray(original.land) ? original.land[0] : original.land;
+      if (lnd) {
+        const { id: _, property_id: __, ...cleanLand } = lnd;
+        await supabase.from("property_land").insert({
+          ...cleanLand,
+          property_id: newPropertyId,
+        });
+      }
+    }
+
+    if (original.building) {
+      const bld = Array.isArray(original.building) ? original.building[0] : original.building;
+      if (bld) {
+        const { id: _, property_id: __, ...cleanBuilding } = bld;
+        await supabase.from("property_building").insert({
+          ...cleanBuilding,
+          property_id: newPropertyId,
+        });
+      }
+    }
+
+    if (original.media && Array.isArray(original.media) && original.media.length > 0) {
+      const mediaListToInsert = original.media.map((m: any) => {
+        const { id: _, property_id: __, ...cleanMedia } = m;
+        return {
+          ...cleanMedia,
+          property_id: newPropertyId,
+        };
+      });
+      await supabase.from("property_media").insert(mediaListToInsert);
+    }
+
+    return await this.getById(newPropertyId);
   },
 
   // ============================================================

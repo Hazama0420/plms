@@ -24,6 +24,8 @@ import {
   Send,
   Sparkles,
   ChevronRight,
+  Lock,
+  Copy,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -112,6 +114,12 @@ export default function LeadsPage() {
   const [aiGeneratedMessage, setAiGeneratedMessage] = useState("");
   const [generatingAi, setGeneratingAi] = useState(false);
 
+  // Helper Hak Akses Admin / Super Admin
+  const isAdminOrSuperAdmin =
+    currentUserRole === "super_admin" ||
+    currentUserRole === "superadmin" ||
+    currentUserRole === "admin";
+
   // ===== FETCH REAL FOLLOW-UPS DARI DATABASE SUPABASE =====
   const fetchFollowUpsData = useCallback(async (userId: string | null, role: string) => {
     setLoadingFollowUps(true);
@@ -137,7 +145,7 @@ export default function LeadsPage() {
         `)
         .order("followup_date", { ascending: false });
 
-      const isAdmin = role === "admin" || role === "super_admin";
+      const isAdmin = role === "admin" || role === "super_admin" || role === "superadmin";
       if (!isAdmin && userId) {
         query = query.eq("assigned_to", userId);
       }
@@ -177,9 +185,6 @@ export default function LeadsPage() {
     }
     checkUserSession();
   }, [fetchFollowUpsData]);
-
-  // Helper Hak Akses Modifikasi
-  const isAdminOrSuperAdmin = currentUserRole === "super_admin" || currentUserRole === "admin";
 
   const canModifyLead = useCallback(
     (lead: any) => {
@@ -260,8 +265,15 @@ export default function LeadsPage() {
     window.open(`https://wa.me/${cleanPhone}?text=${text}`, "_blank");
   };
 
-  // AI Smart Follow-up Writer
+  // 🔒 AI SMART FOLLOW-UP WRITER DENGAN ROLE LOCK (PERBAIKAN UTAMA)
   const handleGenerateAiMessage = async (fuItem: any) => {
+    if (!isAdminOrSuperAdmin) {
+      toast.error("Fitur Terkunci!", {
+        description: "Fitur AI Writer Follow-Up khusus untuk Super Admin dan Admin.",
+      });
+      return;
+    }
+
     const clientName = fuItem.crm_leads?.crm_contacts?.full_name || fuItem.client_name || "Klien";
     const propertyInterest = fuItem.crm_leads?.interest_type || fuItem.property_interest || "Properti Premium";
     const budgetVal = fuItem.crm_leads?.budget || fuItem.budget || "-";
@@ -278,23 +290,29 @@ export default function LeadsPage() {
     setAiGeneratedMessage("");
 
     try {
-      const res = await fetch("/api/ai/generate", {
+      // 🚀 Memanggil Endpoint Resmi /api/ai/followup
+      const res = await fetch("/api/ai/followup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          prompt: `Buatkan draf pesan WhatsApp personal yang ramah dan persuasif dari agen Inland Property untuk calon pembeli rumah bernama "${clientName}". Minat properti: "${propertyInterest}". Budget: Rp ${budgetVal}. Berikan opsi tanggal survei lokasi akhir pekan ini.`,
+          leadName: clientName,
+          property: propertyInterest,
+          status: fuItem.status || "Perlu Follow-up",
+          userRole: currentUserRole,
         }),
       });
 
       const json = await res.json();
-      if (json?.text || json?.result) {
-        setAiGeneratedMessage(json.text || json.result);
+      if (res.ok && json?.message) {
+        setAiGeneratedMessage(json.message);
       } else {
+        toast.error(json?.error || "Gagal membuat pesan AI.");
         setAiGeneratedMessage(
-          `Halo Bpk/Ibu ${clientName},\n\nPerkenalkan saya dari Inland Property. Menindaklanjuti ketertarikan Anda pada properti *${propertyInterest}*, apakah akhir pekan ini ada waktu luang untuk mendampingi Anda survei lokasi secara langsung?\n\nSaya telah menyiapkan berkas dan estimasi simulasi pembayaran KPR sesuai budget Anda. Terima kasih!`
+          `Halo Bpk/Ibu ${clientName},\n\nPerkenalkan saya dari Inland Property. Menindaklanjuti ketertarikan Anda pada properti *${propertyInterest}*, apakah akhir pekan ini ada waktu luang untuk mendampingi Anda survei lokasi secara langsung?\n\nTerima kasih!`
         );
       }
     } catch (err) {
+      toast.error("Gagal terhubung ke AI Service.");
       setAiGeneratedMessage(
         `Halo Bpk/Ibu ${clientName},\n\nPerkenalkan saya dari Inland Property. Menindaklanjuti ketertarikan Anda pada properti *${propertyInterest}*, apakah akhir pekan ini ada waktu luang untuk mendampingi Anda survei lokasi secara langsung?\n\nTerima kasih!`
       );
@@ -327,14 +345,14 @@ export default function LeadsPage() {
 
         <Button
           onClick={() => router.push("/crm/leads/create")}
-          className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20 gap-2 shrink-0"
+          className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20 gap-2 shrink-0 cursor-pointer"
         >
           <Plus className="h-4 w-4" /> Tambah Lead Baru
         </Button>
       </div>
 
       {/* ============================================================ */}
-      {/* 📱 MOBILE SUB-TABS SYSTEM                                   */}
+      {/* 📱 MOBILE SUB-TABS SYSTEM                                    */}
       {/* ============================================================ */}
       <div className="block md:hidden space-y-4">
         <Tabs value={selectedMobileTab} onValueChange={(v) => setSelectedMobileTab(v as any)} className="w-full">
@@ -400,14 +418,25 @@ export default function LeadsPage() {
                         size="sm"
                         variant="outline"
                         onClick={() => handleGenerateAiMessage(fu)}
-                        className="h-7 text-[10px] gap-1 text-amber-700 dark:text-amber-400 border-amber-300/60 bg-amber-50/50"
+                        className={cn(
+                          "h-7 text-[10px] gap-1 cursor-pointer",
+                          isAdminOrSuperAdmin
+                            ? "text-amber-700 dark:text-amber-400 border-amber-300/60 bg-amber-50/50"
+                            : "text-slate-400 border-slate-200 bg-slate-50"
+                        )}
+                        title={isAdminOrSuperAdmin ? "Draf WhatsApp via AI" : "Khusus Admin"}
                       >
-                        <Zap className="w-3 h-3 text-amber-500 fill-amber-500" /> AI Writer
+                        {isAdminOrSuperAdmin ? (
+                          <Zap className="w-3 h-3 text-amber-500 fill-amber-500" />
+                        ) : (
+                          <Lock className="w-3 h-3 text-slate-400" />
+                        )}
+                        AI Writer
                       </Button>
                       <Button
                         size="sm"
                         onClick={() => openWhatsApp(clientPhone, clientName)}
-                        className="h-7 text-[10px] gap-1 bg-emerald-600 hover:bg-emerald-700 text-white"
+                        className="h-7 text-[10px] gap-1 bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
                       >
                         <MessageCircle className="w-3 h-3" /> WA
                       </Button>
@@ -530,15 +559,19 @@ export default function LeadsPage() {
                             size="sm"
                             variant="ghost"
                             onClick={() => handleGenerateAiMessage(fu)}
-                            title="Draf WhatsApp via AI"
-                            className="h-7 w-7 p-0 text-amber-600 hover:bg-amber-50"
+                            title={isAdminOrSuperAdmin ? "Draf WhatsApp via AI" : "Khusus Admin"}
+                            className="h-7 w-7 p-0 cursor-pointer"
                           >
-                            <Zap className="w-3.5 h-3.5 fill-amber-500" />
+                            {isAdminOrSuperAdmin ? (
+                              <Zap className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
+                            ) : (
+                              <Lock className="w-3.5 h-3.5 text-slate-400" />
+                            )}
                           </Button>
                           <Button
                             size="sm"
                             onClick={() => openWhatsApp(clientPhone, clientName)}
-                            className="h-7 px-2 text-[11px] bg-emerald-600 hover:bg-emerald-700 text-white gap-1"
+                            className="h-7 px-2 text-[11px] bg-emerald-600 hover:bg-emerald-700 text-white gap-1 cursor-pointer"
                           >
                             <MessageCircle className="w-3 h-3" /> WA
                           </Button>
@@ -577,7 +610,7 @@ export default function LeadsPage() {
                     className="pl-8 h-8 text-xs"
                   />
                 </div>
-                <Button variant="outline" size="icon" onClick={() => { fetchLeads(); fetchFollowUpsData(currentUserId, currentUserRole); }} className="h-8 w-8">
+                <Button variant="outline" size="icon" onClick={() => { fetchLeads(); fetchFollowUpsData(currentUserId, currentUserRole); }} className="h-8 w-8 cursor-pointer">
                   <RefreshCw className="h-3.5 w-3.5" />
                 </Button>
               </div>
@@ -628,7 +661,7 @@ export default function LeadsPage() {
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                className="h-7 w-7 text-muted-foreground hover:text-emerald-600"
+                                className="h-7 w-7 text-muted-foreground hover:text-emerald-600 cursor-pointer"
                                 onClick={() => openWhatsApp(lead.contact?.phone, lead.contact?.full_name)}
                               >
                                 <MessageCircle className="w-3.5 h-3.5" />
@@ -636,7 +669,7 @@ export default function LeadsPage() {
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                className="h-7 w-7 text-muted-foreground hover:text-blue-600"
+                                className="h-7 w-7 text-muted-foreground hover:text-blue-600 cursor-pointer"
                                 onClick={() => router.push(`/crm/leads/${lead.id}`)}
                               >
                                 <Eye className="w-3.5 h-3.5" />
@@ -645,7 +678,7 @@ export default function LeadsPage() {
                               {/* 🔒 DROPDOWN EDIT & HAPUS HANYA UNTUK CREATOR / ASSIGNED / ADMIN */}
                               {hasAccess && (
                                 <DropdownMenu>
-                                  <DropdownMenuTrigger className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors focus:outline-hidden">
+                                  <DropdownMenuTrigger className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors focus:outline-hidden cursor-pointer">
                                     <MoreHorizontal className="w-3.5 h-3.5" />
                                   </DropdownMenuTrigger>
                                   <DropdownMenuContent align="end" className="w-40">
@@ -726,7 +759,7 @@ export default function LeadsPage() {
             <div className="grid grid-cols-2 gap-2 pt-2">
               <Button
                 variant="outline"
-                className="w-full text-xs"
+                className="w-full text-xs cursor-pointer"
                 onClick={() => {
                   if (selectedLeadForSheet) {
                     router.push(`/crm/leads/${selectedLeadForSheet.id}`);
@@ -737,7 +770,7 @@ export default function LeadsPage() {
                 Lihat Detail Full
               </Button>
               <Button
-                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs gap-1"
+                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs gap-1 cursor-pointer"
                 onClick={() => openWhatsApp(selectedLeadForSheet?.contact?.phone, selectedLeadForSheet?.contact?.full_name)}
               >
                 <MessageCircle className="w-3.5 h-3.5" /> Direct WhatsApp
@@ -748,64 +781,108 @@ export default function LeadsPage() {
       </Sheet>
 
       {/* ============================================================ */}
-      {/* 🤖 AI SMART FOLLOW-UP WRITER DIALOG MODAL                    */}
+      {/* 🤖 AI SMART FOLLOW-UP WRITER DIALOG MODAL DENGAN ROLE LOCK    */}
       {/* ============================================================ */}
       <Dialog open={aiModalOpen} onOpenChange={setAiModalOpen}>
         <DialogContent className="sm:max-w-md rounded-2xl">
           <DialogHeader>
-            <DialogTitle className="text-base font-bold flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-emerald-600" /> AI Smart Follow-up Writer
-            </DialogTitle>
+            <div className="flex items-center justify-between">
+              <DialogTitle className="text-base font-bold flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-emerald-600" /> AI Smart Follow-up Writer
+              </DialogTitle>
+              <Badge
+                variant="outline"
+                className={
+                  isAdminOrSuperAdmin
+                    ? "bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px]"
+                    : "bg-amber-50 text-amber-700 border-amber-200 text-[10px]"
+                }
+              >
+                {isAdminOrSuperAdmin ? "Admin Access" : "Khusus Admin"}
+              </Badge>
+            </div>
             <DialogDescription className="text-xs">
-              Draf pesan WhatsApp persuasif yang dibuat otomatis oleh Groq Llama-3 AI.
+              Draf pesan WhatsApp persuasif yang dibuat otomatis oleh AI.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-3 text-xs pt-2">
-            <div className="p-2.5 bg-muted/60 rounded-xl flex items-center justify-between">
-              <span className="text-muted-foreground">Target Klien:</span>
-              <span className="font-bold text-foreground">
-                {aiTargetLead?.client_name || aiTargetLead?.contact?.full_name}
-              </span>
+          {!isAdminOrSuperAdmin ? (
+            <div className="py-8 text-center space-y-3">
+              <div className="w-12 h-12 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto">
+                <Lock className="w-6 h-6" />
+              </div>
+              <div className="space-y-1 max-w-xs mx-auto">
+                <h4 className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                  Akses Terkunci
+                </h4>
+                <p className="text-[11px] text-slate-500 leading-relaxed">
+                  Fitur AI Writer Follow-Up khusus digunakan oleh **Super Admin** dan **Admin**.
+                </p>
+              </div>
             </div>
+          ) : (
+            <div className="space-y-3 text-xs pt-2">
+              <div className="p-2.5 bg-muted/60 rounded-xl flex items-center justify-between">
+                <span className="text-muted-foreground">Target Klien:</span>
+                <span className="font-bold text-foreground">
+                  {aiTargetLead?.client_name || aiTargetLead?.contact?.full_name}
+                </span>
+              </div>
 
-            <div className="space-y-1">
-              <label className="font-semibold text-foreground block">Pesan Draf AI WhatsApp:</label>
-              {generatingAi ? (
-                <div className="h-32 bg-muted/40 rounded-xl flex items-center justify-center text-muted-foreground gap-2">
-                  <RefreshCw className="w-4 h-4 animate-spin text-emerald-600" />
-                  <span>AI sedang menyusun draf pesan...</span>
-                </div>
-              ) : (
-                <Textarea
-                  value={aiGeneratedMessage}
-                  onChange={(e) => setAiGeneratedMessage(e.target.value)}
-                  rows={6}
-                  className="text-xs leading-relaxed"
-                />
-              )}
+              <div className="space-y-1">
+                <label className="font-semibold text-foreground block">Pesan Draf AI WhatsApp:</label>
+                {generatingAi ? (
+                  <div className="h-32 bg-muted/40 rounded-xl flex items-center justify-center text-muted-foreground gap-2">
+                    <RefreshCw className="w-4 h-4 animate-spin text-emerald-600" />
+                    <span>AI sedang menyusun draf pesan...</span>
+                  </div>
+                ) : (
+                  <Textarea
+                    value={aiGeneratedMessage}
+                    onChange={(e) => setAiGeneratedMessage(e.target.value)}
+                    rows={6}
+                    className="text-xs leading-relaxed resize-none focus-visible:ring-emerald-600"
+                  />
+                )}
+              </div>
             </div>
-          </div>
+          )}
 
           <DialogFooter className="gap-2 pt-2">
-            <Button variant="outline" size="sm" onClick={() => setAiModalOpen(false)} className="text-xs">
-              Batal
-            </Button>
-            <Button
-              size="sm"
-              disabled={generatingAi || !aiGeneratedMessage}
-              onClick={() => {
-                setAiModalOpen(false);
-                openWhatsApp(
-                  aiTargetLead?.phone || aiTargetLead?.contact?.phone,
-                  aiTargetLead?.client_name || aiTargetLead?.contact?.full_name,
-                  aiGeneratedMessage
-                );
-              }}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs gap-1.5"
-            >
-              <Send className="w-3.5 h-3.5" /> Kirim via WhatsApp
-            </Button>
+            {isAdminOrSuperAdmin ? (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    navigator.clipboard.writeText(aiGeneratedMessage);
+                    toast.success("Pesan berhasil disalin!");
+                  }}
+                  className="text-xs gap-1.5 cursor-pointer"
+                >
+                  <Copy className="w-3.5 h-3.5" /> Salin Pesan
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={generatingAi || !aiGeneratedMessage}
+                  onClick={() => {
+                    setAiModalOpen(false);
+                    openWhatsApp(
+                      aiTargetLead?.phone || aiTargetLead?.contact?.phone,
+                      aiTargetLead?.client_name || aiTargetLead?.contact?.full_name,
+                      aiGeneratedMessage
+                    );
+                  }}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs gap-1.5 cursor-pointer"
+                >
+                  <Send className="w-3.5 h-3.5" /> Kirim via WhatsApp
+                </Button>
+              </>
+            ) : (
+              <Button variant="outline" size="sm" onClick={() => setAiModalOpen(false)} className="w-full text-xs cursor-pointer">
+                Tutup
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -1,3 +1,4 @@
+// app/(dashboard)/properties/[id]/page.tsx
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
@@ -70,9 +71,6 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 
-// ============================================================
-// TIPE DATA & CONFIG STATUS FORMAL
-// ============================================================
 type PropertyStatus = "draft" | "review" | "published" | "sold" | "rented" | "archived";
 
 interface PropertyDetail {
@@ -108,11 +106,11 @@ interface PropertyDetail {
 }
 
 const statusConfig: Record<string, { label: string; color: string; bg: string }> = {
-  draft: { label: "Draf internal", color: "text-slate-600 dark:text-slate-400", bg: "bg-slate-50 dark:bg-slate-900 border-slate-200" },
-  review: { label: "Peninjauan", color: "text-amber-700 dark:text-amber-400", bg: "bg-amber-500/10 border-amber-500/20" },
-  published: { label: "Dipublikasikan", color: "text-emerald-700 dark:text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/20" },
-  sold: { label: "Terjual", color: "text-slate-700 dark:text-slate-300", bg: "bg-slate-200 dark:bg-slate-800 border-slate-300" },
-  rented: { label: "Tersewa", color: "text-blue-700 dark:text-blue-400", bg: "bg-blue-500/10 border-blue-500/20" },
+  draft: { label: "Draf Internal", color: "text-slate-600 dark:text-slate-400", bg: "bg-slate-500/10 border-slate-500/20" },
+  review: { label: "Peninjauan", color: "text-amber-600 dark:text-amber-400", bg: "bg-amber-500/10 border-amber-500/20" },
+  published: { label: "Dipublikasikan", color: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/20" },
+  sold: { label: "Terjual", color: "text-indigo-600 dark:text-indigo-400", bg: "bg-indigo-500/10 border-indigo-500/20" },
+  rented: { label: "Tersewa", color: "text-blue-600 dark:text-blue-400", bg: "bg-blue-500/10 border-blue-500/20" },
   archived: { label: "Diarsip", color: "text-rose-600 dark:text-rose-400", bg: "bg-rose-500/10 border-rose-500/20" },
 };
 
@@ -142,19 +140,15 @@ export default function PropertyDetailPage() {
   const [activeTab, setActiveTab] = useState("details");
   const [activeImage, setActiveImage] = useState<string>("");
 
-  // Lightbox State
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
 
-  // User & Auth Role
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [userRole, setUserRole] = useState<string>("agent");
 
-  // Agent States
   const [agents, setAgents] = useState<any[]>([]);
   const [fetchedAssignedAgent, setFetchedAssignedAgent] = useState<any>(null);
   const [assignLoading, setAssignLoading] = useState(false);
 
-  // Location Data Store
   const [locationData, setLocationData] = useState<LocationData>({
     countries: [],
     provinces: [],
@@ -163,7 +157,6 @@ export default function PropertyDetailPage() {
     villages: [],
   });
 
-  // HELPER: Ambil seluruh daftar URL Foto
   const getImagesList = (data: PropertyDetail | null): string[] => {
     if (!data) return [];
     let list: string[] = [];
@@ -210,7 +203,6 @@ export default function PropertyDetailPage() {
     return `https://wa.me/${cleanPhone}?text=${text}`;
   };
 
-  // FETCH AUTH & ROLE
   useEffect(() => {
     const fetchUserAndRole = async () => {
       try {
@@ -225,15 +217,18 @@ export default function PropertyDetailPage() {
 
           const role = userData?.role || user.user_metadata?.role || "agent";
           setUserRole(role.toLowerCase());
+        } else {
+          // 🟢 JIKA TAMU (BELUM LOGIN)
+          setUserRole("guest");
         }
       } catch (err) {
         console.error("Gagal mengambil peran pengguna:", err);
+        setUserRole("guest");
       }
     };
     fetchUserAndRole();
   }, []);
 
-  // FETCH DAFTAR AGEN
   useEffect(() => {
     const fetchAgents = async () => {
       try {
@@ -249,7 +244,6 @@ export default function PropertyDetailPage() {
     fetchAgents();
   }, []);
 
-  // FETCH DATA PROPERTI & WILAYAH
   useEffect(() => {
     const fetchProperty = async () => {
       setLoading(true);
@@ -325,25 +319,19 @@ export default function PropertyDetailPage() {
     return null;
   }, [property, agents, fetchedAssignedAgent]);
 
-  // 🔴 EVALUASI HAK AKSES STRICT DENGAN USEMEMO
   const isSuperAdmin = userRole === "super_admin" || userRole === "superadmin";
 
   const canEdit = useMemo(() => {
     if (!currentUser?.id || !property) return false;
-
     const role = userRole.toLowerCase();
 
-    // 1. Super Admin & Admin Memiliki Hak Akses Penuh
     if (role === "super_admin" || role === "superadmin" || role === "admin") {
       return true;
     }
-
-    // 2. Viewer / Reviewer / Commissioner Dilarang Edit
     if (role === "viewer" || role === "reviewer" || role === "commissioner") {
       return false;
     }
 
-    // 3. Agen / Marketing Hanya Boleh Edit Jika Mereka Pembuat / Pemilik / Ditugaskan
     const currentUserId = currentUser.id;
     const isCreator = Boolean(property.created_by && property.created_by === currentUserId);
     const isUserOwner = Boolean(property.user_id && property.user_id === currentUserId);
@@ -352,7 +340,6 @@ export default function PropertyDetailPage() {
     return isCreator || isUserOwner || isAssigned;
   }, [currentUser, property, userRole]);
 
-  // Helper fungsi resolve nama lokasi
   const resolveLocationName = (
     addressObj: any,
     idKey: string,
@@ -361,21 +348,17 @@ export default function PropertyDetailPage() {
     lookupList: { id: string | number; name: string }[]
   ): string => {
     if (!addressObj) return "-";
-
     if (addressObj[nameKey] && typeof addressObj[nameKey] === "string" && addressObj[nameKey].trim() !== "") {
       return addressObj[nameKey];
     }
-
     if (addressObj[nestedKey] && typeof addressObj[nestedKey] === "object" && addressObj[nestedKey].name) {
       return addressObj[nestedKey].name;
     }
-
     const targetId = addressObj[idKey];
     if (targetId !== undefined && targetId !== null && targetId !== "") {
       const matched = lookupList.find((item) => String(item.id).trim() === String(targetId).trim());
       if (matched) return matched.name;
     }
-
     return "-";
   };
 
@@ -515,15 +498,15 @@ export default function PropertyDetailPage() {
 
   if (loading) {
     return (
-      <div className="space-y-6 max-w-7xl mx-auto px-4 py-6">
-        <Skeleton className="h-10 w-60 rounded-xl" />
-        <Skeleton className="h-[360px] w-full rounded-2xl" />
+      <div className="space-y-6 max-w-7xl mx-auto px-4 py-8">
+        <Skeleton className="h-10 w-48 rounded-xl" />
+        <Skeleton className="h-[380px] w-full rounded-3xl" />
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-4">
-            <Skeleton className="h-64 w-full rounded-2xl" />
+            <Skeleton className="h-72 w-full rounded-3xl" />
           </div>
           <div className="lg:col-span-1 space-y-4">
-            <Skeleton className="h-64 w-full rounded-2xl" />
+            <Skeleton className="h-72 w-full rounded-3xl" />
           </div>
         </div>
       </div>
@@ -532,13 +515,13 @@ export default function PropertyDetailPage() {
 
   if (!property) {
     return (
-      <div className="flex flex-col items-center justify-center h-96 text-center max-w-md mx-auto space-y-4">
-        <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center text-2xl border">🏠</div>
+      <div className="flex flex-col items-center justify-center h-[70vh] text-center max-w-md mx-auto space-y-4">
+        <div className="w-16 h-16 rounded-2xl bg-muted/50 flex items-center justify-center text-2xl border border-border/60 shadow-xs">🏠</div>
         <h2 className="text-xl font-bold text-foreground">Properti Tidak Ditemukan</h2>
-        <p className="text-xs text-muted-foreground">
-          Data properti ini mungkin telah dihapus atau Anda tidak memiliki akses untuk melihatnya.
+        <p className="text-xs text-muted-foreground leading-relaxed">
+          Data properti ini mungkin telah dihapus atau Anda tidak memiliki hak akses untuk melihatnya.
         </p>
-        <Button onClick={() => router.back()} variant="outline" className="text-xs rounded-xl">
+        <Button onClick={() => router.back()} variant="outline" className="text-xs rounded-xl h-9 cursor-pointer">
           <ArrowLeft className="h-4 w-4 mr-2" /> Kembali
         </Button>
       </div>
@@ -548,7 +531,7 @@ export default function PropertyDetailPage() {
   const calculatedPrice = priceObj?.selling_price || priceObj?.rental_price || priceObj?.price || 0;
 
   return (
-    <div className="space-y-8 pb-20 max-w-7xl mx-auto px-4 sm:px-6">
+    <div className="space-y-8 pb-24 max-w-7xl mx-auto px-4 sm:px-6 pt-2">
       {/* 1. TOP HEADER & BAR AKSI */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-border/60 pb-5">
         <div className="flex items-center gap-3">
@@ -556,7 +539,7 @@ export default function PropertyDetailPage() {
             variant="outline"
             size="icon"
             onClick={() => router.back()}
-            className="h-9 w-9 rounded-xl shrink-0 cursor-pointer"
+            className="h-9 w-9 rounded-xl shrink-0 cursor-pointer border-border/80 hover:bg-muted"
           >
             <ArrowLeft className="h-4 w-4" />
           </Button>
@@ -568,7 +551,7 @@ export default function PropertyDetailPage() {
               <Badge
                 variant="outline"
                 className={cn(
-                  "text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full border shadow-2xs",
+                  "text-[10px] font-bold uppercase tracking-wider px-3 py-0.5 rounded-full border shadow-2xs",
                   statusConfig[property.status]?.color,
                   statusConfig[property.status]?.bg
                 )}
@@ -584,7 +567,7 @@ export default function PropertyDetailPage() {
           </div>
         </div>
 
-        {/* HEADER ACTIONS (HANYA MUNCUL JIKA CANEDIT = TRUE) */}
+        {/* HEADER ACTIONS */}
         <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
           <Button
             variant="outline"
@@ -603,7 +586,7 @@ export default function PropertyDetailPage() {
                 variant="outline"
                 size="sm"
                 onClick={() => router.push(`/properties/${property.id}/edit`)}
-                className="text-xs font-semibold h-9 rounded-xl gap-1.5 cursor-pointer"
+                className="text-xs font-semibold h-9 rounded-xl gap-1.5 cursor-pointer hover:border-blue-500/50"
               >
                 <Pencil className="h-3.5 w-3.5 text-blue-600" /> Edit
               </Button>
@@ -637,21 +620,21 @@ export default function PropertyDetailPage() {
           {canEdit && (
             <div className="sm:hidden">
               <DropdownMenu>
-                <DropdownMenuTrigger className="inline-flex items-center justify-center rounded-xl border p-2 hover:bg-accent focus:outline-none h-9 w-9">
+                <DropdownMenuTrigger className="inline-flex items-center justify-center rounded-xl border border-border/80 p-2 hover:bg-accent focus:outline-none h-9 w-9">
                   <MoreVertical className="h-4 w-4" />
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-48 rounded-xl p-1 shadow-lg">
-                  <DropdownMenuItem onClick={() => router.push(`/properties/${property.id}/edit`)} className="text-xs gap-2 rounded-lg">
+                  <DropdownMenuItem onClick={() => router.push(`/properties/${property.id}/edit`)} className="text-xs gap-2 rounded-lg cursor-pointer">
                     <Pencil className="h-3.5 w-3.5 text-blue-600" /> Edit Properti
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={handleDuplicate} className="text-xs gap-2 rounded-lg">
+                  <DropdownMenuItem onClick={handleDuplicate} className="text-xs gap-2 rounded-lg cursor-pointer">
                     <Copy className="h-3.5 w-3.5" /> Duplikasi
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setShowStatusDialog(true)} className="text-xs gap-2 rounded-lg">
+                  <DropdownMenuItem onClick={() => setShowStatusDialog(true)} className="text-xs gap-2 rounded-lg cursor-pointer">
                     <Clock className="h-3.5 w-3.5 text-emerald-600" /> Ubah Status
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => setShowDeleteDialog(true)} className="text-xs gap-2 text-rose-600 dark:text-rose-400 rounded-lg">
+                  <DropdownMenuItem onClick={() => setShowDeleteDialog(true)} className="text-xs gap-2 text-rose-600 dark:text-rose-400 rounded-lg cursor-pointer">
                     <Trash2 className="h-3.5 w-3.5" /> Hapus Permanen
                   </DropdownMenuItem>
                 </DropdownMenuContent>
@@ -674,7 +657,7 @@ export default function PropertyDetailPage() {
 
       {/* 2. HERO BANNER FOTO */}
       <div className="space-y-3">
-        <div className="relative group w-full aspect-[16/10] sm:aspect-[21/9] max-h-[420px] rounded-3xl overflow-hidden border border-border/70 bg-slate-950 shadow-md">
+        <div className="relative group w-full aspect-[16/10] sm:aspect-[21/9] max-h-[440px] rounded-3xl overflow-hidden border border-border/70 bg-slate-950 shadow-lg">
           <img
             src={activeImage || DEFAULT_FALLBACK_IMAGE}
             alt={property.title}
@@ -687,10 +670,10 @@ export default function PropertyDetailPage() {
           <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-slate-950/20 to-transparent opacity-90" />
 
           <div className="absolute top-4 left-4 flex gap-2">
-            <Badge className={cn("text-xs font-bold uppercase tracking-wider px-3 py-1 shadow-xs border-0 text-white", property.listing_type === "sewa" ? "bg-amber-600" : "bg-emerald-600")}>
+            <Badge className={cn("text-xs font-bold uppercase tracking-wider px-3.5 py-1 shadow-xs border-0 text-white", property.listing_type === "sewa" ? "bg-amber-600" : "bg-emerald-600")}>
               {property.listing_type === "jual" ? "DIJUAL" : "DISEWAKAN"}
             </Badge>
-            <Badge variant="outline" className="text-xs px-3 py-1 font-semibold backdrop-blur-md bg-slate-950/60 border-white/20 text-white">
+            <Badge variant="outline" className="text-xs px-3.5 py-1 font-semibold backdrop-blur-md bg-slate-950/60 border-white/20 text-white">
               {property.property_type}
             </Badge>
           </div>
@@ -698,17 +681,17 @@ export default function PropertyDetailPage() {
           <Button
             size="sm"
             onClick={() => openLightbox(activeImage || DEFAULT_FALLBACK_IMAGE)}
-            className="absolute top-4 right-4 bg-slate-950/70 hover:bg-slate-950/90 backdrop-blur-md text-white text-xs font-medium gap-1.5 border border-white/15 rounded-xl cursor-pointer"
+            className="absolute top-4 right-4 bg-slate-950/70 hover:bg-slate-950/90 backdrop-blur-md text-white text-xs font-medium gap-1.5 border border-white/15 rounded-xl cursor-pointer shadow-md"
           >
             <Maximize2 className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Perbesar Foto</span>
           </Button>
 
           <div className="absolute bottom-4 left-4 right-4 flex items-end justify-between">
-            <div className="text-white font-mono font-extrabold text-lg sm:text-2xl bg-slate-950/80 px-4 py-1.5 rounded-2xl backdrop-blur-md border border-white/15 shadow-sm">
+            <div className="text-white font-mono font-black text-lg sm:text-2xl bg-slate-950/80 px-4.5 py-2 rounded-2xl backdrop-blur-md border border-white/15 shadow-md">
               {formatCurrency(calculatedPrice)}
             </div>
-            <div className="bg-slate-950/80 backdrop-blur-md text-white text-xs px-3 py-1.5 rounded-xl border border-white/15 flex items-center gap-1.5 font-medium">
+            <div className="bg-slate-950/80 backdrop-blur-md text-white text-xs px-3.5 py-2 rounded-xl border border-white/15 flex items-center gap-1.5 font-medium shadow-md">
               <ImageIcon className="w-3.5 h-3.5 text-emerald-400" />
               <span>{allImages.length > 0 ? `${allImages.length} Foto` : "1 Foto"}</span>
             </div>
@@ -723,10 +706,10 @@ export default function PropertyDetailPage() {
                 type="button"
                 onClick={() => setActiveImage(imgUrl)}
                 className={cn(
-                  "relative w-20 h-14 sm:w-24 sm:h-16 rounded-xl overflow-hidden shrink-0 border-2 transition-all cursor-pointer shadow-2xs",
+                  "relative w-20 h-14 sm:w-24 sm:h-16 rounded-2xl overflow-hidden shrink-0 border-2 transition-all cursor-pointer shadow-2xs",
                   activeImage === imgUrl
                     ? "border-emerald-500 ring-2 ring-emerald-500/30 scale-102"
-                    : "border-transparent opacity-60 hover:opacity-100"
+                    : "border-border/60 opacity-60 hover:opacity-100"
                 )}
               >
                 <img
@@ -747,7 +730,7 @@ export default function PropertyDetailPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-6">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-3 h-11 p-1 bg-muted/40 rounded-2xl border border-border/60">
+            <TabsList className="grid w-full grid-cols-3 h-11 p-1 bg-muted/50 rounded-2xl border border-border/60 backdrop-blur-sm">
               <TabsTrigger value="details" className="text-xs font-semibold rounded-xl cursor-pointer">
                 📋 Spesifikasi
               </TabsTrigger>
@@ -761,14 +744,14 @@ export default function PropertyDetailPage() {
 
             {/* TAB SPESIFIKASI */}
             <TabsContent value="details" className="mt-5 space-y-6">
-              <Card className="border border-border/70 shadow-2xs rounded-2xl bg-card">
-                <CardHeader className="p-5 pb-3 border-b border-border/60">
+              <Card className="border border-border/70 shadow-2xs rounded-3xl bg-card overflow-hidden">
+                <CardHeader className="p-6 pb-4 border-b border-border/60">
                   <CardTitle className="text-sm font-bold text-foreground flex items-center gap-2">
                     <Sparkles className="w-4 h-4 text-emerald-600" /> Ringkasan Informasi Utama
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="p-5 space-y-5 text-xs">
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                <CardContent className="p-6 space-y-6 text-xs">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-5">
                     <div>
                       <Label className="text-muted-foreground text-[11px] font-medium">Kode Listing</Label>
                       <p className="font-mono font-bold text-foreground text-sm mt-0.5">{property.listing_code}</p>
@@ -802,7 +785,7 @@ export default function PropertyDetailPage() {
 
                   <div>
                     <Label className="text-muted-foreground text-[11px] font-medium">Deskripsi Properti</Label>
-                    <p className="text-xs text-foreground mt-1.5 whitespace-pre-wrap leading-relaxed font-normal">
+                    <p className="text-xs text-foreground mt-2 whitespace-pre-wrap leading-relaxed font-normal bg-muted/20 p-4 rounded-2xl border border-border/40">
                       {property.description || "Belum ada deskripsi rinci untuk properti ini."}
                     </p>
                   </div>
@@ -810,7 +793,7 @@ export default function PropertyDetailPage() {
                   {property.selling_point && (
                     <div>
                       <Label className="text-muted-foreground text-[11px] font-medium">💎 Keunggulan Utama (Selling Point)</Label>
-                      <div className="text-xs text-foreground font-medium mt-1.5 p-3 bg-emerald-500/10 rounded-xl border border-emerald-500/20 text-emerald-950 dark:text-emerald-200">
+                      <div className="text-xs text-foreground font-medium mt-2 p-4 bg-emerald-500/10 rounded-2xl border border-emerald-500/20 text-emerald-950 dark:text-emerald-200">
                         {property.selling_point}
                       </div>
                     </div>
@@ -821,28 +804,28 @@ export default function PropertyDetailPage() {
                   <div>
                     <Label className="text-muted-foreground text-[11px] font-medium mb-3 block">Fasilitas & Karakteristik Bangunan</Label>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                      <div className="p-3 bg-muted/30 rounded-xl border border-border/60 text-center">
+                      <div className="p-3.5 bg-muted/40 rounded-2xl border border-border/60 text-center">
                         <p className="text-xs font-bold text-foreground">{specObj?.bedroom || 0} Ruang</p>
                         <p className="text-[10px] text-muted-foreground mt-0.5 flex items-center justify-center gap-1">
                           <Bed className="w-3 h-3 text-emerald-600" /> Kamar Tidur
                         </p>
                       </div>
 
-                      <div className="p-3 bg-muted/30 rounded-xl border border-border/60 text-center">
+                      <div className="p-3.5 bg-muted/40 rounded-2xl border border-border/60 text-center">
                         <p className="text-xs font-bold text-foreground">{specObj?.bathroom || 0} Ruang</p>
                         <p className="text-[10px] text-muted-foreground mt-0.5 flex items-center justify-center gap-1">
                           <Bath className="w-3 h-3 text-emerald-600" /> Kamar Mandi
                         </p>
                       </div>
 
-                      <div className="p-3 bg-muted/30 rounded-xl border border-border/60 text-center">
+                      <div className="p-3.5 bg-muted/40 rounded-2xl border border-border/60 text-center">
                         <p className="text-xs font-bold text-foreground">{landObj?.land_area || specObj?.land_area || 0} m²</p>
                         <p className="text-[10px] text-muted-foreground mt-0.5 flex items-center justify-center gap-1">
                           <Building2 className="w-3 h-3 text-emerald-600" /> Luas Tanah
                         </p>
                       </div>
 
-                      <div className="p-3 bg-muted/30 rounded-xl border border-border/60 text-center">
+                      <div className="p-3.5 bg-muted/40 rounded-2xl border border-border/60 text-center">
                         <p className="text-xs font-bold text-foreground">{buildingObj?.building_area || specObj?.building_area || 0} m²</p>
                         <p className="text-[10px] text-muted-foreground mt-0.5 flex items-center justify-center gap-1">
                           <Building2 className="w-3 h-3 text-emerald-600" /> Luas Bangunan
@@ -850,7 +833,7 @@ export default function PropertyDetailPage() {
                       </div>
 
                       {specObj?.carport && (
-                        <div className="p-3 bg-muted/30 rounded-xl border border-border/60 text-center">
+                        <div className="p-3.5 bg-muted/40 rounded-2xl border border-border/60 text-center">
                           <p className="text-xs font-bold text-foreground">{specObj.carport} Kendaraan</p>
                           <p className="text-[10px] text-muted-foreground mt-0.5 flex items-center justify-center gap-1">
                             <Car className="w-3 h-3 text-emerald-600" /> Carport
@@ -859,7 +842,7 @@ export default function PropertyDetailPage() {
                       )}
 
                       {specObj?.electricity && (
-                        <div className="p-3 bg-muted/30 rounded-xl border border-border/60 text-center">
+                        <div className="p-3.5 bg-muted/40 rounded-2xl border border-border/60 text-center">
                           <p className="text-xs font-bold text-foreground">{specObj.electricity} VA</p>
                           <p className="text-[10px] text-muted-foreground mt-0.5 flex items-center justify-center gap-1">
                             <Zap className="w-3 h-3 text-amber-500" /> Daya Listrik
@@ -868,7 +851,7 @@ export default function PropertyDetailPage() {
                       )}
 
                       {specObj?.facing && (
-                        <div className="p-3 bg-muted/30 rounded-xl border border-border/60 text-center">
+                        <div className="p-3.5 bg-muted/40 rounded-2xl border border-border/60 text-center">
                           <p className="text-xs font-bold text-foreground">{specObj.facing}</p>
                           <p className="text-[10px] text-muted-foreground mt-0.5 flex items-center justify-center gap-1">
                             <Compass className="w-3 h-3 text-blue-500" /> Arah Hadap
@@ -883,14 +866,14 @@ export default function PropertyDetailPage() {
 
             {/* TAB LOKASI */}
             <TabsContent value="location" className="mt-5">
-              <Card className="border border-border/70 shadow-2xs rounded-2xl bg-card">
-                <CardHeader className="p-5 pb-3 border-b border-border/60">
+              <Card className="border border-border/70 shadow-2xs rounded-3xl bg-card overflow-hidden">
+                <CardHeader className="p-6 pb-4 border-b border-border/60">
                   <CardTitle className="text-sm font-bold text-foreground flex items-center gap-2">
                     <MapPin className="w-4 h-4 text-rose-500" /> Detail Rincian Wilayah & Alamat
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="p-5 space-y-5 text-xs">
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                <CardContent className="p-6 space-y-6 text-xs">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-5">
                     <div>
                       <Label className="text-muted-foreground text-[10px] font-medium">Negara</Label>
                       <p className="font-semibold text-foreground mt-0.5">
@@ -933,8 +916,8 @@ export default function PropertyDetailPage() {
 
                   <div>
                     <Label className="text-muted-foreground text-[10px] font-medium">Alamat Lengkap</Label>
-                    <p className="font-medium text-foreground mt-1.5 leading-relaxed bg-muted/30 p-3 rounded-xl border border-border/50">
-                      address || addressObj?.full_address || property.address?.address || "Alamat lengkap belum dikonfigurasi"
+                    <p className="font-medium text-foreground mt-2 leading-relaxed bg-muted/30 p-4 rounded-2xl border border-border/50">
+                      {addressObj?.address || addressObj?.full_address || property.address?.address || "Alamat lengkap belum dikonfigurasi"}
                     </p>
                   </div>
                 </CardContent>
@@ -943,13 +926,13 @@ export default function PropertyDetailPage() {
 
             {/* TAB GALERI FOTO */}
             <TabsContent value="media" className="mt-5">
-              <Card className="border border-border/70 shadow-2xs rounded-2xl bg-card">
-                <CardHeader className="p-5 pb-3 border-b border-border/60">
+              <Card className="border border-border/70 shadow-2xs rounded-3xl bg-card overflow-hidden">
+                <CardHeader className="p-6 pb-4 border-b border-border/60">
                   <CardTitle className="text-sm font-bold text-foreground flex items-center gap-2">
                     <ImageIcon className="w-4 h-4 text-emerald-600" /> Dokumentasi Galeri Foto
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="p-5">
+                <CardContent className="p-6">
                   {allImages.length > 0 ? (
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                       {allImages.map((imageUrl, idx) => (
@@ -973,7 +956,7 @@ export default function PropertyDetailPage() {
                       ))}
                     </div>
                   ) : (
-                    <p className="text-muted-foreground text-center py-8 text-xs">Belum ada foto dokumentasi yang diunggah.</p>
+                    <p className="text-muted-foreground text-center py-10 text-xs italic">Belum ada foto dokumentasi yang diunggah.</p>
                   )}
                 </CardContent>
               </Card>
@@ -983,14 +966,15 @@ export default function PropertyDetailPage() {
 
         {/* KOLOM KANAN - SIDEBAR KONTROL & AGEN */}
         <div className="lg:col-span-1 space-y-6">
-          {/* CARD AGEN PENANGGUNG JAWAB */}
-          <Card className="border border-border/70 shadow-2xs rounded-2xl bg-card">
-            <CardHeader className="p-4 pb-3 border-b border-border/60">
+          {/* 🟢 CARD AGEN / PENANGGUNG JAWAB */}
+          <Card className="border border-border/70 shadow-2xs rounded-3xl bg-card overflow-hidden">
+            <CardHeader className="p-5 pb-3 border-b border-border/60">
               <CardTitle className="text-xs font-bold text-foreground flex items-center gap-2">
-                <Users className="h-4 w-4 text-emerald-600" /> Penanggung Jawab Properti (Agen)
+                <Users className="h-4 w-4 text-emerald-600" /> 
+                {userRole === "viewer" || userRole === "guest" ? "Agent" : "Penanggung Jawab Properti (Agen)"}
               </CardTitle>
             </CardHeader>
-            <CardContent className="p-4 space-y-4 text-xs">
+            <CardContent className="p-5 space-y-4 text-xs">
               {isSuperAdmin ? (
                 <div className="space-y-1.5">
                   <Label className="text-[10px] text-muted-foreground font-medium">Atur Agen Penanggung Jawab:</Label>
@@ -1000,7 +984,13 @@ export default function PropertyDetailPage() {
                     disabled={assignLoading}
                   >
                     <SelectTrigger className="w-full h-9 text-xs rounded-xl bg-background border-border/80">
-                      <SelectValue placeholder="Pilih agen resmi..." />
+                      <span>
+                        {agents.find((a) => a.id === property?.assigned_to)?.full_name ||
+                          agents.find((a) => a.id === property?.assigned_to)?.email ||
+                          assignedAgent?.full_name ||
+                          assignedAgent?.email ||
+                          "Pilih agen resmi..."}
+                      </span>
                     </SelectTrigger>
                     <SelectContent className="rounded-xl">
                       <SelectItem value="" className="text-xs text-rose-600 font-medium">❌ Tanpa Agen Penanggung Jawab</SelectItem>
@@ -1020,12 +1010,12 @@ export default function PropertyDetailPage() {
                     </SelectContent>
                   </Select>
                 </div>
-              ) : (
-                <div className="flex items-center gap-2 p-2.5 bg-muted/40 rounded-xl text-[11px] text-muted-foreground border border-border/50">
+              ) : userRole !== "viewer" && userRole !== "guest" ? (
+                <div className="flex items-center gap-2 p-3 bg-muted/40 rounded-2xl text-[11px] text-muted-foreground border border-border/50">
                   <Lock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
                   <span>Penugasan agen diatur oleh Super Admin.</span>
                 </div>
-              )}
+              ) : null}
 
               {assignedAgent ? (
                 <div className="p-4 bg-emerald-500/10 rounded-2xl border border-emerald-500/20 space-y-3">
@@ -1072,13 +1062,13 @@ export default function PropertyDetailPage() {
 
           {/* CARD PEMILIK PROPERTI */}
           {property.owner && (
-            <Card className="border border-border/70 shadow-2xs rounded-2xl bg-card">
-              <CardHeader className="p-4 pb-3 border-b border-border/60">
+            <Card className="border border-border/70 shadow-2xs rounded-3xl bg-card overflow-hidden">
+              <CardHeader className="p-5 pb-3 border-b border-border/60">
                 <CardTitle className="text-xs font-bold text-foreground flex items-center gap-2">
                   <User className="h-4 w-4 text-emerald-600" /> Pemilik Properti
                 </CardTitle>
               </CardHeader>
-              <CardContent className="p-4 space-y-3 text-xs">
+              <CardContent className="p-5 space-y-3 text-xs">
                 <div className="flex items-center gap-3">
                   <Avatar className="h-9 w-9 border border-border">
                     <AvatarFallback className="bg-emerald-500/10 text-emerald-700 font-bold text-xs">
@@ -1152,7 +1142,7 @@ export default function PropertyDetailPage() {
       {/* DIALOG UBAH STATUS */}
       {canEdit && (
         <Dialog open={showStatusDialog} onOpenChange={setShowStatusDialog}>
-          <DialogContent className="sm:max-w-md rounded-2xl">
+          <DialogContent className="sm:max-w-md rounded-3xl">
             <DialogHeader>
               <DialogTitle className="text-base font-bold">Ubah Status Publikasi</DialogTitle>
               <DialogDescription className="text-xs">
@@ -1175,10 +1165,10 @@ export default function PropertyDetailPage() {
               </Select>
             </div>
             <DialogFooter className="gap-2">
-              <Button variant="outline" size="sm" onClick={() => setShowStatusDialog(false)} className="text-xs rounded-xl">
+              <Button variant="outline" size="sm" onClick={() => setShowStatusDialog(false)} className="text-xs rounded-xl cursor-pointer">
                 Batal
               </Button>
-              <Button size="sm" onClick={handleUpdateStatus} disabled={updating} className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs rounded-xl">
+              <Button size="sm" onClick={handleUpdateStatus} disabled={updating} className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs rounded-xl cursor-pointer">
                 {updating && <Loader2 className="h-4 w-4 animate-spin mr-1.5" />}
                 Simpan Perubahan
               </Button>
@@ -1190,7 +1180,7 @@ export default function PropertyDetailPage() {
       {/* DIALOG HAPUS PROPERTI */}
       {canEdit && (
         <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-          <DialogContent className="sm:max-w-md rounded-2xl">
+          <DialogContent className="sm:max-w-md rounded-3xl">
             <DialogHeader>
               <DialogTitle className="text-base font-bold text-rose-600">⚠️ Konfirmasi Hapus Properti</DialogTitle>
               <DialogDescription className="text-xs">
@@ -1198,10 +1188,10 @@ export default function PropertyDetailPage() {
               </DialogDescription>
             </DialogHeader>
             <DialogFooter className="gap-2">
-              <Button variant="outline" size="sm" onClick={() => setShowDeleteDialog(false)} className="text-xs rounded-xl">
+              <Button variant="outline" size="sm" onClick={() => setShowDeleteDialog(false)} className="text-xs rounded-xl cursor-pointer">
                 Batal
               </Button>
-              <Button variant="destructive" size="sm" onClick={handleDelete} disabled={deleting} className="text-xs rounded-xl">
+              <Button variant="destructive" size="sm" onClick={handleDelete} disabled={deleting} className="text-xs rounded-xl cursor-pointer">
                 {deleting && <Loader2 className="h-4 w-4 animate-spin mr-1.5" />}
                 Hapus Permanen
               </Button>

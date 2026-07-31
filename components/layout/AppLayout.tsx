@@ -1,8 +1,11 @@
+// components/layout/app-layout.tsx
 "use client";
 
-import { AppSidebar as Sidebar } from "@/components/dashboard/app-sidebar";
-import { BottomNav } from "./BottomNav";
+import React from "react";
 import { usePathname } from "next/navigation";
+import { AppSidebar } from "@/components/dashboard/app-sidebar";
+import { BottomNav } from "./BottomNav";
+import { cn } from "@/lib/utils";
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -11,27 +14,51 @@ interface AppLayoutProps {
 export function AppLayout({ children }: AppLayoutProps) {
   const pathname = usePathname();
 
-  // Sembunyikan bottom nav di halaman tertentu jika perlu (misal: auth)
-  const hideNav = pathname?.startsWith("/login") || pathname?.startsWith("/register");
+  // Sembunyikan Sidebar & BottomNav untuk Halaman Autentikasi
+  const isAuthPage =
+    pathname?.startsWith("/login") ||
+    pathname?.startsWith("/register") ||
+    pathname?.startsWith("/forgot-password") ||
+    pathname?.startsWith("/reset-password");
+
+  // Layout Polos untuk Halaman Auth (Tanpa Sidebar / BottomNav)
+  if (isAuthPage) {
+    return (
+      <div className="min-h-[100dvh] w-full bg-background antialiased">
+        {children}
+      </div>
+    );
+  }
 
   return (
-    <div className="flex h-screen w-full bg-background">
-      {/* Desktop Sidebar */}
-      <aside className="hidden md:block w-64 border-r bg-card shrink-0 overflow-y-auto">
-        <Sidebar />
-      </aside>
+    <div className="relative flex h-[100dvh] max-h-[100dvh] w-full bg-background overflow-hidden antialiased">
+      {/* 1. DESKTOP SIDEBAR 
+          Dirender langsung tanpa pembungkus <aside> ganda agar logika collapse (w-16 <-> w-64)
+          berjalan secara responsif tanpa meninggalkan ruang kosong di samping.
+      */}
+      <div className="hidden md:flex shrink-0 h-full">
+        <AppSidebar />
+      </div>
 
-      {/* Main Content */}
-      <main className="flex-1 flex flex-col min-w-0 overflow-y-auto">
-        {children}
+      {/* 2. AREA KONTEN UTAMA
+          - `flex-1 min-w-0`: Mencegah layout pecah saat ada tabel/elemen lebar.
+          - `pb-20 md:pb-0`: Memberikan padding bawah khusus mobile agar elemen paling bawah 
+            tidak tertutup oleh BottomNav.
+          - `h-[100dvh] overflow-y-auto`: Menjaga pergerakan scroll sangat halus di HP & PC.
+      */}
+      <main
+        className={cn(
+          "flex-1 flex flex-col min-w-0 h-full overflow-y-auto overflow-x-hidden",
+          "pb-20 md:pb-0"
+        )}
+      >
+        <div className="flex-1 w-full">{children}</div>
       </main>
 
-      {/* Mobile Bottom Navigation */}
-      {!hideNav && (
-        <nav className="fixed bottom-0 left-0 right-0 border-t bg-background md:hidden h-16 z-50">
-          <BottomNav />
-        </nav>
-      )}
+      {/* 3. MOBILE BOTTOM NAVIGATION */}
+      <BottomNav />
     </div>
   );
 }
+
+export default AppLayout;

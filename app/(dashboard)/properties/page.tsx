@@ -1,7 +1,7 @@
 // app/(dashboard)/properties/page.tsx
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, Suspense } from "react";
+import { useState, useEffect, useMemo, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 
@@ -12,6 +12,27 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
 import {
@@ -32,6 +53,12 @@ import {
   Bed,
   Bath,
   Maximize2,
+  SlidersHorizontal,
+  RotateCcw,
+  Tag,
+  Edit,
+  Trash2,
+  MoreVertical,
 } from "lucide-react";
 
 export interface PropertyItem {
@@ -40,7 +67,7 @@ export interface PropertyItem {
   listing_code: string;
   listing_type: "jual" | "sewa" | "sale" | "rent" | string;
   property_type: string;
-  status: "published" | "draft" | "sold" | "rented" | "available" | "review" | string;
+  status: string;
   price: number;
   location: string;
   land_area: number;
@@ -49,8 +76,6 @@ export interface PropertyItem {
   bathrooms: number;
   thumbnail: string;
   certificate_status: string;
-  owner_name: string;
-  owner_phone: string;
   description: string;
   created_by?: string;
   assigned_to?: string;
@@ -58,15 +83,6 @@ export interface PropertyItem {
   uploader_name: string;
   uploader_avatar: string;
 }
-
-const statusConfig: Record<string, { label: string; bg: string; text: string }> = {
-  published: { label: "Dipublikasikan", bg: "bg-emerald-500/10 border-emerald-500/20", text: "text-emerald-700 dark:text-emerald-400" },
-  available: { label: "Tersedia", bg: "bg-emerald-500/10 border-emerald-500/20", text: "text-emerald-700 dark:text-emerald-400" },
-  draft: { label: "Draf", bg: "bg-amber-500/10 border-amber-500/20", text: "text-amber-700 dark:text-amber-400" },
-  review: { label: "Peninjauan", bg: "bg-amber-500/10 border-amber-500/20", text: "text-amber-700 dark:text-amber-400" },
-  sold: { label: "Terjual", bg: "bg-slate-500/10 border-slate-500/20", text: "text-slate-700 dark:text-slate-400" },
-  rented: { label: "Tersewa", bg: "bg-blue-500/10 border-blue-500/20", text: "text-blue-700 dark:text-blue-400" },
-};
 
 const DEFAULT_FALLBACK_IMAGE =
   "https://images.unsplash.com/photo-1564013799919-ab600027ffc6?auto=format&fit=crop&w=800&q=80";
@@ -147,7 +163,6 @@ const mapPropertyItem = (
         addressObj.address,
         addressObj.district_name || addressObj.district,
         addressObj.city_name || addressObj.city,
-        addressObj.province_name || addressObj.province,
       ].filter(Boolean);
       locationStr = parts.length > 0 ? parts.join(", ") : "Lokasi Terverifikasi";
     }
@@ -156,9 +171,7 @@ const mapPropertyItem = (
   }
 
   const legalObj = Array.isArray(p.legalities) ? p.legalities[0] : p.legalities;
-  const ownerObj = Array.isArray(p.owner) ? p.owner[0] : p.owner;
 
-  // 🔹 PEMANCETAN PROFIL PENGUNGGAH DARI TABEL user_profiles SUPABASE
   const uploaderId = p.created_by || p.user_id || "";
   const profileFromJoin = Array.isArray(p.user_profiles) ? p.user_profiles[0] : p.user_profiles;
   const profileFromMap = uploaderId ? profilesMap[uploaderId] : null;
@@ -192,8 +205,6 @@ const mapPropertyItem = (
     bathrooms: bathrooms,
     thumbnail: thumbnail,
     certificate_status: specObj?.certificate || legalObj?.certificate_type || p.certificate_status || "SHM",
-    owner_name: ownerObj?.full_name || ownerObj?.owner_name || p.owner_name || "Perusahaan Internal",
-    owner_phone: ownerObj?.phone || ownerObj?.owner_phone || p.owner_phone || "",
     description: p.description || "",
     created_by: uploaderId,
     assigned_to: p.assigned_to || "",
@@ -207,10 +218,26 @@ function PropertiesCatalogContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const [searchInput, setSearchInput] = useState("");
-  const [activeTab] = useState<string>("all");
-  const [viewMode, setViewMode] = useState<"grid" | "table">("grid");
+  // URL Params
+  const qParam = searchParams.get("q") || searchParams.get("search") || "";
+  const initialListingType = searchParams.get("listing_type") || "all";
+  const initialPropertyType = searchParams.get("property_type") || "all";
 
+  // Filter States
+  const [searchInput, setSearchInput] = useState(qParam);
+  const [listingTypeFilter, setListingTypeFilter] = useState<string>(initialListingType);
+  const [propertyTypeFilter, setPropertyTypeFilter] = useState<string>(initialPropertyType);
+
+  // Advanced Filter States
+  const [minPrice, setMinPrice] = useState(searchParams.get("priceMin") || "");
+  const [maxPrice, setMaxPrice] = useState(searchParams.get("priceMax") || "");
+  const [minBuildingArea, setMinBuildingArea] = useState(searchParams.get("buildingAreaMin") || "");
+  const [maxBuildingArea, setMaxBuildingArea] = useState(searchParams.get("buildingAreaMax") || "");
+  const [minLandArea, setMinLandArea] = useState(searchParams.get("landAreaMin") || "");
+  const [maxLandArea, setMaxLandArea] = useState(searchParams.get("landAreaMax") || "");
+
+  // View mode & user states
+  const [viewMode, setViewMode] = useState<"grid" | "table">("grid");
   const [currentUser, setCurrentUser] = useState<{ id: string; role: string } | null>(null);
   const [profilesMap, setProfilesMap] = useState<Record<string, { full_name: string; avatar_url: string }>>({});
 
@@ -238,34 +265,25 @@ function PropertiesCatalogContent() {
           }
         }
       } catch (err) {
-        console.error("Gagal memuat data pengguna:", err);
+        console.error("Gagal memuat pengguna:", err);
       }
     }
     fetchUser();
   }, []);
 
-  useEffect(() => {
-    if (viewParam === "global") setScopeMode("global");
-  }, [viewParam]);
-
   const isSuperAdmin = currentUser?.role === "super_admin" || currentUser?.role === "superadmin";
   const isViewer = currentUser?.role === "viewer";
-
-  const qParam = searchParams.get("q") || "";
-  const listingTypeParam = searchParams.get("listing_type") || "";
-  const propertyTypeParam = searchParams.get("property_type") || "";
-  const cityParam = searchParams.get("city") || "";
-  const provinceParam = searchParams.get("province") || "";
-
-  const hasDashboardFilter = !!(qParam || listingTypeParam || propertyTypeParam || cityParam || provinceParam);
 
   const {
     data: rawProperties = [],
     loading,
     refetch,
-  } = useProperties();
+  } = useProperties({
+     search: searchInput,
+     listing_type: listingTypeFilter as any, // Mengatasi mismatch tipe string vs ListingType
+     property_type: propertyTypeFilter as any,
+   });
 
-  // 🔹 FETCH DATA PROFIL PENGUNGGAH DARI TABEL "users" (sumber kebenaran profil user)
   useEffect(() => {
     async function fetchProfiles() {
       if (!rawProperties || rawProperties.length === 0) return;
@@ -281,15 +299,10 @@ function PropertiesCatalogContent() {
       if (userIds.length === 0) return;
 
       try {
-        const { data, error } = await supabase
+        const { data } = await supabase
           .from("users")
           .select("id, full_name, avatar_url")
           .in("id", userIds);
-
-        if (error) {
-          console.error("Gagal mengambil data users:", error);
-          return;
-        }
 
         if (data) {
           const map: Record<string, { full_name: string; avatar_url: string }> = {};
@@ -313,10 +326,6 @@ function PropertiesCatalogContent() {
     return (rawProperties || []).map((p) => mapPropertyItem(p, profilesMap));
   }, [rawProperties, profilesMap]);
 
-  useEffect(() => {
-    if (qParam) setSearchInput(qParam);
-  }, [qParam]);
-
   const handleToggleFeatured = async (property: PropertyItem, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     if (!isSuperAdmin) return;
@@ -330,15 +339,23 @@ function PropertiesCatalogContent() {
 
       if (updateErr) throw updateErr;
 
-      toast.success(
-        nextVal
-          ? `Properti '${property.title}' berhasil ditetapkan sebagai Properti Unggulan.`
-          : `Status Unggulan pada properti '${property.title}' telah dicabut.`
-      );
-
+      toast.success(nextVal ? "Diatur sebagai Unggulan" : "Status Unggulan dicabut");
       refetch?.();
     } catch (err: any) {
-      toast.error("Gagal memperbarui status unggulan: " + (err.message || err));
+      toast.error("Gagal update unggulan");
+    }
+  };
+
+  const handleDelete = async (id: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (!confirm("Hapus properti ini?")) return;
+    try {
+      const { error } = await supabase.from("properties").delete().eq("id", id);
+      if (error) throw error;
+      toast.success("Properti berhasil dihapus");
+      refetch?.();
+    } catch (err: any) {
+      toast.error("Gagal menghapus properti");
     }
   };
 
@@ -358,31 +375,35 @@ function PropertiesCatalogContent() {
   const handleSendWABrochure = (property: PropertyItem, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     const text = encodeURIComponent(
-      `🏠 *BROSUR RESMI PROPERTI: ${property.title.toUpperCase()}*\n\n` +
+      `🏠 *PROPERTI: ${property.title.toUpperCase()}*\n\n` +
       `📍 *Lokasi*: ${property.location}\n` +
       `💰 *Harga*: ${formatCurrency(property.price)}\n` +
       `📐 *Spesifikasi*: LT ${property.land_area || 0} m² | LB ${property.building_area || 0} m² | ${property.bedrooms || 0} KT | ${property.bathrooms || 0} KM\n` +
-      `📋 *Legalitas*: ${property.certificate_status || "Sertifikat Terverifikasi"}\n` +
-      `🔖 *Kode Listing*: ${property.listing_code}\n\n` +
-      `Untuk informasi lebih lanjut serta penjadwalan survei lokasi, silakan hubungi Tim Penjualan Inland Property.`
+      `🔖 *Kode*: ${property.listing_code}\n`
     );
     window.open(`https://wa.me/?text=${text}`, "_blank");
   };
 
-  // FILTERING DATA
+  const handleResetFilters = () => {
+    setSearchInput("");
+    setListingTypeFilter("all");
+    setPropertyTypeFilter("all");
+    setMinPrice("");
+    setMaxPrice("");
+    setMinBuildingArea("");
+    setMaxBuildingArea("");
+    setMinLandArea("");
+    setMaxLandArea("");
+    router.push("/properties");
+  };
+
   const filteredProperties = useMemo(() => {
     return properties.filter((item) => {
-      if (isViewer) {
-        if (item.status !== "published" && item.status !== "available") {
-          return false;
-        }
-      }
+      if (isViewer && item.status !== "published" && item.status !== "available") return false;
 
-      if (scopeMode === "my_properties" && currentUser && !isViewer) {
-        if (!isSuperAdmin) {
-          const isOwner = item.created_by === currentUser.id || item.assigned_to === currentUser.id;
-          if (!isOwner) return false;
-        }
+      if (scopeMode === "my_properties" && currentUser && !isViewer && !isSuperAdmin) {
+        const isOwner = item.created_by === currentUser.id || item.assigned_to === currentUser.id;
+        if (!isOwner) return false;
       }
 
       const query = searchInput.trim().toLowerCase();
@@ -392,75 +413,131 @@ function PropertiesCatalogContent() {
         item.location.toLowerCase().includes(query) ||
         item.listing_code.toLowerCase().includes(query);
 
-      let matchTab = true;
-      if (activeTab === "published") matchTab = item.status === "published" || item.status === "available";
-      else if (activeTab === "draft") matchTab = item.status === "draft" || item.status === "review";
-      else if (activeTab === "sold_rented") matchTab = item.status === "sold" || item.status === "rented";
-
       let matchListingType = true;
-      if (listingTypeParam && listingTypeParam !== "all") {
-        matchListingType = item.listing_type.toLowerCase() === listingTypeParam.toLowerCase();
+      if (listingTypeFilter && listingTypeFilter !== "all") {
+        const typeNorm = item.listing_type.toLowerCase();
+        if (listingTypeFilter === "dijual") {
+          matchListingType = typeNorm === "jual" || typeNorm === "dijual" || typeNorm === "sale";
+        } else if (listingTypeFilter === "disewa") {
+          matchListingType = typeNorm === "sewa" || typeNorm === "disewa" || typeNorm === "rent";
+        }
       }
 
-      return matchSearch && matchTab && matchListingType;
+      let matchPropertyType = true;
+      if (propertyTypeFilter && propertyTypeFilter !== "all") {
+        matchPropertyType = item.property_type.toLowerCase() === propertyTypeFilter.toLowerCase();
+      }
+
+      const itemPrice = item.price || 0;
+      const matchMinPrice = !minPrice || itemPrice >= Number(minPrice);
+      const matchMaxPrice = !maxPrice || itemPrice <= Number(maxPrice);
+
+      const itemLB = item.building_area || 0;
+      const matchMinLB = !minBuildingArea || itemLB >= Number(minBuildingArea);
+      const matchMaxLB = !maxBuildingArea || itemLB <= Number(maxBuildingArea);
+
+      const itemLT = item.land_area || 0;
+      const matchMinLT = !minLandArea || itemLT >= Number(minLandArea);
+      const matchMaxLT = !maxLandArea || itemLT <= Number(maxLandArea);
+
+      return (
+        matchSearch &&
+        matchListingType &&
+        matchPropertyType &&
+        matchMinPrice &&
+        matchMaxPrice &&
+        matchMinLB &&
+        matchMaxLB &&
+        matchMinLT &&
+        matchMaxLT
+      );
     });
-  }, [properties, searchInput, activeTab, scopeMode, currentUser, isViewer, isSuperAdmin, listingTypeParam]);
+  }, [
+    properties,
+    searchInput,
+    scopeMode,
+    currentUser,
+    isViewer,
+    isSuperAdmin,
+    listingTypeFilter,
+    propertyTypeFilter,
+    minPrice,
+    maxPrice,
+    minBuildingArea,
+    maxBuildingArea,
+    minLandArea,
+    maxLandArea,
+  ]);
 
   return (
-    <div className="space-y-8 pb-20 max-w-7xl mx-auto px-4 sm:px-6">
+    <div className="space-y-6 pb-20 max-w-7xl mx-auto px-4 sm:px-6 bg-[#FDFBF7]/50 min-h-screen">
       {/* 1. HEADER PAGE */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-border/60 pb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-[#F4EFE6] pb-5">
         <div>
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground">
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900">
               {isViewer
-                ? "Katalog Properti Resmi"
+                ? "Katalog Properti"
                 : scopeMode === "my_properties"
-                ? "Portofolio Properti Saya"
-                : "Katalog Properti Perusahaan"}
+                ? "Portofolio Saya"
+                : "Katalog Perusahaan"}
             </h1>
-            <Badge
-              variant="outline"
-              className={cn(
-                "text-[10px] font-bold uppercase tracking-wider px-3 py-1 rounded-full border shadow-2xs",
-                isViewer || scopeMode === "global"
-                  ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20"
-                  : "bg-purple-500/10 text-purple-700 dark:text-purple-400 border-purple-500/20"
-              )}
-            >
-              {isViewer ? "Portal Akses Klien" : scopeMode === "my_properties" ? "Akses Pribadi" : "Akses Perusahaan"}
+            <Badge variant="outline" className="text-[10px] bg-[#F4EFE6] text-emerald-900 border-emerald-200">
+              {isViewer ? "Klien" : scopeMode === "my_properties" ? "Pribadi" : "Perusahaan"}
             </Badge>
           </div>
-          <p className="text-xs sm:text-sm text-muted-foreground mt-1.5 font-normal max-w-2xl">
-            {isViewer
-              ? "Jelajahi pilihan properti terverifikasi dengan standar kualitas eksklusif dari Inland Property."
-              : scopeMode === "my_properties"
-              ? "Kelola seluruh daftar inventaris properti yang Anda daftarkan secara terstruktur."
-              : "Seluruh portofolio properti perusahaan dari agen dan konsultan properti resmi."}
+          <p className="text-xs text-slate-500 mt-1">
+            Kelola dan cari portofolio properti dengan mudah dan cepat.
           </p>
         </div>
 
-        {!isViewer && currentUser?.role !== "commissioner" && (
-          <Button
-            onClick={() => router.push("/properties/create")}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm hover:shadow text-xs font-semibold gap-2 shrink-0 h-10 px-5 rounded-xl cursor-pointer transition-all"
-          >
-            <Plus className="h-4 w-4" /> Tambah Properti
+        <div className="flex items-center gap-2">
+          {/* Toggle View Mode */}
+          <div className="flex items-center border border-[#F4EFE6] rounded-xl p-1 bg-white shadow-2xs">
+            <Button
+              variant={viewMode === "grid" ? "default" : "ghost"}
+              size="sm"
+              onClick={() => setViewMode("grid")}
+              className={cn("h-8 px-3 text-xs gap-1.5 rounded-lg cursor-pointer", viewMode === "grid" ? "bg-emerald-600 text-white" : "text-slate-600")}
+            >
+              <LayoutGrid className="w-3.5 h-3.5" /> Grid
+            </Button>
+            <Button
+              variant={viewMode === "table" ? "default" : "ghost"}
+              size="sm"
+              onClick={() => setViewMode("table")}
+              className={cn("h-8 px-3 text-xs gap-1.5 rounded-lg cursor-pointer", viewMode === "table" ? "bg-emerald-600 text-white" : "text-slate-600")}
+            >
+              <List className="w-3.5 h-3.5" /> Tabel
+            </Button>
+          </div>
+
+          <Button variant="outline" size="icon" onClick={() => refetch?.()} className="h-9 w-9 rounded-xl border-[#F4EFE6] bg-white cursor-pointer">
+            <RefreshCw className="w-3.5 h-3.5 text-slate-600" />
           </Button>
-        )}
+
+          {!isViewer && (
+            <Button
+              onClick={() => router.push("/properties/create")}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium gap-1.5 h-9 px-4 rounded-xl cursor-pointer shadow-2xs"
+            >
+              <Plus className="h-4 w-4" /> Tambah
+            </Button>
+          )}
+        </div>
       </div>
 
-      {/* 2. TOGGLE SWITCHER SCOPE */}
+      {/* 2. TOGGLE SCOPE */}
       {!isViewer && (
-        <div className="flex flex-col sm:flex-row items-center justify-between bg-muted/30 p-2 rounded-2xl border border-border/60 gap-3 backdrop-blur-md">
-          <div className="flex items-center gap-2 w-full sm:w-auto">
+        <div className="flex items-center justify-between bg-[#F4EFE6]/60 p-1.5 rounded-xl border border-[#F4EFE6]">
+          <div className="flex items-center gap-1.5 w-full sm:w-auto">
             <Button
               variant={scopeMode === "my_properties" ? "default" : "ghost"}
               size="sm"
               onClick={() => setScopeMode("my_properties")}
               className={cn(
-                "text-xs font-medium h-9 rounded-xl gap-2 flex-1 sm:flex-initial cursor-pointer transition-all",
-                scopeMode === "my_properties" && "bg-slate-900 text-white dark:bg-emerald-600 shadow-xs"
+                "text-xs h-8 rounded-lg gap-1.5 cursor-pointer",
+                scopeMode === "my_properties" ? "bg-emerald-600 text-white" : "text-slate-700 hover:bg-white/50"
               )}
             >
               <User className="w-3.5 h-3.5" /> Portofolio Saya
@@ -470,208 +547,275 @@ function PropertiesCatalogContent() {
               size="sm"
               onClick={() => setScopeMode("global")}
               className={cn(
-                "text-xs font-medium h-9 rounded-xl gap-2 flex-1 sm:flex-initial cursor-pointer transition-all",
-                scopeMode === "global" && "bg-slate-900 text-white dark:bg-emerald-600 shadow-xs"
+                "text-xs h-8 rounded-lg gap-1.5 cursor-pointer",
+                scopeMode === "global" ? "bg-emerald-600 text-white" : "text-slate-700 hover:bg-white/50"
               )}
             >
               <Globe className="w-3.5 h-3.5" /> Katalog Perusahaan
             </Button>
           </div>
-
-          {isSuperAdmin && (
-            <span className="text-xs text-amber-600 dark:text-amber-400 font-medium px-3 hidden md:flex items-center gap-1.5">
-              <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500" /> Mode Super Admin: Klik ikon bintang untuk mengatur Properti Unggulan
-            </span>
-          )}
         </div>
       )}
 
-      {/* BANNER FILTER DASHBOARD */}
-      {hasDashboardFilter && (
-        <div className="bg-emerald-500/10 border border-emerald-500/20 p-4 rounded-2xl flex items-center justify-between text-xs backdrop-blur-sm">
-          <span className="text-emerald-800 dark:text-emerald-300 font-medium flex items-center gap-2">
-            <Filter className="w-4 h-4 text-emerald-600" /> Menampilkan Hasil Filter Pencarian Dashboard
-          </span>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => router.push("/properties")}
-            className="h-7 text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-500/10 gap-1.5 cursor-pointer rounded-lg"
-          >
-            <X className="w-3.5 h-3.5" /> Reset Filter
-          </Button>
-        </div>
-      )}
-
-      {/* 3. SEARCH & CONTROLS */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-        <div className="relative w-full sm:w-80">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Cari nama properti, lokasi, atau kode listing..."
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            className="pl-10 h-10 text-xs rounded-xl bg-background border-border/80 shadow-2xs focus-visible:ring-emerald-500"
-          />
-        </div>
-
-        <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-          <Button variant="outline" size="icon" onClick={() => refetch?.()} className="h-10 w-10 rounded-xl cursor-pointer">
-            <RefreshCw className="w-4 h-4 text-muted-foreground" />
-          </Button>
-
-          <div className="flex items-center border border-border/80 rounded-xl p-1 bg-muted/40">
-            <Button
-              variant={viewMode === "grid" ? "secondary" : "ghost"}
-              size="sm"
-              onClick={() => setViewMode("grid")}
-              className={cn("h-8 px-3 text-xs gap-1.5 rounded-lg cursor-pointer", viewMode === "grid" && "bg-background shadow-2xs font-medium")}
-            >
-              <LayoutGrid className="w-3.5 h-3.5" /> Grid
-            </Button>
-            <Button
-              variant={viewMode === "table" ? "secondary" : "ghost"}
-              size="sm"
-              onClick={() => setViewMode("table")}
-              className={cn("h-8 px-3 text-xs gap-1.5 rounded-lg cursor-pointer", viewMode === "table" && "bg-background shadow-2xs font-medium")}
-            >
-              <List className="w-3.5 h-3.5" /> Tabel
-            </Button>
-          </div>
-        </div>
+      {/* 3. SEARCH BAR UTAMA */}
+      <div className="relative">
+        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+        <Input
+          placeholder="Cari nama properti, lokasi, atau kode listing..."
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+          className="pl-10 h-10 text-xs rounded-xl border-[#F4EFE6] bg-white shadow-2xs focus-visible:ring-emerald-600"
+        />
       </div>
 
-      {/* 4. MAIN LIST PROPERTI */}
+      {/* 4. TOMBOL FILTER BESAR: DIJUAL & DISEWA */}
+      <div className="grid grid-cols-2 gap-3">
+        <Button
+          type="button"
+          size="lg"
+          variant="outline"
+          onClick={() => setListingTypeFilter(listingTypeFilter === "dijual" ? "all" : "dijual")}
+          className={cn(
+            "h-12 text-xs sm:text-sm font-semibold gap-2 rounded-xl border transition-all cursor-pointer shadow-2xs",
+            listingTypeFilter === "dijual"
+              ? "bg-emerald-600 border-emerald-600 text-white hover:bg-emerald-700"
+              : "bg-white border-[#F4EFE6] text-slate-700 hover:bg-[#F4EFE6]/40"
+          )}
+        >
+          <Tag className="w-4 h-4" />
+          DIJUAL
+        </Button>
+        <Button
+          type="button"
+          size="lg"
+          variant="outline"
+          onClick={() => setListingTypeFilter(listingTypeFilter === "disewa" ? "all" : "disewa")}
+          className={cn(
+            "h-12 text-xs sm:text-sm font-semibold gap-2 rounded-xl border transition-all cursor-pointer shadow-2xs",
+            listingTypeFilter === "disewa"
+              ? "bg-emerald-600 border-emerald-600 text-white hover:bg-emerald-700"
+              : "bg-white border-[#F4EFE6] text-slate-700 hover:bg-[#F4EFE6]/40"
+          )}
+        >
+          <Building2 className="w-4 h-4" />
+          DISEWA
+        </Button>
+      </div>
+
+      {/* 5. FILTER LANJUTAN */}
+      <Card className="border border-[#F4EFE6] bg-white shadow-2xs rounded-xl">
+        <CardContent className="p-4 space-y-3">
+          <div className="flex items-center justify-between border-b border-[#F4EFE6] pb-2.5">
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-800">
+              <SlidersHorizontal className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Filter Lanjutan</span>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleResetFilters}
+              className="h-7 text-xs text-slate-500 hover:text-slate-800 gap-1 cursor-pointer"
+            >
+              <RotateCcw className="w-3 h-3" />
+              Reset
+            </Button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-slate-500">Kategori</label>
+             <Select value={propertyTypeFilter} onValueChange={(val) => setPropertyTypeFilter(val ?? "")}>
+                <SelectTrigger className="h-8 text-xs rounded-lg border-[#F4EFE6] bg-[#FDFBF7]">
+                  <SelectValue placeholder="Semua Kategori" />
+                </SelectTrigger>
+                <SelectContent className="rounded-lg">
+                  <SelectItem value="all">Semua Kategori</SelectItem>
+                  <SelectItem value="rumah">Rumah</SelectItem>
+                  <SelectItem value="apartemen">Apartemen</SelectItem>
+                  <SelectItem value="ruko">Ruko</SelectItem>
+                  <SelectItem value="tanah">Tanah</SelectItem>
+                  <SelectItem value="gudang">Gudang</SelectItem>
+                  <SelectItem value="villa">Villa</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-slate-500">Harga (IDR)</label>
+              <div className="flex items-center gap-1.5">
+                <Input
+                  type="number"
+                  placeholder="Min"
+                  value={minPrice}
+                  onChange={(e) => setMinPrice(e.target.value)}
+                  className="h-8 text-xs rounded-lg border-[#F4EFE6] bg-[#FDFBF7]"
+                />
+                <span className="text-slate-400 text-xs">-</span>
+                <Input
+                  type="number"
+                  placeholder="Max"
+                  value={maxPrice}
+                  onChange={(e) => setMaxPrice(e.target.value)}
+                  className="h-8 text-xs rounded-lg border-[#F4EFE6] bg-[#FDFBF7]"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-slate-500">Luas Bangunan (LB m²)</label>
+              <div className="flex items-center gap-1.5">
+                <Input
+                  type="number"
+                  placeholder="Min"
+                  value={minBuildingArea}
+                  onChange={(e) => setMinBuildingArea(e.target.value)}
+                  className="h-8 text-xs rounded-lg border-[#F4EFE6] bg-[#FDFBF7]"
+                />
+                <span className="text-slate-400 text-xs">-</span>
+                <Input
+                  type="number"
+                  placeholder="Max"
+                  value={maxBuildingArea}
+                  onChange={(e) => setMaxBuildingArea(e.target.value)}
+                  className="h-8 text-xs rounded-lg border-[#F4EFE6] bg-[#FDFBF7]"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-slate-500">Luas Tanah (LT m²)</label>
+              <div className="flex items-center gap-1.5">
+                <Input
+                  type="number"
+                  placeholder="Min"
+                  value={minLandArea}
+                  onChange={(e) => setMinLandArea(e.target.value)}
+                  className="h-8 text-xs rounded-lg border-[#F4EFE6] bg-[#FDFBF7]"
+                />
+                <span className="text-slate-400 text-xs">-</span>
+                <Input
+                  type="number"
+                  placeholder="Max"
+                  value={maxLandArea}
+                  onChange={(e) => setMaxLandArea(e.target.value)}
+                  className="h-8 text-xs rounded-lg border-[#F4EFE6] bg-[#FDFBF7]"
+                />
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* 6. MAIN LIST PROPERTI */}
       {loading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {[...Array(8)].map((_, i) => (
-            <Skeleton key={i} className="h-80 w-full rounded-2xl" />
+            <Skeleton key={i} className="h-72 w-full rounded-xl bg-[#F4EFE6]/50" />
           ))}
         </div>
       ) : filteredProperties.length === 0 ? (
-        <Card className="border border-border/60 p-12 text-center space-y-4 rounded-2xl shadow-2xs bg-card">
-          <Building2 className="w-12 h-12 text-muted-foreground/30 mx-auto" />
-          <h3 className="text-base font-semibold text-foreground">Properti Tidak Ditemukan</h3>
-          <p className="text-xs sm:text-sm text-muted-foreground max-w-sm mx-auto">
-            {scopeMode === "my_properties"
-              ? "Anda belum mendaftarkan properti. Silakan tambah properti pertama Anda melalui tombol di bawah."
-              : "Tidak ada data properti yang sesuai dengan kriteria pencarian Anda."}
+        <Card className="border border-[#F4EFE6] p-10 text-center space-y-3 rounded-xl bg-white shadow-2xs">
+          <Building2 className="w-10 h-10 text-slate-300 mx-auto" />
+          <h3 className="text-sm font-semibold text-slate-800">Tidak ada properti ditemukan</h3>
+          <p className="text-xs text-slate-500 max-w-xs mx-auto">
+            Coba atur ulang kata kunci atau filter pencarian Anda.
           </p>
-          {scopeMode === "my_properties" && !isViewer && (
-            <Button onClick={() => router.push("/properties/create")} className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold gap-2 rounded-xl mt-2 cursor-pointer">
-              <Plus className="w-4 h-4" /> Tambah Properti Baru
-            </Button>
-          )}
         </Card>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+      ) : viewMode === "grid" ? (
+        /* ================= 🔲 GRID VIEW (HERO MINIMALIS) ================= */
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {filteredProperties.map((prop) => {
-            const st = statusConfig[prop.status] || statusConfig.published;
+            const isRent = prop.listing_type === "sewa" || prop.listing_type === "disewa" || prop.listing_type === "rent";
 
             return (
               <Card
                 key={prop.id}
                 onClick={() => goToDetail(prop.id)}
-                className="group border border-border/70 shadow-2xs hover:shadow-xl hover:border-emerald-500/40 transition-all duration-300 rounded-2xl overflow-hidden cursor-pointer flex flex-col justify-between bg-card"
+                className="group border border-[#F4EFE6] shadow-2xs hover:shadow-md hover:border-emerald-600/40 transition-all rounded-xl overflow-hidden cursor-pointer flex flex-col justify-between bg-white"
               >
                 <div>
-                  {/* Foto Properti & Overlay */}
-                  <div className="relative aspect-[16/10] bg-muted overflow-hidden">
+                  {/* Foto Properti */}
+                  <div className="relative aspect-[16/10] bg-[#F4EFE6] overflow-hidden">
                     <img
                       src={prop.thumbnail}
                       alt={prop.title}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                       onError={(e) => {
                         (e.target as HTMLImageElement).src = DEFAULT_FALLBACK_IMAGE;
                       }}
                     />
-                    <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-slate-950/20 to-transparent opacity-90" />
 
-                    {/* Tombol Unggulan (Super Admin) */}
+                    {/* Super Admin Star */}
                     {isSuperAdmin && (
                       <button
                         type="button"
                         onClick={(e) => handleToggleFeatured(prop, e)}
-                        title={prop.is_featured ? "Hapus dari Properti Unggulan" : "Tetapkan sebagai Properti Unggulan"}
-                        className="absolute top-3 right-3 p-2 rounded-full bg-slate-900/80 backdrop-blur-md hover:scale-110 transition shadow-md z-10 cursor-pointer"
+                        className="absolute top-2 right-2 p-1.5 rounded-full bg-white/90 backdrop-blur-xs transition shadow-xs z-10 cursor-pointer"
                       >
                         <Star
                           className={cn(
-                            "w-4 h-4 transition-colors",
-                            prop.is_featured
-                              ? "fill-amber-400 text-amber-400"
-                              : "text-slate-300 hover:text-amber-400"
+                            "w-3.5 h-3.5",
+                            prop.is_featured ? "fill-amber-400 text-amber-400" : "text-slate-400"
                           )}
                         />
                       </button>
                     )}
 
-                    {/* Status Listing & Badge */}
-                    <div className="absolute top-3 left-3 flex items-center gap-2">
-                      <Badge className={cn("text-[10px] font-bold px-2.5 py-0.5 shadow-2xs uppercase tracking-wider text-white border-0", prop.listing_type === "sewa" ? "bg-amber-600" : "bg-emerald-600")}>
-                        {prop.listing_type === "sewa" ? "DISEWA" : "DIJUAL"}
-                      </Badge>
-                      <Badge variant="outline" className={cn("text-[10px] font-semibold px-2.5 py-0.5 backdrop-blur-md border", st.bg, st.text)}>
-                        {st.label}
+                    {/* Badge Tipe Listing Minimalis */}
+                    <div className="absolute top-2 left-2">
+                      <Badge className={cn("text-[9px] font-bold px-2 py-0.5 uppercase tracking-wide text-white border-0 rounded-md", isRent ? "bg-slate-800" : "bg-emerald-600")}>
+                        {isRent ? "SEWA" : "JUAL"}
                       </Badge>
                     </div>
 
-                    {/* Price Tag & Kode Listing */}
-                    <div className="absolute bottom-3 left-3 right-3 flex items-end justify-between">
-                      <div className="text-white font-mono font-bold text-sm bg-slate-950/70 px-3 py-1 rounded-xl backdrop-blur-md border border-white/10 shadow-xs">
-                        {formatCurrency(prop.price)}
-                      </div>
-                      <span className="text-[10px] font-mono font-medium text-white/90 bg-slate-950/60 px-2 py-0.5 rounded-lg backdrop-blur-md border border-white/10">
+                    {/* Kode Listing Kecil di Pojok Bawah Foto */}
+                    <div className="absolute bottom-2 right-2">
+                      <span className="text-[9px] font-mono font-medium text-slate-700 bg-white/90 px-1.5 py-0.5 rounded border border-[#F4EFE6]">
                         {prop.listing_code}
                       </span>
                     </div>
                   </div>
 
-                  {/* Informasi Properti */}
-                  <CardContent className="p-4 space-y-3">
-                    <h3 className="font-bold text-sm line-clamp-1 group-hover:text-emerald-600 transition-colors tracking-tight text-foreground">
+                  {/* Informasi Ringkas Properti */}
+                  <CardContent className="p-3.5 space-y-2">
+                    <div className="text-base font-bold text-emerald-600">
+                      {formatCurrency(prop.price)}
+                    </div>
+
+                    <h3 className="font-semibold text-xs text-slate-900 line-clamp-1 group-hover:text-emerald-600 transition-colors">
                       {prop.title}
                     </h3>
-                    <p className="text-xs text-muted-foreground flex items-center gap-1.5 truncate">
-                      <MapPin className="w-3.5 h-3.5 text-rose-500 shrink-0" /> {prop.location}
+
+                    <p className="text-[11px] text-slate-500 flex items-center gap-1 truncate">
+                      <MapPin className="w-3 h-3 text-emerald-600 shrink-0" /> {prop.location}
                     </p>
 
-                    {/* Spesifikasi Properti */}
-                    <div className="grid grid-cols-3 gap-2 pt-3 border-t border-border/50 text-xs text-muted-foreground font-medium">
-                      <div className="flex items-center gap-1.5">
-                        <Bed className="w-3.5 h-3.5 text-emerald-600" />
-                        <span>{prop.bedrooms || 0} KT</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <Bath className="w-3.5 h-3.5 text-emerald-600" />
-                        <span>{prop.bathrooms || 0} KM</span>
-                      </div>
-                      <div className="flex items-center gap-1.5 truncate">
-                        <Maximize2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                        <span className="truncate">{prop.building_area || prop.land_area || 0} m²</span>
-                      </div>
+                    {/* Spesifikasi Ringkas */}
+                    <div className="flex items-center gap-3 pt-2 text-[11px] text-slate-600 font-medium border-t border-[#F4EFE6]">
+                      <span className="flex items-center gap-1"><Bed className="w-3 h-3 text-emerald-600" />{prop.bedrooms || 0}</span>
+                      <span className="flex items-center gap-1"><Bath className="w-3 h-3 text-emerald-600" />{prop.bathrooms || 0}</span>
+                      <span className="flex items-center gap-1 truncate"><Maximize2 className="w-3 h-3 text-emerald-600 shrink-0" />{prop.building_area || 0}m²</span>
                     </div>
                   </CardContent>
                 </div>
 
-                {/* Footer Kartu: Detail & Profil Pengunggah user_profiles Supabase */}
-                <CardFooter className="p-3 border-t border-border/50 bg-muted/20 flex items-center justify-between" onClick={(e) => e.stopPropagation()}>
-                  {/* Sisi Kiri: Tombol Lihat Detail & Share */}
-                  <div className="flex items-center gap-1.5">
-                    <Button variant="outline" size="sm" onClick={(e) => goToDetail(prop.id, e)} className="h-8 text-xs font-semibold gap-1.5 rounded-xl cursor-pointer hover:bg-emerald-50 dark:hover:bg-emerald-950/30 border-border/80">
-                      <Eye className="w-3.5 h-3.5 text-emerald-600" /> Lihat Detail
+                {/* Footer Kartu: Agen Pengunggah (Rapih & Tidak Tertimpa) */}
+                <CardFooter className="p-2.5 border-t border-[#F4EFE6] bg-[#FDFBF7] flex items-center justify-between gap-2" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center gap-1">
+                    <Button variant="outline" size="sm" onClick={(e) => goToDetail(prop.id, e)} className="h-7 text-[11px] font-medium gap-1 px-2 rounded-lg border-[#F4EFE6] bg-white text-slate-700">
+                      <Eye className="w-3 h-3 text-emerald-600" /> Detail
                     </Button>
-                    <Button variant="ghost" size="icon" onClick={(e) => handleSendWABrochure(prop, e)} className="h-8 w-8 text-emerald-600 hover:bg-emerald-500/10 rounded-xl cursor-pointer" title="Kirim Brosur via WhatsApp">
-                      <Share2 className="w-3.5 h-3.5" />
+                    <Button variant="ghost" size="icon" onClick={(e) => handleSendWABrochure(prop, e)} className="h-7 w-7 text-emerald-600 hover:bg-emerald-50 rounded-lg cursor-pointer" title="Kirim WA">
+                      <Share2 className="w-3 h-3" />
                     </Button>
                   </div>
 
-                  {/* Sisi Kanan: Foto Profil & Nama Resmi dari user_profiles Supabase */}
-                  <div className="flex items-center gap-2" title={`Dipublikasikan oleh: ${prop.uploader_name}`}>
-                    <span className="text-[11px] text-muted-foreground font-medium truncate max-w-[100px] hidden sm:inline">
+                  {/* Profil Agen (Foto Terlihat Utuh di Sisi Kanan) */}
+                  <div className="flex items-center gap-1.5 min-w-0 shrink-0" title={`Agen: ${prop.uploader_name}`}>
+                    <span className="text-[10px] text-slate-500 font-medium truncate max-w-[70px] text-right">
                       {prop.uploader_name}
                     </span>
-                    <div className="relative w-7 h-7 rounded-full overflow-hidden border border-border/80 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 font-bold text-[10px] flex items-center justify-center shrink-0 shadow-2xs">
+                    <div className="relative w-6 h-6 rounded-full overflow-hidden border border-[#F4EFE6] bg-emerald-100 text-emerald-800 font-bold text-[9px] flex items-center justify-center shrink-0">
                       {prop.uploader_name ? prop.uploader_name.slice(0, 2).toUpperCase() : "IP"}
                       {prop.uploader_avatar && (
                         <img
@@ -690,6 +834,110 @@ function PropertiesCatalogContent() {
             );
           })}
         </div>
+      ) : (
+        /* ================= 📋 TABLE VIEW ================= */
+        <Card className="rounded-xl border border-[#F4EFE6] overflow-hidden shadow-2xs bg-white">
+          <Table>
+            <TableHeader className="bg-[#FDFBF7]">
+              <TableRow className="border-[#F4EFE6]">
+                <TableHead className="text-xs font-semibold text-slate-700">Properti</TableHead>
+                <TableHead className="text-xs font-semibold text-slate-700">Tipe</TableHead>
+                <TableHead className="text-xs font-semibold text-slate-700">Harga</TableHead>
+                <TableHead className="text-xs font-semibold text-slate-700">Spesifikasi</TableHead>
+                <TableHead className="text-xs font-semibold text-slate-700">Lokasi</TableHead>
+                <TableHead className="text-xs font-semibold text-slate-700">Agen</TableHead>
+                <TableHead className="text-right text-xs font-semibold text-slate-700">Aksi</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredProperties.map((prop) => {
+                const isRent = prop.listing_type === "sewa" || prop.listing_type === "disewa" || prop.listing_type === "rent";
+
+                return (
+                  <TableRow key={prop.id} className="hover:bg-[#FDFBF7]/60 border-[#F4EFE6] cursor-pointer" onClick={() => goToDetail(prop.id)}>
+                    <TableCell className="font-medium">
+                      <div className="flex items-center gap-2.5">
+                        <img
+                          src={prop.thumbnail}
+                          alt={prop.title}
+                          className="w-10 h-10 rounded-lg object-cover border border-[#F4EFE6] shrink-0 bg-[#F4EFE6]"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).src = DEFAULT_FALLBACK_IMAGE;
+                          }}
+                        />
+                        <div>
+                          <div className="font-semibold text-xs text-slate-900 line-clamp-1">{prop.title}</div>
+                          <div className="text-[10px] text-slate-400 font-mono">{prop.listing_code}</div>
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge className={cn("text-[9px] font-bold px-1.5 py-0.5 rounded", isRent ? "bg-slate-800 text-white" : "bg-emerald-600 text-white")}>
+                        {isRent ? "SEWA" : "JUAL"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="font-bold text-emerald-600 text-xs whitespace-nowrap">
+                      {formatCurrency(prop.price)}
+                    </TableCell>
+                    <TableCell>
+                      <div className="text-[11px] text-slate-600">
+                        {prop.bedrooms || 0} KT • {prop.bathrooms || 0} KM • {prop.building_area || 0}m²
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-xs text-slate-500 max-w-[160px] truncate">
+                      {prop.location}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-5 h-5 rounded-full overflow-hidden bg-emerald-100 text-emerald-800 font-bold text-[8px] flex items-center justify-center shrink-0">
+                          {prop.uploader_name ? prop.uploader_name.slice(0, 2).toUpperCase() : "IP"}
+                        </div>
+                        <span className="text-xs text-slate-600 font-medium truncate max-w-[80px]">
+                          {prop.uploader_name}
+                        </span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center justify-end gap-1">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs font-medium rounded-lg border-[#F4EFE6]"
+                          onClick={(e) => goToDetail(prop.id, e)}
+                        >
+                          Detail
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-emerald-600 hover:bg-emerald-50 rounded-lg"
+                          onClick={(e) => handleSendWABrochure(prop, e)}
+                        >
+                          <Share2 className="w-3 h-3" />
+                        </Button>
+                        {!isViewer && (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger className="h-7 w-7 rounded-lg hover:bg-slate-100 flex items-center justify-center border border-slate-200">
+  <MoreVertical className="h-4 w-4 text-slate-600" />
+</DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="rounded-lg">
+                              <DropdownMenuItem onClick={() => router.push(`/properties/edit/${prop.id}`)}>
+                                <Edit className="w-3.5 h-3.5 mr-2" /> Edit
+                              </DropdownMenuItem>
+                              <DropdownMenuItem className="text-rose-600" onClick={(e) => handleDelete(prop.id, e)}>
+                                <Trash2 className="w-3.5 h-3.5 mr-2" /> Hapus
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </Card>
       )}
     </div>
   );
@@ -697,7 +945,7 @@ function PropertiesCatalogContent() {
 
 export default function PropertiesPage() {
   return (
-    <Suspense fallback={<Skeleton className="h-96 w-full rounded-2xl" />}>
+    <Suspense fallback={<Skeleton className="h-96 w-full rounded-2xl bg-[#F4EFE6]/50" />}>
       <PropertiesCatalogContent />
     </Suspense>
   );

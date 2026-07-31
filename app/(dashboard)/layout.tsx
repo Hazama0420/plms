@@ -65,7 +65,7 @@ export default function DashboardLayout({
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Header Bar */}
         <header className="h-16 border-b px-4 md:px-6 flex items-center justify-between bg-background shrink-0 z-10">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2.5">
             <Button
               variant="ghost"
               size="icon"
@@ -74,8 +74,11 @@ export default function DashboardLayout({
             >
               <Menu size={24} />
             </Button>
-            <h2 className="text-lg font-semibold tracking-tight text-foreground">
-              Dashboard
+            
+            {/* BRAND HEADER: Inland (Hijau) Property (Putih/Gelap) */}
+            <h2 className="text-lg sm:text-xl font-extrabold tracking-tight select-none flex items-center gap-1.5">
+              <span className="text-emerald-600 dark:text-emerald-400">Inland</span>
+              <span className="text-slate-900 dark:text-white">Property</span>
             </h2>
           </div>
 

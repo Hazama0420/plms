@@ -204,12 +204,13 @@ export default function EditLeadPage() {
           setCurrentUserName(loggedInName);
         }
 
-        // 2. Fetch data lead, opsi kontak, agent, dan properti
-        const [leadData, contactsRes, agentsData, propertiesData] = await Promise.all([
+        // 2. Fetch data lead, opsi kontak, agent, properti, dan minat properti (crm_interests)
+        const [leadData, contactsRes, agentsData, propertiesData, interestsRes] = await Promise.all([
           crmService.getLeadById(leadId),
           supabase.from("crm_contacts").select("id, full_name, phone, email").order("full_name"),
           crmService.getAgents(),
           crmService.getPropertiesForLead(),
+          supabase.from("crm_interests").select("property_id").eq("lead_id", leadId),
         ]);
 
         if (leadData) {
@@ -223,8 +224,11 @@ export default function EditLeadPage() {
             notes: leadData.notes || "",
           });
 
-          // Ambil properti yang sudah terpilih sebelumnya
-          if (leadData.interests && leadData.interests.length > 0) {
+          // Ambil properti yang sudah terpilih dari crm_interests
+          if (interestsRes.data && interestsRes.data.length > 0) {
+            const propIds = interestsRes.data.map((i: any) => i.property_id).filter(Boolean);
+            setSelectedProperties(propIds);
+          } else if (leadData.interests && leadData.interests.length > 0) {
             const propIds = leadData.interests.map((i: any) => i.property_id).filter(Boolean);
             setSelectedProperties(propIds);
           }
@@ -354,8 +358,8 @@ export default function EditLeadPage() {
 
     setSaving(true);
     try {
-      const assignedToId = isAdmin 
-        ? (form.assigned_to || undefined) 
+      const assignedToId = isAdmin
+        ? (form.assigned_to || undefined)
         : (form.assigned_to || currentUserId || undefined);
 
       // 1. Update data utama lead di tabel crm_leads
@@ -369,9 +373,9 @@ export default function EditLeadPage() {
         notes: form.notes || undefined,
       });
 
-      // 2. Update relasi minat properti di tabel crm_lead_interests
+      // 2. PERBAIKAN: Update relasi minat properti pada tabel `crm_interests`
       await supabase
-        .from("crm_lead_interests")
+        .from("crm_interests")
         .delete()
         .eq("lead_id", leadId);
 
@@ -379,14 +383,17 @@ export default function EditLeadPage() {
         const interestsPayload = selectedProperties.map((propertyId) => ({
           lead_id: leadId,
           property_id: propertyId,
+          interest_level: "high",
+          priority: 1,
         }));
 
         const { error: interestErr } = await supabase
-          .from("crm_lead_interests")
+          .from("crm_interests")
           .insert(interestsPayload);
 
         if (interestErr) {
-          console.error("Gagal mengupdate minat properti:", interestErr);
+          console.error("Gagal mengupdate minat properti (crm_interests):", interestErr.message || interestErr);
+          toast.warning("Data lead diperbarui, namun gagal menyimpan daftar minat properti.");
         }
       }
 
@@ -425,7 +432,7 @@ export default function EditLeadPage() {
             variant="outline"
             size="icon"
             onClick={() => router.back()}
-            className="h-9 w-9 rounded-xl shrink-0"
+            className="h-9 w-9 rounded-xl shrink-0 cursor-pointer"
           >
             <ArrowLeft className="h-4 w-4" />
           </Button>
@@ -464,7 +471,7 @@ export default function EditLeadPage() {
                   variant="ghost"
                   size="sm"
                   onClick={() => setIsQuickContactOpen(true)}
-                  className="h-6 text-[11px] text-emerald-600 hover:text-emerald-700 p-0 gap-1"
+                  className="h-6 text-[11px] text-emerald-600 hover:text-emerald-700 p-0 gap-1 cursor-pointer"
                 >
                   <Plus className="w-3 h-3" /> Tambah Kontak Baru
                 </Button>
@@ -544,14 +551,13 @@ export default function EditLeadPage() {
               )}
             </div>
 
-            {/* 2. ASSIGN TO AGENT (KONDISIONAL: TERKUNCI UNTUK AGENT, DROPDOWN UNTUK ADMIN) */}
+            {/* 2. ASSIGN TO AGENT */}
             <div className="space-y-2 relative" ref={agentRef}>
               <Label className="text-xs font-bold text-foreground">
                 Penanggung Jawab (Agent In-Charge)
               </Label>
 
               {!isAdmin ? (
-                /* 🔒 TAMPILAN TERKUNCI KHUSUS UNTUK ROLE AGENT */
                 <div className="space-y-1">
                   <div className="w-full flex items-center justify-between h-10 px-3 rounded-md border border-input bg-muted/50 text-xs cursor-not-allowed select-none">
                     <span className="font-semibold text-foreground flex items-center gap-2 truncate">
@@ -567,7 +573,6 @@ export default function EditLeadPage() {
                   </p>
                 </div>
               ) : (
-                /* 🔓 TAMPILAN DROPDOWN KHUSUS UNTUK ADMIN / SUPER ADMIN */
                 <>
                   <div
                     role="button"
@@ -814,7 +819,7 @@ export default function EditLeadPage() {
             <div className="space-y-2">
               <Label className="text-xs font-bold text-foreground">Catatan / Kebutuhan Khusus Klien</Label>
               <Textarea
-                placeholder="Misal: Klien mencari rumah dengan halaman luas, lokasi dekat gerbang tol BSD, butuh bayar bertahap..."
+                placeholder="Misal: Klien mencari rumah dengan halaman luas, lokasi dekat gerbang tol BSD..."
                 value={form.notes}
                 onChange={(e) => handleChange("notes", e.target.value)}
                 rows={3}
@@ -827,7 +832,7 @@ export default function EditLeadPage() {
               <Button
                 type="submit"
                 disabled={saving}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20 text-xs gap-2 px-5 h-9"
+                className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20 text-xs gap-2 px-5 h-9 cursor-pointer"
               >
                 {saving ? (
                   <>
@@ -844,7 +849,7 @@ export default function EditLeadPage() {
                 type="button"
                 variant="outline"
                 onClick={() => router.back()}
-                className="text-xs h-9"
+                className="text-xs h-9 cursor-pointer"
               >
                 Batal
               </Button>
@@ -901,7 +906,7 @@ export default function EditLeadPage() {
               variant="outline"
               size="sm"
               onClick={() => setIsQuickContactOpen(false)}
-              className="text-xs"
+              className="text-xs cursor-pointer"
             >
               Batal
             </Button>
@@ -910,7 +915,7 @@ export default function EditLeadPage() {
               size="sm"
               disabled={quickContactSaving}
               onClick={handleCreateQuickContact}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs gap-1.5"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs gap-1.5 cursor-pointer"
             >
               {quickContactSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
               Simpan Kontak

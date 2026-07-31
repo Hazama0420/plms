@@ -121,7 +121,6 @@ export function StepPriceDescription({
       if (result.success && result.data) {
         setPredictionResult(result.data);
       } else {
-        // Fallback perkiraan sederhana jika API belum aktif
         const est = (formData.building_area ? parseFloat(formData.building_area) : 100) * 12_000_000;
         setPredictionResult({
           estimatedPrice: est,
@@ -324,6 +323,36 @@ export function StepPriceDescription({
                 ≈ {formatTerbilangRupiah(formData.rental_price)}
               </p>
             )}
+
+            {/* 🟢 OPSI PERIODE SEWA DI BAWAH HARGA SEWA (RAMAH MOBILE) */}
+            {formData.listing_type === "sewa" && (
+              <div className="pt-2 space-y-1.5">
+                <span className="text-[11px] text-muted-foreground font-semibold block">Periode Sewa:</span>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { label: "Tahunan", value: "per_tahun" },
+                    { label: "Bulanan", value: "per_bulan" },
+                    { label: "Harian", value: "per_hari" },
+                  ].map((item) => {
+                    const isActive = (formData.rental_period || "per_tahun") === item.value;
+                    return (
+                      <button
+                        type="button"
+                        key={item.value}
+                        onClick={() => handleChange("rental_period", item.value)}
+                        className={`h-9 px-2 rounded-xl text-xs font-semibold transition-all border cursor-pointer flex items-center justify-center ${
+                          isActive
+                            ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
+                            : "bg-background text-slate-700 dark:text-slate-300 border-border/80 hover:bg-accent/60"
+                        }`}
+                      >
+                        {item.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* SERVICE CHARGE */}
@@ -367,31 +396,8 @@ export function StepPriceDescription({
           </div>
         </div>
 
-        {/* PERIODE SEWA (HANYA JIKA SEWA) */}
-        {formData.listing_type === "sewa" && (
-          <div className="space-y-1.5 max-w-md pt-2">
-            <Label htmlFor="rental_period" className="text-xs font-semibold">
-              Periode Pembayaran Sewa
-            </Label>
-            <Select
-              value={formData.rental_period || "per_tahun"}
-              onValueChange={(val) => handleChange("rental_period", val)}
-            >
-              <SelectTrigger className="h-10 text-xs bg-background">
-                <SelectValue placeholder="Pilih Periode" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="per_hari" className="text-xs">Per Hari</SelectItem>
-                <SelectItem value="per_minggu" className="text-xs">Per Minggu</SelectItem>
-                <SelectItem value="per_bulan" className="text-xs">Per Bulan</SelectItem>
-                <SelectItem value="per_tahun" className="text-xs">Per Tahun</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        )}
-
         {/* SWITCH HARGA BISA NEGO */}
-        <div className="flex items-center justify-between p-3.5 rounded-xl bg-background border border-slate-200 dark:border-slate-800">
+        <div className="flex items-center justify-between p-3.5 rounded-xl bg-background border border-slate-200 dark:border-slate-800 mt-4">
           <div className="space-y-0.5">
             <Label htmlFor="negotiable" className="text-xs font-bold cursor-pointer">
               Harga Bisa Nego (Negotiable)

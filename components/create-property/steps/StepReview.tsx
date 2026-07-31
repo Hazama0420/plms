@@ -1,3 +1,4 @@
+// components/create-property/steps/StepReview.tsx
 "use client";
 
 import { useState } from "react";
@@ -110,6 +111,62 @@ export function StepReview({
         village_id: cleanId(formData.village_id || formData.address?.village_id),
       };
 
+      const facilitiesPayload = Array.isArray(formData.facilities) ? formData.facilities : [];
+
+      // ==========================================
+      // 1. HANDLE DATA PEMILIK & JENIS IDENTITAS (DENGAN ERROR CHECKING KETAT)
+      // ==========================================
+      let ownerId = null;
+      if (formData.owner_name) {
+        let existingOwnerId = null;
+
+        if (mode === "edit" && propertyId) {
+          const { data: currentProp } = await supabase
+            .from("properties")
+            .select("owner_id")
+            .eq("id", propertyId)
+            .maybeSingle();
+          existingOwnerId = currentProp?.owner_id;
+        }
+
+        const ownerPayload = {
+          full_name: formData.owner_name,
+          phone: formData.owner_phone || null,
+          whatsapp: formData.owner_whatsapp || null,
+          email: formData.owner_email || null,
+          address: formData.owner_address || null,
+          notes: formData.owner_notes || null,
+        };
+
+        if (existingOwnerId) {
+          // 🟢 UPDATE DATA PEMILIK EKSISTING DENGAN CEK ERROR
+          const { error: updateOwnerErr } = await supabase
+            .from("property_owners")
+            .update(ownerPayload)
+            .eq("id", existingOwnerId);
+
+          if (updateOwnerErr) {
+            throw new Error(`Gagal update data pemilik: ${updateOwnerErr.message}`);
+          }
+          ownerId = existingOwnerId;
+        } else {
+          // 🟢 INSERT DATA PEMILIK BARU DENGAN CEK ERROR
+          const { data: newOwner, error: insertOwnerErr } = await supabase
+            .from("property_owners")
+            .insert({
+              owner_code: `OWN-${Date.now()}`,
+              ...ownerPayload,
+            })
+            .select()
+            .single();
+
+          if (insertOwnerErr) {
+            throw new Error(`Gagal menyimpan data pemilik baru: ${insertOwnerErr.message}`);
+          }
+          if (newOwner) ownerId = newOwner.id;
+        }
+      }
+
       // ==========================================
       // MODE EDIT
       // ==========================================
@@ -125,13 +182,15 @@ export function StepReview({
             selling_point: formData.selling_point || null,
             rental_period: formData.rental_period || null,
             assigned_to: formData.assigned_to || null,
+            facilities: facilitiesPayload,
+            owner_id: ownerId, // 🟢 Sinkronisasi owner_id
             updated_at: new Date().toISOString(),
           })
           .eq("id", propertyId);
 
         if (propertyError) throw new Error(`Gagal update properti: ${propertyError.message}`);
 
-        // UPSERT ALAMAT (Tanpa 404 / 409)
+        // UPSERT ALAMAT
         if (formData.address) {
           await supabase.from("property_address").upsert(
             { property_id: propertyId, ...addressPayload },
@@ -201,35 +260,45 @@ export function StepReview({
           );
         }
 
-        // INSERT / RE-SYNC MEDIA FOTO
+        // 🟢 FIX FOTO HILANG: DELETE HANYA DILAKUKAN JIKA PAYLOAD BARU VALID
         if (Array.isArray(formData.photos) && formData.photos.length > 0) {
-          await supabase.from("property_media").delete().eq("property_id", propertyId);
-
           const mediaPayload = formData.photos.map((p: any, idx: number) => {
-            if (typeof p === "string") {
-              return {
-                property_id: propertyId,
-                public_url: p,
-                storage_path: p,
-                media_type: "image",
-                is_primary: idx === 0,
-              };
-            }
+            const url = typeof p === "string" ? p : p.public_url || p.preview || p.url || p.file_url || "";
             return {
               property_id: propertyId,
-              public_url: p.public_url || p.preview || p.url || "",
-              storage_path: p.storage_path || p.public_url || p.preview || "",
-              media_type: "image",
-              file_name: p.file_name || null,
-              original_name: p.original_name || null,
-              mime_type: p.mime_type || null,
+              public_url: url,
+              storage_path: p.storage_path || url,
+              media_type: p.media_type || "image",
+              file_name: p.file_name || `photo_${idx}_${Date.now()}.jpg`,
+              original_name: p.original_name || p.file_name || `photo_${idx}.jpg`,
+              mime_type: p.mime_type || "image/jpeg",
               file_size: p.file_size || null,
               is_primary: idx === 0,
             };
           }).filter((m: any) => m.public_url !== "");
 
+          // Hanya hapus media lama JIKA ada payload baru yang valid untuk menggantikannya.
+          // Ini mencegah foto hilang total kalau proses mapping foto gagal menghasilkan URL.
           if (mediaPayload.length > 0) {
-            await supabase.from("property_media").insert(mediaPayload);
+            const { error: deleteError } = await supabase
+              .from("property_media")
+              .delete()
+              .eq("property_id", propertyId);
+
+            if (deleteError) {
+              console.error("Gagal menghapus media lama:", deleteError.message);
+            }
+
+            const { error: insertError } = await supabase
+              .from("property_media")
+              .insert(mediaPayload);
+
+            if (insertError) {
+              console.error("Gagal menyimpan media foto baru:", insertError.message);
+              toast.error("Sebagian data tersimpan, tapi foto gagal disinkronkan: " + insertError.message);
+            }
+          } else {
+            console.warn("⚠️ Tidak ada foto valid untuk disinkronkan — media lama TIDAK dihapus.");
           }
         }
 
@@ -242,27 +311,6 @@ export function StepReview({
       // ==========================================
       // MODE CREATE
       // ==========================================
-      let ownerId = null;
-      if (formData.owner_name) {
-        const { data: owner } = await supabase
-          .from("property_owners")
-          .insert({
-            owner_code: `OWN-${Date.now()}`,
-            full_name: formData.owner_name,
-            phone: formData.owner_phone || null,
-            whatsapp: formData.owner_whatsapp || null,
-            email: formData.owner_email || null,
-            identity_type: formData.owner_identity_type || null,
-            identity_number: formData.owner_identity_number || null,
-            address: formData.owner_address || null,
-            notes: formData.owner_notes || null,
-          })
-          .select()
-          .single();
-
-        if (owner) ownerId = owner.id;
-      }
-
       const propertyPayload = {
         listing_code: formData.listing_code || `PRP-${Date.now()}`,
         title: formData.title,
@@ -274,6 +322,7 @@ export function StepReview({
         description: formData.description || null,
         selling_point: formData.selling_point || null,
         rental_period: formData.rental_period || null,
+        facilities: facilitiesPayload,
         owner_id: ownerId,
         created_by: user.id,
         assigned_to: formData.assigned_to || user.id,
@@ -290,7 +339,7 @@ export function StepReview({
 
       const newPropertyId = property.id;
 
-      // UPSERT ALAMAT DENGAN PROPERTY_ADDRESS
+      // UPSERT ALAMAT
       if (formData.address) {
         await supabase.from("property_address").upsert(
           { property_id: newPropertyId, ...addressPayload },
@@ -298,7 +347,7 @@ export function StepReview({
         );
       }
 
-      // UPSERT HARGA DENGAN PROPERTY_PRICE
+      // UPSERT HARGA
       if (formData.selling_price || formData.rental_price) {
         await supabase.from("property_price").upsert(
           {
@@ -313,7 +362,7 @@ export function StepReview({
         );
       }
 
-      // UPSERT SPESIFIKASI DENGAN PROPERTY_SPECIFICATIONS
+      // UPSERT SPESIFIKASI
       await supabase.from("property_specifications").upsert(
         {
           property_id: newPropertyId,
@@ -360,22 +409,14 @@ export function StepReview({
         );
       }
 
-      // SIMPAN MEDIA FOTO KE TABEL PROPERTY_MEDIA
+      // SIMPAN MEDIA FOTO
       if (Array.isArray(formData.photos) && formData.photos.length > 0) {
         const mediaPayload = formData.photos.map((p: any, idx: number) => {
-          if (typeof p === "string") {
-            return {
-              property_id: newPropertyId,
-              public_url: p,
-              storage_path: p,
-              media_type: "image",
-              is_primary: idx === 0,
-            };
-          }
+          const url = typeof p === "string" ? p : p.public_url || p.preview || p.url || p.file_url || "";
           return {
             property_id: newPropertyId,
-            public_url: p.public_url || p.preview || p.url || "",
-            storage_path: p.storage_path || p.public_url || p.preview || "",
+            public_url: url,
+            storage_path: p.storage_path || url,
             media_type: "image",
             file_name: p.file_name || null,
             original_name: p.original_name || null,
@@ -431,7 +472,6 @@ export function StepReview({
           </span>
         </div>
 
-        {/* Progress Bar */}
         <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
           <div
             className="bg-emerald-500 h-2 rounded-full transition-all duration-500"
@@ -584,7 +624,7 @@ export function StepReview({
 
             <div className="p-4 rounded-2xl bg-slate-50/80 dark:bg-slate-900/40 border border-slate-200/80 dark:border-slate-800 space-y-2.5">
               <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                <UserCheck className="w-4 h-4 text-emerald-600" /> Informasi Pemilik Properti (Internal Agen)
+                <UserCheck className="w-4 h-4 text-emerald-600" /> Informasi Pemilik & Identitas
               </h4>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                 <div className="flex items-center gap-2">
@@ -595,20 +635,15 @@ export function StepReview({
                   <Phone className="w-3.5 h-3.5 text-slate-400" />
                   <span className="font-mono">{formData.owner_phone || formData.owner_whatsapp || "-"}</span>
                 </div>
+                <div className="col-span-2 flex justify-between py-1 border-t border-slate-200/50 dark:border-slate-800">
+                  <span className="text-muted-foreground">Jenis & Nomor Identitas:</span>
+                  <span className="font-mono font-semibold">
+                    {formData.owner_identity_type || "KTP"} - {formData.owner_identity_number || "Tidak ada nomor"}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      </div>
-
-      {/* PEMBERITAHUAN FINAL */}
-      <div className="p-4 bg-amber-50 dark:bg-amber-950/30 rounded-2xl border border-amber-200 dark:border-amber-800/50 flex items-start gap-3">
-        <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-        <div className="text-xs text-amber-800 dark:text-amber-300 space-y-0.5">
-          <p className="font-bold">Konfirmasi Publikasi</p>
-          <p className="text-amber-700/80 dark:text-amber-400">
-            Dengan menekan tombol {mode === "edit" ? "Update Sekarang" : "Publikasikan Sekarang"}, data listing akan disinkronkan ke database secara aman.
-          </p>
         </div>
       </div>
 
@@ -619,7 +654,7 @@ export function StepReview({
           variant="outline"
           onClick={prevStep}
           disabled={publishing}
-          className="gap-2 text-xs h-9 border-slate-300 dark:border-slate-700"
+          className="gap-2 text-xs h-9 border-slate-300 dark:border-slate-700 cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />
           <span>Kembali</span>
@@ -629,7 +664,7 @@ export function StepReview({
           type="button"
           onClick={handlePublish}
           disabled={publishing}
-          className="gap-2 text-xs h-9 bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20 font-bold px-6"
+          className="gap-2 text-xs h-9 bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20 font-bold px-6 cursor-pointer"
         >
           {publishing ? (
             <>

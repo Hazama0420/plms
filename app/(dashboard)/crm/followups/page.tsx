@@ -20,6 +20,7 @@ import {
   Copy,
   Send,
   Eye,
+  Lock,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase/client";
@@ -132,7 +133,10 @@ export default function FollowupsPage() {
     checkUserSession();
   }, []);
 
-  const isAdminOrSuperAdmin = currentUserRole === "super_admin" || currentUserRole === "admin";
+  const isAdminOrSuperAdmin =
+    currentUserRole === "super_admin" ||
+    currentUserRole === "superadmin" ||
+    currentUserRole === "admin";
 
   const canModifyFollowup = useCallback(
     (item: FollowUpItem) => {
@@ -230,7 +234,7 @@ export default function FollowupsPage() {
 
   // ===== QUICK TOGGLE COMPLETE =====
   const handleToggleComplete = async (e: React.MouseEvent, item: FollowUpItem) => {
-    e.stopPropagation(); // Mencegah trigger double-click row
+    e.stopPropagation();
 
     if (!canModifyFollowup(item)) {
       toast.error("Akses Ditolak!", {
@@ -295,7 +299,7 @@ export default function FollowupsPage() {
 
   // ===== DIRECT WHATSAPP CHAT =====
   const handleOpenWhatsApp = (e: React.MouseEvent, item: FollowUpItem) => {
-    e.stopPropagation(); // Mencegah trigger double-click row
+    e.stopPropagation();
 
     if (!item.lead_phone) {
       toast.error("Nomor WhatsApp/HP lead tidak ditemukan");
@@ -308,9 +312,17 @@ export default function FollowupsPage() {
     window.open(`https://wa.me/${cleanPhone}?text=${msg}`, "_blank");
   };
 
-  // ===== AI SCRIPT WRITER =====
+  // ===== 🔒 PERBAIKAN AI SCRIPT WRITER DENGAN ROLE LOCK =====
   const handleOpenAiWriter = async (e: React.MouseEvent, item: FollowUpItem) => {
-    e.stopPropagation(); // Mencegah trigger double-click row
+    e.stopPropagation();
+
+    // 🔒 Proteksi Role Client Side
+    if (!isAdminOrSuperAdmin) {
+      toast.error("Fitur Terkunci!", {
+        description: "Fitur AI Writer Follow-Up khusus untuk Super Admin dan Admin.",
+      });
+      return;
+    }
 
     setSelectedFollowup(item);
     setIsAiModalOpen(true);
@@ -318,23 +330,30 @@ export default function FollowupsPage() {
     setAiMessage("");
 
     try {
-      const res = await fetch("/api/ai/generate", {
+      // 🚀 Memanggil Endpoint Resmi /api/ai/followup
+      const res = await fetch("/api/ai/followup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          prompt: `Buatkan draf pesan WhatsApp personal dan ramah dari agen Inland Property untuk calon pembeli rumah/properti bernama "${item.lead_name}". Catatan follow-up: "${item.notes || 'Diskusi penawaran unit properti'}". Minta waktu untuk diskusi atau survei lokasi.`,
+          leadName: item.lead_name,
+          property: item.notes || "Properti Pilihan",
+          status: item.status || "Pending Follow-up",
+          userRole: currentUserRole,
         }),
       });
 
-      const json = await res.json();
-      if (json?.text || json?.result) {
-        setAiMessage(json.text || json.result);
+      const data = await res.json();
+
+      if (res.ok && data?.message) {
+        setAiMessage(data.message);
       } else {
+        toast.error(data?.error || "Gagal membuat pesan AI.");
         setAiMessage(
           `Halo Bpk/Ibu ${item.lead_name},\n\nPerkenalkan saya dari Inland Property. Menindaklanjuti rencana diskusi kita:\n"${item.notes || "Penawaran unit properti"}"\n\nApakah hari ini ada waktu senggang untuk berdiskusi? Terima kasih!`
         );
       }
     } catch (err) {
+      toast.error("Gagal terhubung ke AI Service.");
       setAiMessage(
         `Halo Bpk/Ibu ${item.lead_name},\n\nPerkenalkan saya dari Inland Property. Menindaklanjuti rencana diskusi kita:\n"${item.notes || "Penawaran unit properti"}"\n\nApakah hari ini ada waktu senggang untuk berdiskusi? Terima kasih!`
       );
@@ -393,7 +412,7 @@ export default function FollowupsPage() {
 
         <Button
           onClick={() => router.push("/crm/followups/create")}
-          className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20 gap-2 shrink-0"
+          className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20 gap-2 shrink-0 cursor-pointer"
         >
           <Plus className="h-4 w-4" /> Buat Follow-up
         </Button>
@@ -469,7 +488,7 @@ export default function FollowupsPage() {
             variant="outline"
             size="icon"
             onClick={fetchFollowups}
-            className="h-9 w-9 shrink-0"
+            className="h-9 w-9 shrink-0 cursor-pointer"
             title="Refresh Data"
           >
             <RefreshCw className="h-3.5 w-3.5" />
@@ -613,15 +632,25 @@ export default function FollowupsPage() {
                         {/* Actions */}
                         <TableCell className="p-3 text-right">
                           <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-                            {/* AI Script Writer */}
+                            {/* AI Script Writer dengan Status Role */}
                             <Button
                               size="sm"
                               variant="ghost"
                               onClick={(e) => handleOpenAiWriter(e, item)}
-                              className="h-8 text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/40 px-2 gap-1 text-xs"
-                              title="Tulis Draf Pesan AI"
+                              className={cn(
+                                "h-8 px-2 gap-1 text-xs cursor-pointer",
+                                isAdminOrSuperAdmin
+                                  ? "text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/40"
+                                  : "text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+                              )}
+                              title={isAdminOrSuperAdmin ? "Tulis Draf Pesan AI" : "Khusus Super Admin & Admin"}
                             >
-                              <Sparkles className="w-3.5 h-3.5 fill-amber-500" /> AI Writer
+                              {isAdminOrSuperAdmin ? (
+                                <Sparkles className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
+                              ) : (
+                                <Lock className="w-3.5 h-3.5 text-slate-400" />
+                              )}
+                              AI Writer
                             </Button>
 
                             {/* Direct WA Chat */}
@@ -629,7 +658,7 @@ export default function FollowupsPage() {
                               size="sm"
                               variant="outline"
                               onClick={(e) => handleOpenWhatsApp(e, item)}
-                              className="h-8 border-emerald-300 bg-emerald-50/50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 text-xs px-2 gap-1"
+                              className="h-8 border-emerald-300 bg-emerald-50/50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 text-xs px-2 gap-1 cursor-pointer"
                               title="Hubungi Via WhatsApp Direct"
                             >
                               <MessageCircle className="w-3.5 h-3.5 text-emerald-600 fill-emerald-600" /> Chat WA
@@ -637,7 +666,7 @@ export default function FollowupsPage() {
 
                             {/* Dropdown Menu */}
                             <DropdownMenu>
-                              <DropdownMenuTrigger className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors focus:outline-hidden">
+                              <DropdownMenuTrigger className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors focus:outline-hidden cursor-pointer">
                                 <MoreHorizontal className="w-4 h-4" />
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end" className="w-44">
@@ -668,19 +697,45 @@ export default function FollowupsPage() {
         </CardContent>
       </Card>
 
-      {/* 5. MODAL DIALOG: AI MESSAGE GENERATOR */}
+      {/* 5. MODAL DIALOG: AI MESSAGE GENERATOR DENGAN PROTEKSI HAK AKSES */}
       <Dialog open={isAiModalOpen} onOpenChange={setIsAiModalOpen}>
         <DialogContent className="sm:max-w-md rounded-2xl">
           <DialogHeader>
-            <DialogTitle className="text-base font-bold flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-amber-500 fill-amber-500" /> AI Follow-up Message Generator
-            </DialogTitle>
+            <div className="flex items-center justify-between">
+              <DialogTitle className="text-base font-bold flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-amber-500 fill-amber-500" /> AI Follow-up Message Generator
+              </DialogTitle>
+              <Badge
+                variant="outline"
+                className={
+                  isAdminOrSuperAdmin
+                    ? "bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px]"
+                    : "bg-amber-50 text-amber-700 border-amber-200 text-[10px]"
+                }
+              >
+                {isAdminOrSuperAdmin ? "Admin Access" : "Khusus Admin"}
+              </Badge>
+            </div>
             <DialogDescription className="text-xs">
               Draf pesan ramah & profesional yang disiapkan otomatis oleh AI untuk dikirimkan ke {selectedFollowup?.lead_name}.
             </DialogDescription>
           </DialogHeader>
 
-          {generatingAi ? (
+          {!isAdminOrSuperAdmin ? (
+            <div className="py-8 text-center space-y-3">
+              <div className="w-12 h-12 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto">
+                <Lock className="w-6 h-6" />
+              </div>
+              <div className="space-y-1 max-w-xs mx-auto">
+                <h4 className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                  Akses Ditolak
+                </h4>
+                <p className="text-[11px] text-slate-500 leading-relaxed">
+                  Fitur AI Writer Follow-Up khusus digunakan oleh **Super Admin** dan **Admin**.
+                </p>
+              </div>
+            </div>
+          ) : generatingAi ? (
             <div className="p-8 text-center space-y-2">
               <RefreshCw className="w-8 h-8 text-emerald-600 animate-spin mx-auto" />
               <p className="text-xs text-muted-foreground">AI sedang merangkai pesan follow-up...</p>
@@ -691,38 +746,51 @@ export default function FollowupsPage() {
                 value={aiMessage}
                 onChange={(e) => setAiMessage(e.target.value)}
                 rows={6}
-                className="text-xs leading-relaxed font-mono bg-muted/30"
+                className="text-xs leading-relaxed font-mono bg-muted/30 resize-none focus-visible:ring-emerald-600"
               />
             </div>
           )}
 
           <DialogFooter className="gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                navigator.clipboard.writeText(aiMessage);
-                toast.success("Pesan berhasil disalin ke clipboard!");
-              }}
-              className="text-xs gap-1.5"
-            >
-              <Copy className="w-3.5 h-3.5" /> Salin Pesan
-            </Button>
+            {isAdminOrSuperAdmin ? (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    navigator.clipboard.writeText(aiMessage);
+                    toast.success("Pesan berhasil disalin ke clipboard!");
+                  }}
+                  className="text-xs gap-1.5 cursor-pointer"
+                >
+                  <Copy className="w-3.5 h-3.5" /> Salin Pesan
+                </Button>
 
-            <Button
-              size="sm"
-              onClick={() => {
-                if (selectedFollowup?.lead_phone) {
-                  const clean = selectedFollowup.lead_phone.replace(/[^0-9]/g, "").replace(/^0/, "62");
-                  window.open(`https://wa.me/${clean}?text=${encodeURIComponent(aiMessage)}`, "_blank");
-                } else {
-                  toast.error("Nomor HP lead tidak tersedia");
-                }
-              }}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs gap-1.5"
-            >
-              <Send className="w-3.5 h-3.5" /> Kirim ke WhatsApp
-            </Button>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    if (selectedFollowup?.lead_phone) {
+                      const clean = selectedFollowup.lead_phone.replace(/[^0-9]/g, "").replace(/^0/, "62");
+                      window.open(`https://wa.me/${clean}?text=${encodeURIComponent(aiMessage)}`, "_blank");
+                    } else {
+                      toast.error("Nomor HP lead tidak tersedia");
+                    }
+                  }}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs gap-1.5 cursor-pointer"
+                >
+                  <Send className="w-3.5 h-3.5" /> Kirim ke WhatsApp
+                </Button>
+              </>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsAiModalOpen(false)}
+                className="w-full text-xs cursor-pointer"
+              >
+                Tutup
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

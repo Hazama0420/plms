@@ -118,39 +118,29 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
   const [cropRotation, setCropRotation] = useState(0);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // Sync Photos dari formData ke Local State saat inisialisasi/edit
- useEffect(() => {
-  if (formData.photos && Array.isArray(formData.photos)) {
-    const normalized = formData.photos.map((p: any, idx: number) => {
-      if (typeof p === "string") {
+ // Sync Photos dari formData ke Local State dengan aman tanpa merusak struktur existing
+  useEffect(() => {
+    if (formData.photos && Array.isArray(formData.photos) && photos.length === 0) {
+      const normalized = formData.photos.map((p: any, idx: number) => {
+        const url = typeof p === "string" ? p : p.public_url || p.preview || p.url || p.file_url || "";
         return {
-          id: `existing-${idx}`,
-          preview: p,
-          public_url: p,
-          media_type: "image",
+          id: p.id || `photo-${idx}`,
+          preview: url,
+          public_url: url,
+          media_type: p.media_type || "image",
+          file_name: p.file_name,
+          original_name: p.original_name,
+          storage_path: p.storage_path,
+          mime_type: p.mime_type,
+          file_size: p.file_size,
           isCover: idx === 0,
           uploaded: true,
-          isExisting: true,
+          isExisting: p.isExisting !== undefined ? p.isExisting : true,
         };
-      }
-      return {
-        id: p.id || `photo-${idx}`,
-        preview: p.public_url || p.preview || p.url || "",
-        public_url: p.public_url || p.preview || p.url || "",
-        media_type: p.media_type || "image",
-        file_name: p.file_name,
-        original_name: p.original_name,
-        storage_path: p.storage_path,
-        mime_type: p.mime_type,
-        file_size: p.file_size,
-        isCover: idx === 0,
-        uploaded: true,
-        isExisting: p.isExisting || false,
-      };
-    });
-    setPhotos(normalized);
-  }
-}, [formData.photos]);
+      });
+      setPhotos(normalized);
+    }
+  }, [formData.photos]);
 
   // Update State Utama & Form Data
   const syncPhotosWithCover = (newPhotos: PhotoItem[]) => {

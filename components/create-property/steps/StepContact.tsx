@@ -14,7 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { supabase } from "@/lib/supabase/client";
-import { Users, UserCheck, CreditCard, Lock } from "lucide-react";
+import { Users, UserCheck, Lock } from "lucide-react";
 
 interface StepContactProps {
   formData: any;
@@ -50,8 +50,8 @@ export function StepContact({ formData, updateFormData, nextStep, prevStep }: St
           const adminRole = role === "admin" || role === "super_admin" || role === "superadmin";
           setIsAdmin(adminRole);
 
-          // Jika bukan admin (misal Agent), kunci otomatis assigned_to ke user.id
-          if (!formData.assigned_to) {
+          // Pastikan assigned_to selalu terikat ke user.id yang valid
+          if (!adminRole || !formData.assigned_to) {
             updateFormData({ assigned_to: user.id });
           }
 
@@ -75,13 +75,6 @@ export function StepContact({ formData, updateFormData, nextStep, prevStep }: St
   }, []);
 
   const handleChange = (field: string, value: any) => {
-    if (field === "owner_identity_type" && value === "TIDAK_ADA") {
-      updateFormData({
-        owner_identity_type: "TIDAK_ADA",
-        owner_identity_number: "",
-      });
-      return;
-    }
     updateFormData({ [field]: value });
   };
 
@@ -99,7 +92,7 @@ export function StepContact({ formData, updateFormData, nextStep, prevStep }: St
           Kontak Pemilik & Penanggung Jawab
         </h2>
         <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
-          Lengkapi data identitas pemilik aset dan penanggung jawab listing
+          Lengkapi data pemilik aset dan penanggung jawab listing
         </p>
       </div>
 
@@ -118,11 +111,20 @@ export function StepContact({ formData, updateFormData, nextStep, prevStep }: St
 
         {isAdmin ? (
           <Select
+            key={currentUser?.id || "loading-agent"}
             value={formData.assigned_to || currentUser?.id || ""}
             onValueChange={(val) => handleChange("assigned_to", val)}
           >
             <SelectTrigger className="bg-background text-xs h-9">
-              <SelectValue placeholder="Pilih agen penanggung jawab..." />
+              <SelectValue placeholder="Pilih agen penanggung jawab...">
+                {(() => {
+                  const selectedId = formData.assigned_to || currentUser?.id;
+                  const selectedAgent = agents.find((a) => a.id === selectedId);
+                  return selectedAgent
+                    ? (selectedAgent.full_name || selectedAgent.email)
+                    : undefined;
+                })()}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               {agents.map((agent) => (
@@ -193,65 +195,8 @@ export function StepContact({ formData, updateFormData, nextStep, prevStep }: St
         </div>
       </div>
 
-      {/* 📌 SEKSI 3: IDENTITAS RESMI (KTP / SIM / PASPOR / TIDAK ADA) */}
-      <div className="p-4 bg-muted/40 border rounded-2xl space-y-4">
-        <div className="flex items-center gap-2 text-xs font-bold text-foreground">
-          <CreditCard className="w-4 h-4 text-blue-600" />
-          Dokumen Identitas Pemilik
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-1.5">
-            <Label htmlFor="owner_identity_type" className="text-xs">Jenis Identitas</Label>
-            <Select
-              value={formData.owner_identity_type || "KTP"}
-              onValueChange={(val) => handleChange("owner_identity_type", val)}
-            >
-              <SelectTrigger className="bg-background h-9 text-xs">
-                <SelectValue placeholder="Pilih jenis identitas" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="KTP" className="text-xs">Kartu Tanda Penduduk (KTP)</SelectItem>
-                <SelectItem value="SIM" className="text-xs">Surat Izin Mengemudi (SIM)</SelectItem>
-                <SelectItem value="PASPOR" className="text-xs">Paspor Republik Indonesia</SelectItem>
-                <SelectItem value="TIDAK_ADA" className="text-xs text-amber-600 font-semibold">
-                  🚫 Tidak Ada / Belum Ada
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="owner_identity_number" className="text-xs">
-              Nomor Identitas{" "}
-              {formData.owner_identity_type === "TIDAK_ADA"
-                ? "(Tidak Dipilih)"
-                : `(${formData.owner_identity_type || "KTP"})`}
-            </Label>
-            <Input
-              id="owner_identity_number"
-              disabled={formData.owner_identity_type === "TIDAK_ADA"}
-              placeholder={
-                formData.owner_identity_type === "TIDAK_ADA"
-                  ? "Identitas tidak dilampirkan"
-                  : formData.owner_identity_type === "PASPOR"
-                  ? "Contoh: A1234567"
-                  : "Contoh: 3175020101900001"
-              }
-              value={
-                formData.owner_identity_type === "TIDAK_ADA"
-                  ? ""
-                  : formData.owner_identity_number || ""
-              }
-              onChange={(e) => handleChange("owner_identity_number", e.target.value)}
-              className="h-9 text-xs font-mono disabled:bg-muted/80 disabled:cursor-not-allowed"
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* 📌 SEKSI 4: ALAMAT & CATATAN PEMILIK */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {/* 📌 SEKSI 3: ALAMAT & CATATAN PEMILIK */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
         <div className="space-y-1.5">
           <Label htmlFor="owner_address" className="text-xs font-semibold">Alamat Lengkap Pemilik</Label>
           <Textarea
@@ -278,12 +223,12 @@ export function StepContact({ formData, updateFormData, nextStep, prevStep }: St
       </div>
 
       <div className="flex justify-between pt-4 border-t">
-        <Button variant="outline" onClick={prevStep} className="text-xs h-9">
+        <Button variant="outline" onClick={prevStep} className="text-xs h-9 cursor-pointer">
           ← Kembali
         </Button>
         <Button
           onClick={nextStep}
-          className="gap-2 text-xs h-9 bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20"
+          className="gap-2 text-xs h-9 bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20 cursor-pointer"
         >
           Preview & Publish →
         </Button>

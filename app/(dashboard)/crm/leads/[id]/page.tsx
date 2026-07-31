@@ -20,9 +20,13 @@ import {
   Tag,
   Users,
   MessageSquare,
-  Loader2,
   Download,
   Calculator,
+  Sparkles,
+  Lock,
+  Copy,
+  Send,
+  RefreshCw,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { id } from "date-fns/locale";
@@ -53,7 +57,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -129,6 +132,7 @@ export default function LeadDetailPage() {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [filteredActivities, setFilteredActivities] = useState<Activity[]>([]);
   const [followups, setFollowups] = useState<Followup[]>([]);
+  const [interestsList, setInterestsList] = useState<any[]>([]);
   const [properties, setProperties] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -139,25 +143,17 @@ export default function LeadDetailPage() {
   const [showAddFollowup, setShowAddFollowup] = useState(false);
   const [showAddNote, setShowAddNote] = useState(false);
   const [showAddInterest, setShowAddInterest] = useState(false);
-  const [showEditLead, setShowEditLead] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+
+  // AI Writer Modal States
+  const [aiModalOpen, setAiModalOpen] = useState(false);
+  const [aiGeneratedMessage, setAiGeneratedMessage] = useState("");
+  const [generatingAi, setGeneratingAi] = useState(false);
 
   // Form States
   const [newFollowup, setNewFollowup] = useState({ followup_date: "", notes: "", assigned_to: "" });
   const [newNote, setNewNote] = useState("");
-  const [newInterest, setNewInterest] = useState({ property_id: "", interest_level: "", notes: "" });
-  const [editLeadData, setEditLeadData] = useState({
-    full_name: "",
-    phone: "",
-    whatsapp: "",
-    email: "",
-    occupation: "",
-    city: "",
-    source: "",
-    budget: "",
-    interest_type: "",
-    notes: "",
-  });
+  const [newInterest, setNewInterest] = useState({ property_id: "", interest_level: "high", notes: "" });
 
   // ===== FETCH USER SESSION & ROLE =====
   useEffect(() => {
@@ -173,8 +169,8 @@ export default function LeadDetailPage() {
           .eq("id", user.id)
           .maybeSingle();
 
-        const role = userData?.role || user.user_metadata?.role || "agent";
-        setCurrentUserRole(role.toLowerCase());
+        const role = (userData?.role || user.user_metadata?.role || "agent").toLowerCase();
+        setCurrentUserRole(role);
       } catch (err) {
         console.error("Gagal memeriksa sesi pengguna:", err);
       }
@@ -182,26 +178,38 @@ export default function LeadDetailPage() {
     checkUserSession();
   }, []);
 
-  // ===== FETCH DATA =====
+  const isAdminOrSuperAdmin =
+    currentUserRole === "super_admin" ||
+    currentUserRole === "superadmin" ||
+    currentUserRole === "admin";
+
+  // ===== FETCH DATA DENGAN TABEL CRM_INTERESTS =====
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const leadData = await crmService.getLeadById(leadId);
       setLead(leadData);
 
-      if (leadData) {
-        setEditLeadData({
-          full_name: leadData.contact?.full_name || "",
-          phone: leadData.contact?.phone || "",
-          whatsapp: leadData.contact?.whatsapp || "",
-          email: leadData.contact?.email || "",
-          occupation: leadData.contact?.occupation || "",
-          city: leadData.contact?.city || "",
-          source: leadData.source || "",
-          budget: leadData.budget ? String(leadData.budget) : "",
-          interest_type: leadData.interest_type || "",
-          notes: leadData.notes || "",
-        });
+      // Fetch Minat Properti Langsung dari Tabel `crm_interests`
+      const { data: interestsData, error: intErr } = await supabase
+        .from("crm_interests")
+        .select(`
+          id,
+          interest_level,
+          notes,
+          priority,
+          created_at,
+          property:properties (
+            id,
+            title,
+            listing_code,
+            price
+          )
+        `)
+        .eq("lead_id", leadId);
+
+      if (!intErr) {
+        setInterestsList(interestsData || []);
       }
 
       const activitiesData = await crmService.getActivities(leadId);
@@ -226,7 +234,6 @@ export default function LeadDetailPage() {
   }, [fetchData]);
 
   // ===== LOGIKA HAK AKSES MODIFIKASI =====
-  const isAdminOrSuperAdmin = currentUserRole === "super_admin" || currentUserRole === "admin";
   const isOwner =
     (lead as any)?.created_by === currentUserId ||
     (lead as any)?.user_id === currentUserId ||
@@ -243,13 +250,72 @@ export default function LeadDetailPage() {
     }
   }, [activityFilter, activities]);
 
-  // ===== HANDLERS =====
+  // ===== DIRECT WHATSAPP HELPER =====
+  const openWhatsApp = (phone?: string, customText?: string) => {
+    if (!phone) {
+      toast.error("Nomor WhatsApp tidak tersedia");
+      return;
+    }
+    const cleanPhone = phone.replace(/[^0-9]/g, "").replace(/^0/, "62");
+    const defaultText = `Halo Bpk/Ibu ${lead?.contact?.full_name || ""}, perkenalkan saya dari Inland Property...`;
+    const text = customText ? encodeURIComponent(customText) : encodeURIComponent(defaultText);
+    window.open(`https://wa.me/${cleanPhone}?text=${text}`, "_blank");
+  };
+
+  // ===== 🔒 AI WRITER FOLLOW-UP HANDLER =====
+  const handleOpenAiWriter = async () => {
+    if (!isAdminOrSuperAdmin) {
+      toast.error("Fitur Terkunci!", {
+        description: "Fitur AI Writer Follow-Up khusus untuk Super Admin dan Admin.",
+      });
+      return;
+    }
+
+    setAiModalOpen(true);
+    setGeneratingAi(true);
+    setAiGeneratedMessage("");
+
+    try {
+      const clientName = lead?.contact?.full_name || "Klien";
+      const propertyInterest =
+        lead?.interest_type ||
+        (interestsList.length > 0 && interestsList[0]?.property?.title) ||
+        "Properti Pilihan";
+
+      const res = await fetch("/api/ai/followup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          leadName: clientName,
+          property: propertyInterest,
+          status: lead?.status || "New Lead",
+          userRole: currentUserRole,
+        }),
+      });
+
+      const json = await res.json();
+      if (res.ok && json?.message) {
+        setAiGeneratedMessage(json.message);
+      } else {
+        toast.error(json?.error || "Gagal membuat pesan AI.");
+        setAiGeneratedMessage(
+          `Halo Bpk/Ibu ${clientName},\n\nPerkenalkan saya dari Inland Property. Menindaklanjuti ketertarikan Anda pada properti *${propertyInterest}*, apakah ada waktu luang minggu ini untuk survey lokasi bersama?\n\nTerima kasih!`
+        );
+      }
+    } catch (err) {
+      toast.error("Gagal terhubung ke AI Service.");
+    } finally {
+      setGeneratingAi(false);
+    }
+  };
+
+  // ===== ACTION HANDLERS =====
   const handleOpenKprCalculator = () => {
     if (!lead) return;
     const clientName = lead.contact?.full_name || "Klien CRM";
     let url = `/kpr-calculator?client_name=${encodeURIComponent(clientName)}`;
-    if (lead.interests && lead.interests.length > 0 && lead.interests[0].property_id) {
-      url += `&property_id=${lead.interests[0].property_id}`;
+    if (interestsList.length > 0 && interestsList[0]?.property?.id) {
+      url += `&property_id=${interestsList[0].property.id}`;
     }
     router.push(url);
   };
@@ -315,6 +381,7 @@ export default function LeadDetailPage() {
     }
   };
 
+  // FIX TABEL CRM_INTERESTS
   const handleAddInterest = async () => {
     if (!lead || !newInterest.property_id) {
       toast.error("Pilih properti yang diminati");
@@ -322,54 +389,23 @@ export default function LeadDetailPage() {
     }
     setSaving(true);
     try {
-      await crmService.addInterest({
+      const { error } = await supabase.from("crm_interests").insert({
         lead_id: lead.id,
         property_id: newInterest.property_id,
-        interest_level: newInterest.interest_level || undefined,
-        notes: newInterest.notes || undefined,
+        interest_level: newInterest.interest_level || "high",
+        notes: newInterest.notes || null,
+        priority: 1,
       });
+
+      if (error) throw error;
+
       toast.success("Minat properti berhasil ditambahkan");
       setShowAddInterest(false);
-      setNewInterest({ property_id: "", interest_level: "", notes: "" });
+      setNewInterest({ property_id: "", interest_level: "high", notes: "" });
       fetchData();
-    } catch (error) {
+    } catch (error: any) {
+      console.error("Gagal menambah minat:", error);
       toast.error("Gagal menambahkan minat properti");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleSaveEditLead = async () => {
-    if (!lead) return;
-    if (!canModify) {
-      toast.error("Anda tidak memiliki akses untuk mengedit lead ini.");
-      return;
-    }
-    setSaving(true);
-    try {
-      await crmService.updateLead(lead.id, {
-        source: editLeadData.source || undefined,
-        budget: editLeadData.budget ? parseFloat(editLeadData.budget) : undefined,
-        interest_type: editLeadData.interest_type || undefined,
-        notes: editLeadData.notes || undefined,
-      });
-
-      if (lead.contact_id && crmService.updateContact) {
-        await crmService.updateContact(lead.contact_id, {
-          full_name: editLeadData.full_name,
-          phone: editLeadData.phone,
-          whatsapp: editLeadData.whatsapp,
-          email: editLeadData.email,
-          occupation: editLeadData.occupation,
-          city: editLeadData.city,
-        });
-      }
-
-      toast.success("Data prospek berhasil diperbarui");
-      setShowEditLead(false);
-      fetchData();
-    } catch (error) {
-      toast.error("Gagal memperbarui data lead");
     } finally {
       setSaving(false);
     }
@@ -413,12 +449,9 @@ export default function LeadDetailPage() {
     toast.success("Data berhasil diekspor");
   };
 
-  const getInitials = (name: string) => name ? name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2) : "U";
+  const getInitials = (name: string) => (name ? name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2) : "U");
   const getStatusLabel = (status: LeadStatus) => STATUS_OPTIONS.find((s) => s.value === status)?.label || status;
 
-  // ============================================================
-  // LOADING / EMPTY STATE
-  // ============================================================
   if (loading) {
     return (
       <div className="space-y-6">
@@ -435,22 +468,19 @@ export default function LeadDetailPage() {
     return (
       <div className="flex flex-col items-center justify-center h-96 text-center">
         <h2 className="text-xl font-bold">Lead Tidak Ditemukan</h2>
-        <Button onClick={() => router.back()} className="mt-4 text-xs">
+        <Button onClick={() => router.back()} className="mt-4 text-xs cursor-pointer">
           <ArrowLeft className="h-4 w-4 mr-2" /> Kembali
         </Button>
       </div>
     );
   }
 
-  // ============================================================
-  // RENDER UTAMA
-  // ============================================================
   return (
     <div className="space-y-6 pb-16 max-w-7xl mx-auto">
       {/* HEADER BAR */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b pb-4">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={() => router.back()}>
+          <Button variant="ghost" size="icon" onClick={() => router.back()} className="cursor-pointer">
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
@@ -468,23 +498,39 @@ export default function LeadDetailPage() {
 
         {/* HEADER ACTIONS */}
         <div className="flex items-center gap-2 flex-wrap">
+          {/* AI Writer Button dengan Status Role */}
+          <Button
+            onClick={handleOpenAiWriter}
+            className={cn(
+              "text-xs h-9 gap-1.5 shadow-xs cursor-pointer",
+              isAdminOrSuperAdmin
+                ? "bg-amber-600 hover:bg-amber-700 text-white"
+                : "bg-slate-100 text-slate-400 hover:bg-slate-200"
+            )}
+            title={isAdminOrSuperAdmin ? "Draf Pesan AI WhatsApp" : "Khusus Super Admin & Admin"}
+          >
+            {isAdminOrSuperAdmin ? <Sparkles className="w-4 h-4 fill-amber-300" /> : <Lock className="w-4 h-4" />}
+            AI Writer
+          </Button>
+
           <Button
             onClick={handleOpenKprCalculator}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-9 gap-1.5 shadow-sm"
+            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-9 gap-1.5 shadow-xs cursor-pointer"
           >
             <Calculator className="w-4 h-4" /> Simulasi KPR
           </Button>
-          <Button variant="outline" size="sm" onClick={handleExportLead} className="text-xs h-9">
+
+          <Button variant="outline" size="sm" onClick={handleExportLead} className="text-xs h-9 cursor-pointer">
             <Download className="h-4 w-4 mr-1.5" /> Export
           </Button>
 
           {/* 🔒 HANYA DITAMPILKAN JIKA PEMBUAT / ASSIGNED / ADMIN */}
           {canModify && (
             <>
-              <Button variant="outline" size="sm" onClick={() => router.push(`/crm/leads/${lead.id}/edit`)} className="text-xs h-9">
+              <Button variant="outline" size="sm" onClick={() => router.push(`/crm/leads/${lead.id}/edit`)} className="text-xs h-9 cursor-pointer">
                 <Edit className="h-4 w-4 mr-1.5" /> Edit
               </Button>
-              <Button variant="destructive" size="sm" onClick={() => setShowDeleteDialog(true)} className="text-xs h-9">
+              <Button variant="destructive" size="sm" onClick={() => setShowDeleteDialog(true)} className="text-xs h-9 cursor-pointer">
                 <Trash2 className="h-4 w-4 mr-1.5" /> Hapus
               </Button>
             </>
@@ -527,13 +573,18 @@ export default function LeadDetailPage() {
                     </a>
                   </div>
                 )}
-                {lead.contact?.whatsapp && (
+                {lead.contact?.phone && (
                   <div className="flex items-center gap-2.5">
                     <MessageCircle className="h-4 w-4 text-emerald-600 shrink-0" />
-                    <span className="font-mono text-emerald-600 font-semibold">{lead.contact.whatsapp}</span>
-                    <a href={`https://wa.me/${lead.contact.whatsapp.replace(/\D/g, '')}`} target="_blank" rel="noopener noreferrer" className="ml-auto text-emerald-600 p-1 hover:bg-emerald-50 rounded-md">
-                      <MessageCircle className="h-3.5 w-3.5" />
-                    </a>
+                    <span className="font-mono text-emerald-600 font-semibold">{lead.contact?.phone}</span>
+<button
+  type="button"
+  onClick={() => openWhatsApp(lead.contact?.phone ?? undefined)}
+  className="ml-auto text-emerald-600 p-1 hover:bg-emerald-50 rounded-md cursor-pointer"
+  title="Kirim Pesan WhatsApp"
+>
+  <MessageSquare className="w-4 h-4" />
+</button>
                   </div>
                 )}
                 {lead.contact?.email && (
@@ -590,7 +641,7 @@ export default function LeadDetailPage() {
             <TabsList className="grid w-full grid-cols-3 h-10">
               <TabsTrigger value="timeline" className="text-xs font-medium">⏱️ Timeline ({filteredActivities.length})</TabsTrigger>
               <TabsTrigger value="followups" className="text-xs font-medium">📅 Follow-up ({followups.length})</TabsTrigger>
-              <TabsTrigger value="interests" className="text-xs font-medium">🏠 Minat ({lead.interests?.length || 0})</TabsTrigger>
+              <TabsTrigger value="interests" className="text-xs font-medium">🏠 Minat ({interestsList.length})</TabsTrigger>
             </TabsList>
 
             {/* TAB TIMELINE */}
@@ -634,7 +685,7 @@ export default function LeadDetailPage() {
                       </div>
                     </ScrollArea>
                   )}
-                  <Button variant="outline" className="w-full mt-4 text-xs h-9 gap-1.5" onClick={() => setShowAddNote(true)}>
+                  <Button variant="outline" className="w-full mt-4 text-xs h-9 gap-1.5 cursor-pointer" onClick={() => setShowAddNote(true)}>
                     <Plus className="h-3.5 w-3.5" /> Tambah Catatan Aktivitas
                   </Button>
                 </CardContent>
@@ -663,35 +714,39 @@ export default function LeadDetailPage() {
                       ))}
                     </div>
                   )}
-                  <Button variant="outline" className="w-full mt-4 text-xs h-9 gap-1.5" onClick={() => setShowAddFollowup(true)}>
+                  <Button variant="outline" className="w-full mt-4 text-xs h-9 gap-1.5 cursor-pointer" onClick={() => setShowAddFollowup(true)}>
                     <Plus className="h-3.5 w-3.5" /> Buat Follow-up Baru
                   </Button>
                 </CardContent>
               </Card>
             </TabsContent>
 
-            {/* TAB INTERESTS */}
+            {/* TAB INTERESTS (CRM_INTERESTS) */}
             <TabsContent value="interests" className="mt-4">
               <Card className="border shadow-xs">
                 <CardHeader className="p-4 pb-2 border-b">
                   <CardTitle className="text-sm font-bold">Minat Properti</CardTitle>
                 </CardHeader>
                 <CardContent className="p-4">
-                  {!lead.interests || lead.interests.length === 0 ? (
+                  {interestsList.length === 0 ? (
                     <p className="text-xs text-muted-foreground text-center py-8">Belum ada properti terpilih.</p>
                   ) : (
                     <div className="space-y-3">
-                      {lead.interests.map((i: any) => (
+                      {interestsList.map((i: any) => (
                         <div key={i.id} className="p-3 rounded-xl border text-xs flex justify-between items-center">
                           <div>
-                            <p className="font-bold">{i.property?.title || "Properti"}</p>
-                            <p className="text-muted-foreground">Kode: {i.property?.listing_code || "-"}</p>
+                            <p className="font-bold text-slate-900 dark:text-slate-100">{i.property?.title || "Properti Pilihan"}</p>
+                            <p className="text-muted-foreground">Kode Listing: {i.property?.listing_code || "-"}</p>
+                            {i.notes && <p className="text-[11px] text-slate-500 mt-1">{i.notes}</p>}
                           </div>
+                          <Badge variant="outline" className="text-[10px] uppercase font-mono">
+                            {i.interest_level || "HIGH"}
+                          </Badge>
                         </div>
                       ))}
                     </div>
                   )}
-                  <Button variant="outline" className="w-full mt-4 text-xs h-9 gap-1.5" onClick={() => setShowAddInterest(true)}>
+                  <Button variant="outline" className="w-full mt-4 text-xs h-9 gap-1.5 cursor-pointer" onClick={() => setShowAddInterest(true)}>
                     <Plus className="h-3.5 w-3.5" /> Tambah Minat Properti
                   </Button>
                 </CardContent>
@@ -700,6 +755,100 @@ export default function LeadDetailPage() {
           </Tabs>
         </div>
       </div>
+
+      {/* 🤖 DIALOG MODAL AI WRITER FOLLOW-UP */}
+      <Dialog open={aiModalOpen} onOpenChange={setAiModalOpen}>
+        <DialogContent className="sm:max-w-md rounded-2xl">
+          <DialogHeader>
+            <div className="flex items-center justify-between">
+              <DialogTitle className="text-base font-bold flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-amber-500 fill-amber-500" /> AI Writer Follow-Up
+              </DialogTitle>
+              <Badge
+                variant="outline"
+                className={
+                  isAdminOrSuperAdmin
+                    ? "bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px]"
+                    : "bg-amber-50 text-amber-700 border-amber-200 text-[10px]"
+                }
+              >
+                {isAdminOrSuperAdmin ? "Admin Access" : "Khusus Admin"}
+              </Badge>
+            </div>
+            <DialogDescription className="text-xs">
+              Draf pesan WhatsApp ramah & persuasif untuk <span className="font-semibold text-slate-800 dark:text-slate-200">{lead.contact?.full_name}</span>.
+            </DialogDescription>
+          </DialogHeader>
+
+          {!isAdminOrSuperAdmin ? (
+            <div className="py-8 text-center space-y-3">
+              <div className="w-12 h-12 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto">
+                <Lock className="w-6 h-6" />
+              </div>
+              <div className="space-y-1 max-w-xs mx-auto">
+                <h4 className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                  Akses Terkunci
+                </h4>
+                <p className="text-[11px] text-slate-500 leading-relaxed">
+                  Fitur AI Writer Follow-Up khusus digunakan oleh **Super Admin** dan **Admin**.
+                </p>
+              </div>
+            </div>
+          ) : generatingAi ? (
+            <div className="p-8 text-center space-y-2">
+              <RefreshCw className="w-8 h-8 text-emerald-600 animate-spin mx-auto" />
+              <p className="text-xs text-muted-foreground">AI sedang menyusun draf pesan follow-up...</p>
+            </div>
+          ) : (
+            <div className="space-y-3 py-2 text-xs">
+              <Textarea
+                value={aiGeneratedMessage}
+                onChange={(e) => setAiGeneratedMessage(e.target.value)}
+                rows={6}
+                className="text-xs leading-relaxed font-mono bg-muted/30 resize-none focus-visible:ring-emerald-600"
+              />
+            </div>
+          )}
+
+          <DialogFooter className="gap-2">
+            {isAdminOrSuperAdmin ? (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    navigator.clipboard.writeText(aiGeneratedMessage);
+                    toast.success("Pesan berhasil disalin ke clipboard!");
+                  }}
+                  className="text-xs gap-1.5 cursor-pointer"
+                >
+                  <Copy className="w-3.5 h-3.5" /> Salin Pesan
+                </Button>
+
+                <Button
+                  size="sm"
+                  onClick={() => {
+  openWhatsApp(lead.contact?.phone ?? undefined, aiGeneratedMessage ?? undefined);
+  setAiModalOpen(false);
+}}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs gap-1.5 cursor-pointer"
+                >
+                  <Send className="w-3.5 h-3.5" /> Kirim ke WhatsApp
+                </Button>
+              </>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setAiModalOpen(false)}
+                className="w-full text-xs cursor-pointer"
+              >
+                Tutup
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* DIALOG TAMBAH FOLLOWUP */}
       <Dialog open={showAddFollowup} onOpenChange={setShowAddFollowup}>
@@ -716,14 +865,14 @@ export default function LeadDetailPage() {
             />
             <Textarea
               placeholder="Catatan follow-up..."
-              className="text-xs"
+              className="text-xs resize-none"
               value={newFollowup.notes}
               onChange={(e) => setNewFollowup({ ...newFollowup, notes: e.target.value })}
               rows={3}
             />
           </div>
           <DialogFooter>
-            <Button size="sm" onClick={handleAddFollowup} disabled={saving} className="bg-emerald-600 text-white text-xs">
+            <Button size="sm" onClick={handleAddFollowup} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs cursor-pointer">
               Simpan
             </Button>
           </DialogFooter>
@@ -738,13 +887,13 @@ export default function LeadDetailPage() {
           </DialogHeader>
           <Textarea
             placeholder="Tulis catatan..."
-            className="text-xs"
+            className="text-xs resize-none"
             value={newNote}
             onChange={(e) => setNewNote(e.target.value)}
             rows={4}
           />
           <DialogFooter>
-            <Button size="sm" onClick={handleAddNote} disabled={saving} className="bg-emerald-600 text-white text-xs">
+            <Button size="sm" onClick={handleAddNote} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs cursor-pointer">
               Simpan
             </Button>
           </DialogFooter>
@@ -776,7 +925,7 @@ export default function LeadDetailPage() {
 
             <Select
               value={newInterest.interest_level}
-              onValueChange={(val) => setNewInterest({ ...newInterest, interest_level: val || "" })}
+              onValueChange={(val) => setNewInterest({ ...newInterest, interest_level: val || "high" })}
             >
               <SelectTrigger className="h-9 text-xs">
                 <SelectValue placeholder="Level minat" />
@@ -790,14 +939,14 @@ export default function LeadDetailPage() {
 
             <Textarea
               placeholder="Catatan tambahan..."
-              className="text-xs"
+              className="text-xs resize-none"
               value={newInterest.notes}
               onChange={(e) => setNewInterest({ ...newInterest, notes: e.target.value })}
               rows={2}
             />
           </div>
           <DialogFooter>
-            <Button size="sm" onClick={handleAddInterest} disabled={saving} className="bg-emerald-600 text-white text-xs">
+            <Button size="sm" onClick={handleAddInterest} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs cursor-pointer">
               Simpan
             </Button>
           </DialogFooter>
@@ -812,7 +961,7 @@ export default function LeadDetailPage() {
             <DialogDescription className="text-xs">Tindakan ini permanen dan tidak dapat dibatalkan.</DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="destructive" size="sm" onClick={handleDeleteLead} disabled={saving} className="text-xs">
+            <Button variant="destructive" size="sm" onClick={handleDeleteLead} disabled={saving} className="text-xs cursor-pointer">
               Hapus
             </Button>
           </DialogFooter>

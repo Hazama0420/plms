@@ -20,7 +20,6 @@ import {
   FileText,
   FileBarChart,
   Settings,
-  User,
   LogOut,
   ChevronLeft,
   ChevronRight,
@@ -33,7 +32,7 @@ import {
   CalendarCheck,
   Plus,
   Calculator,
-  Sparkles,
+  MessageSquare,
 } from "lucide-react";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -132,18 +131,16 @@ const NAV_ITEMS: NavItem[] = [
     icon: Shield,
     href: "/admin",
     roles: ["super_admin", "admin"],
-    children: [{ label: "User Management", icon: Users, href: "/admin/users", roles: ["super_admin", "admin"] }],
+    children: [
+      { label: "User Management", icon: Users, href: "/admin/users", roles: ["super_admin", "admin"] },
+      { label: "Inbox Support", icon: MessageSquare, href: "/admin/support", roles: ["super_admin", "admin"] },
+    ],
   },
   {
     label: "Notifikasi",
     icon: Bell,
     href: "/notifications",
     roles: ["super_admin", "admin", "agent", "marketing", "viewer"],
-  },
-  {
-    label: "Profile",
-    icon: User,
-    href: "/profile",
   },
   {
     label: "Settings",
@@ -168,11 +165,12 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
   const [userAvatar, setUserAvatar] = useState("");
   const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({
     crm: true,
-    admin: false,
+    admin: true,
   });
 
-  const isLoading = roleLoading || userLoading;
-  const isViewer = userRole === "viewer";
+  // FIX: Supaya tidak stuck saat diakses sebagai Tamu/Guest (unauthenticated)
+  const isLoading = userLoading || (!!user && roleLoading);
+  const isViewer = !user || userRole === "viewer";
 
   const navigateAndClose = (href: string) => {
     router.push(href);
@@ -181,7 +179,11 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
 
   useEffect(() => {
     async function loadUserData() {
-      if (!user) return;
+      if (!user) {
+        setUserFullName("Tamu");
+        setUserAvatar("");
+        return;
+      }
       try {
         const { data, error } = await supabase
           .from("users")
@@ -239,13 +241,14 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
 
   const canSeeItem = (item: NavItem) => {
     if (!item.roles) return true;
+    if (!user) return item.roles.includes("viewer");
     if (!userRole) return true;
     return item.roles.includes(userRole as any);
   };
 
   const filteredNavItems = useMemo(() => {
     return NAV_ITEMS.filter(canSeeItem);
-  }, [userRole]);
+  }, [userRole, user]);
 
   const getInitials = (name: string) => {
     if (!name) return "IP";
@@ -435,7 +438,7 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
         collapsed ? "w-16" : "w-64"
       )}
     >
-      {/* 1. HEADER BRAND (FIXED SHRINK-0) */}
+      {/* 1. HEADER BRAND (INLAND HIJAU, PROPERTY PUTIH/GELAP) */}
       <div
         className={cn(
           "flex items-center h-16 px-4 border-b border-border/60 shrink-0 bg-card/50",
@@ -451,10 +454,11 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
               <span className="text-white font-black text-xs tracking-wider">IP</span>
             </div>
             <div className="flex flex-col">
-              <span className="font-extrabold text-base text-foreground tracking-tight leading-none flex items-center gap-1">
-                Inland <span className="text-emerald-600 dark:text-emerald-400">PLMS</span>
+              <span className="font-extrabold text-base tracking-tight leading-none flex items-center gap-1">
+                <span className="text-emerald-600 dark:text-emerald-400">Inland</span>{" "}
+                <span className="text-slate-900 dark:text-white">Property</span>
               </span>
-              <span className="text-[10px] text-muted-foreground font-mono mt-0.5">Property System</span>
+              <span className="text-[10px] text-muted-foreground font-mono mt-0.5">Management System</span>
             </div>
           </button>
         )}
@@ -482,14 +486,14 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
         </Button>
       </div>
 
-      {/* 2. MIDDLE NAVIGATION LINKS (FLEX-1 MIN-H-0 OVERFLOW-Y-AUTO) */}
+      {/* 2. MIDDLE NAVIGATION LINKS */}
       <div className="flex-1 min-h-0 w-full overflow-y-auto px-3 py-3 space-y-1 scrollbar-thin scrollbar-thumb-border hover:scrollbar-thumb-muted-foreground/30">
         <nav className="space-y-1">
           {filteredNavItems.map((item) => renderNavItem(item))}
         </nav>
       </div>
 
-      {/* 3. FOOTER CONTROL BAR (FIXED SHRINK-0 AT BOTTOM) */}
+      {/* 3. FOOTER CONTROL BAR */}
       <div className="border-t border-border/70 p-3 space-y-2 shrink-0 bg-muted/20">
         {/* Toggle Dark Mode */}
         <Button
@@ -511,13 +515,13 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
           )}
         </Button>
 
-        {/* User Card */}
+        {/* User Card (Mengarah ke Settings) */}
         <button
           className={cn(
             "flex items-center gap-2.5 p-2 rounded-xl transition-all w-full text-left bg-card border border-border/60 hover:border-emerald-500/40 hover:bg-accent/50 cursor-pointer shadow-2xs group",
             collapsed && "justify-center border-none bg-transparent p-0"
           )}
-          onClick={() => navigateAndClose("/profile")}
+          onClick={() => navigateAndClose("/settings")}
         >
           <Avatar className="h-8 w-8 border border-emerald-500/30 shrink-0 shadow-2xs">
             <AvatarImage src={userAvatar || undefined} />
@@ -533,13 +537,13 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
                 </p>
               </div>
               <p className="text-[10px] text-muted-foreground truncate capitalize">
-                {userRole ? userRole.replace("_", " ") : "Pengguna"}
+                {user ? (userRole ? userRole.replace("_", " ") : "Pengguna") : "Tamu"}
               </p>
             </div>
           )}
         </button>
 
-        {/* Logout Button (Hanya tampil jika user sudah login / bukan tamu) */}
+        {/* Logout Button */}
         {user && (
           <Button
             variant="ghost"

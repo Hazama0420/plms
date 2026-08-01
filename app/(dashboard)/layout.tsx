@@ -9,7 +9,7 @@ import { NotificationBell } from "@/components/notification-bell";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { BottomNav } from "@/components/layout/BottomNav";
-import { PageLoader } from "@/components/ui/page-loader"; // 🟢 Impor PageLoader
+import { PageLoader } from "@/components/ui/page-loader";
 import { cn } from "@/lib/utils";
 
 export default function DashboardLayout({
@@ -17,7 +17,12 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
+  // 1. Mobile State: default false (tertutup)
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // 2. Desktop State: default false (melebar/terbuka)
+  const [isCollapsed, setIsCollapsed] = useState(false);
+
   const [timeStr, setTimeStr] = useState("");
   const [dateStr, setDateStr] = useState("");
 
@@ -41,29 +46,43 @@ export default function DashboardLayout({
     };
 
     updateDateTime();
-    // Update jam otomatis setiap 1 menit
     const interval = setInterval(updateDateTime, 1000 * 60);
 
     return () => clearInterval(interval);
   }, []);
 
+  // Handler klik tombol menu hamburger
+  const handleMenuToggle = () => {
+    if (window.innerWidth < 768) {
+      // Di Mobile: Buka Drawer
+      setSidebarOpen(true);
+    } else {
+      // Di Desktop: Ciutkan / Melebarkan Sidebar
+      setIsCollapsed((prev) => !prev);
+    }
+  };
+
   return (
     <div className="flex h-screen w-full bg-background overflow-hidden">
-      {/* 🟢 Global Page Loading Overlay (Animasi layar buram saat pindah halaman) */}
+      {/* Global Page Loading Overlay */}
       <Suspense fallback={null}>
         <PageLoader />
       </Suspense>
 
-      {/* Desktop Sidebar (Fleksibel mengikuti ukuran collapsed AppSidebar) */}
-      <div className="hidden md:flex shrink-0">
-        <AppSidebar />
+      {/* 🟢 DESKTOP SIDEBAR:
+          Otomatis tampil & melebar di desktop karena `isCollapsed = false`.
+          Class `hidden md:flex` membuat komponen ini tersembunyi di HP. */}
+      <div className="hidden md:flex shrink-0 transition-all duration-300">
+        <AppSidebar isCollapsed={isCollapsed} />
       </div>
 
-      {/* Mobile Sidebar (Sheet Drawer) */}
+      {/* 🟢 MOBILE SIDEBAR (Drawer Sheet):
+          Otomatis tertutup di HP karena `sidebarOpen = false`.
+          Baru muncul sebagai slide-over saat tombol hamburger diklik. */}
       <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
         <SheetContent side="left" className="p-0 w-64 border-r-0">
           <SheetTitle className="sr-only">Navigasi Sidebar</SheetTitle>
-          <AppSidebar onClose={() => setSidebarOpen(false)} />
+          <AppSidebar onClose={() => setSidebarOpen(false)} isCollapsed={false} />
         </SheetContent>
       </Sheet>
 
@@ -75,13 +94,13 @@ export default function DashboardLayout({
             <Button
               variant="ghost"
               size="icon"
-              className="md:hidden text-slate-600 dark:text-slate-300"
-              onClick={() => setSidebarOpen(true)}
+              className="text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl cursor-pointer"
+              onClick={handleMenuToggle}
+              title="Buka / Tutup Sidebar"
             >
-              <Menu size={24} />
+              <Menu size={22} />
             </Button>
             
-            {/* BRAND HEADER: Inland (Hijau) Property (Putih/Gelap) */}
             <h2 className="text-lg sm:text-xl font-extrabold tracking-tight select-none flex items-center gap-1.5">
               <span className="text-emerald-600 dark:text-emerald-400">Inland</span>
               <span className="text-slate-900 dark:text-white">Property</span>

@@ -154,6 +154,7 @@ const NAV_ITEMS: NavItem[] = [
 
 interface AppSidebarProps {
   onClose?: () => void;
+  isCollapsed?: boolean; // 👈 Tambahkan baris ini
 }
 
 export function AppSidebar({ onClose }: AppSidebarProps) {

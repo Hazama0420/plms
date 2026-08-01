@@ -5,7 +5,7 @@ import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { MessageSquare, X, Send, Bot, Sparkles, AlertCircle } from "lucide-react";
+import { MessageSquare, X, Send, Bot, Sparkles } from "lucide-react";
 
 interface Message {
   role: "assistant" | "user";
@@ -41,7 +41,7 @@ export default function AIChatWidget() {
 
     const userMessage = input.trim();
     setInput("");
-    
+
     const newMessages: Message[] = [...messages, { role: "user", text: userMessage }];
     setMessages(newMessages);
     setLoading(true);
@@ -88,19 +88,22 @@ export default function AIChatWidget() {
   };
 
   return (
-    <div className="fixed bottom-6 right-6 z-50">
+    /* 🟢 POSISI RESPONGSIF:
+       - Mobile: bottom-20 (di atas BottomNav) & right-4
+       - Desktop (md:): bottom-6 & right-6 */
+    <div className="fixed bottom-20 right-4 md:bottom-6 md:right-6 z-40 transition-all duration-300">
       {!isOpen ? (
         <Button
           onClick={() => setIsOpen(true)}
-          className="h-14 w-14 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white shadow-2xl flex items-center justify-center transition-all cursor-pointer hover:scale-105"
+          className="h-12 w-12 sm:h-14 sm:w-14 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white shadow-2xl flex items-center justify-center transition-all cursor-pointer hover:scale-105"
           title="Tanya Agnes AI"
         >
-          <MessageSquare className="h-6 w-6" />
+          <MessageSquare className="h-5 w-5 sm:h-6 sm:w-6" />
         </Button>
       ) : (
-        <Card className="w-80 sm:w-96 h-[520px] shadow-2xl rounded-3xl bg-slate-950/90 backdrop-blur-xl border border-white/20 text-white flex flex-col overflow-hidden">
-          
-          <CardHeader className="bg-emerald-900/40 border-b border-white/10 px-4 py-3 flex flex-row items-center justify-between">
+        <Card className="w-[calc(100vw-2rem)] max-w-[360px] sm:w-96 h-[460px] sm:h-[520px] max-h-[75vh] shadow-2xl rounded-3xl bg-slate-950/90 backdrop-blur-xl border border-white/20 text-white flex flex-col overflow-hidden">
+          {/* HEADER */}
+          <CardHeader className="bg-emerald-900/40 border-b border-white/10 px-4 py-3 flex flex-row items-center justify-between shrink-0">
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center">
                 <Bot className="h-4 w-4 text-emerald-400" />
@@ -114,12 +117,13 @@ export default function AIChatWidget() {
             </div>
             <button
               onClick={() => setIsOpen(false)}
-              className="text-slate-400 hover:text-white transition cursor-pointer p-1"
+              className="text-slate-400 hover:text-white transition cursor-pointer p-1 rounded-lg hover:bg-white/10"
             >
               <X className="h-5 w-5" />
             </button>
           </CardHeader>
 
+          {/* KONTEN PESAN */}
           <CardContent className="flex-1 overflow-y-auto p-4 space-y-3 text-xs">
             {messages.map((msg, idx) => (
               <div
@@ -152,7 +156,8 @@ export default function AIChatWidget() {
             <div ref={messagesEndRef} />
           </CardContent>
 
-          <form onSubmit={handleSend} className="p-3 border-t border-white/10 bg-black/20 flex gap-2">
+          {/* FORM INPUT */}
+          <form onSubmit={handleSend} className="p-3 border-t border-white/10 bg-black/20 flex gap-2 shrink-0">
             <Input
               value={input}
               onChange={(e) => setInput(e.target.value)}

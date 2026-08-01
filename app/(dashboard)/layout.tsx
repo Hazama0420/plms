@@ -17,12 +17,8 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  // 1. Mobile State: default false (tertutup)
   const [sidebarOpen, setSidebarOpen] = useState(false);
-
-  // 2. Desktop State: default false (melebar/terbuka)
   const [isCollapsed, setIsCollapsed] = useState(false);
-
   const [timeStr, setTimeStr] = useState("");
   const [dateStr, setDateStr] = useState("");
 
@@ -47,38 +43,30 @@ export default function DashboardLayout({
 
     updateDateTime();
     const interval = setInterval(updateDateTime, 1000 * 60);
-
     return () => clearInterval(interval);
   }, []);
 
-  // Handler klik tombol menu hamburger
   const handleMenuToggle = () => {
     if (window.innerWidth < 768) {
-      // Di Mobile: Buka Drawer
       setSidebarOpen(true);
     } else {
-      // Di Desktop: Ciutkan / Melebarkan Sidebar
       setIsCollapsed((prev) => !prev);
     }
   };
 
   return (
-    <div className="flex h-screen w-full bg-background overflow-hidden">
-      {/* Global Page Loading Overlay */}
+    // 🟢 Pakai min-h-[100dvh] agar menyesuaikan tinggi browser mobile
+    <div className="flex h-[100dvh] w-full bg-background overflow-hidden">
       <Suspense fallback={null}>
         <PageLoader />
       </Suspense>
 
-      {/* 🟢 DESKTOP SIDEBAR:
-          Otomatis tampil & melebar di desktop karena `isCollapsed = false`.
-          Class `hidden md:flex` membuat komponen ini tersembunyi di HP. */}
+      {/* Desktop Sidebar */}
       <div className="hidden md:flex shrink-0 transition-all duration-300">
         <AppSidebar isCollapsed={isCollapsed} />
       </div>
 
-      {/* 🟢 MOBILE SIDEBAR (Drawer Sheet):
-          Otomatis tertutup di HP karena `sidebarOpen = false`.
-          Baru muncul sebagai slide-over saat tombol hamburger diklik. */}
+      {/* Mobile Drawer */}
       <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
         <SheetContent side="left" className="p-0 w-64 border-r-0">
           <SheetTitle className="sr-only">Navigasi Sidebar</SheetTitle>
@@ -86,17 +74,16 @@ export default function DashboardLayout({
         </SheetContent>
       </Sheet>
 
-      {/* Area Konten Utama */}
+      {/* Area Utama */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Header Bar */}
-        <header className="h-16 border-b px-4 md:px-6 flex items-center justify-between bg-background shrink-0 z-10">
+        <header className="h-16 border-b px-4 md:px-6 flex items-center justify-between bg-background shrink-0 z-20">
           <div className="flex items-center gap-2.5">
             <Button
               variant="ghost"
               size="icon"
               className="text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl cursor-pointer"
               onClick={handleMenuToggle}
-              title="Buka / Tutup Sidebar"
             >
               <Menu size={22} />
             </Button>
@@ -107,7 +94,7 @@ export default function DashboardLayout({
             </h2>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             <div className="hidden sm:flex items-center gap-3 text-sm text-muted-foreground font-medium">
               <span>{dateStr}</span>
               <span className="w-px h-4 bg-slate-200 dark:bg-slate-700" />
@@ -118,17 +105,19 @@ export default function DashboardLayout({
           </div>
         </header>
 
-        {/* Main View Area */}
+        {/* 🟢 MAIN AREA PERBAIKAN:
+            Ditambahkan pb-28 pada mobile agar konten paling bawah
+            tidak tertutup BottomNav / AIChatWidget */}
         <main
           className={cn(
             "flex-1 overflow-y-auto p-4 md:p-6 bg-slate-50/50 dark:bg-slate-900/50",
-            "pb-20 md:pb-6"
+            "pb-28 sm:pb-24 md:pb-6" 
           )}
         >
           {children}
         </main>
 
-        {/* Bottom Navigation - Mobile */}
+        {/* Bottom Navigation Khusus Mobile */}
         <BottomNav />
       </div>
     </div>

@@ -14,7 +14,11 @@ export const metadata: Metadata = {
   description: "Property Listing Management System",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html lang="id" suppressHydrationWarning>
       <body className={inter.className} suppressHydrationWarning>
@@ -28,9 +32,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             {children}
             <Toaster richColors position="top-right" />
             
-            {/* FITUR TAMBAHAN: Agnes AI Chatbot (Tetap Aktif di Sebelah Kanan) */}
+            {/* Widget Chatbot Agnes AI */}
             <AIChatWidget />
-            
           </OneSignalProvider>
         </ThemeProvider>
       </body>

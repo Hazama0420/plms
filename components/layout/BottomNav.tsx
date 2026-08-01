@@ -10,6 +10,7 @@ import {
   FileText,
   Settings,
   Calculator,
+  LogIn,
 } from "lucide-react";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useUser } from "@/hooks/use-user";
@@ -46,12 +47,19 @@ export function BottomNav() {
       href: "/invoices",
       hideForGuest: true,
     },
-    {
-      icon: Settings,
-      label: "Pengaturan",
-      href: "/settings",
-    },
-  ].filter((item) => !(isGuest && item.hideForGuest));
+    // 🟢 KONDISI PERBAIKAN: Jika belum login (Guest) tampilkan "Login", jika sudah tampilkan "Pengaturan"
+    isGuest
+      ? {
+          icon: LogIn,
+          label: "Login",
+          href: "/login",
+        }
+      : {
+          icon: Settings,
+          label: "Pengaturan",
+          href: "/settings",
+        },
+  ].filter((item) => !(isGuest && "hideForGuest" in item && item.hideForGuest));
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-card/90 backdrop-blur-lg border-t border-border/60 shadow-lg pb-[env(safe-area-inset-bottom)]">

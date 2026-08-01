@@ -39,6 +39,30 @@ export interface LeadFilter {
   limit?: number;
 }
 
+// ⚡ Helper internal untuk memicu kirim notifikasi WhatsApp ke agen (Diperbarui tipe parameter agar mendukung null)
+async function sendWaNotification(
+  agentId: string,
+  leadName?: string | null,
+  clientPhone?: string | null,
+  propertyInterest?: string | null
+) {
+  if (!agentId) return;
+  try {
+    await fetch("/api/notifications/whatsapp", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        agentId,
+        leadName: leadName || "Tanpa Nama",
+        clientPhone: clientPhone || "-",
+        propertyInterest: propertyInterest || "Properti Pilihan",
+      }),
+    });
+  } catch (err) {
+    console.error("Gagal memicu WA notif otomatis:", err);
+  }
+}
+
 // ============================================================
 // CRM SERVICE
 // ============================================================
@@ -124,7 +148,7 @@ export const crmService = {
   },
 
   // ============================================================
-  // LEADS (dengan type-safety)
+  // LEADS
   // ============================================================
   async getLeads(filters: LeadFilter = {}) {
     const {
@@ -149,12 +173,6 @@ export const crmService = {
       .order("created_at", { ascending: false })
       .range(offset, offset + limit - 1);
 
-    if (search) {
-      query = query.or(
-        `contact.full_name.ilike.%${search}%,contact.phone.ilike.%${search}%,contact.email.ilike.%${search}%`
-      );
-    }
-
     if (status !== "all") {
       query = query.eq("status", status);
     }
@@ -166,15 +184,27 @@ export const crmService = {
     const { data, error, count } = await query;
     if (error) throw new Error(error.message);
 
+    let filteredData = data as CRMLead[];
+
+    // Pencarian cepat pada nama, HP, atau email kontak
+    if (search && filteredData) {
+      const lowerSearch = search.toLowerCase();
+      filteredData = filteredData.filter((item: any) => {
+        const name = item.contact?.full_name?.toLowerCase() || "";
+        const phone = item.contact?.phone?.toLowerCase() || "";
+        const email = item.contact?.email?.toLowerCase() || "";
+        return name.includes(lowerSearch) || phone.includes(lowerSearch) || email.includes(lowerSearch);
+      });
+    }
+
     return {
-      data: data as CRMLead[],
+      data: filteredData,
       count: count || 0,
       page,
       totalPages: Math.ceil((count || 0) / limit),
     };
   },
 
-  // ⭐ FIX: getLeadById mengembalikan LeadWithRelations dengan contact wajib
   async getLeadById(id: string): Promise<LeadWithRelations> {
     const { data, error } = await supabase
       .from("crm_leads")
@@ -195,9 +225,7 @@ export const crmService = {
 
     if (error) throw new Error(error.message);
 
-    // Pastikan contact ada
     if (!data.contact) {
-      // Coba fetch contact secara terpisah
       const { data: contactData, error: contactError } = await supabase
         .from("crm_contacts")
         .select("*")
@@ -210,9 +238,7 @@ export const crmService = {
       data.contact = contactData;
     }
 
-    // Pastikan assigned_user memiliki id (jika ada)
     if (data.assigned_user && !data.assigned_user.id) {
-      // fallback: fetch user
       const { data: userData } = await supabase
         .from("users")
         .select("id, full_name, email, avatar_url")
@@ -270,10 +296,28 @@ export const crmService = {
       notes: "Lead baru dibuat",
     });
 
+    // ⚡ OTOMATISASI NOTIFIKASI WHATSAPP KE AGEN JIKA DITUGASKAN
+    if (lead.assigned_to) {
+      try {
+        const contact = await this.getContactById(data.contact_id);
+        await sendWaNotification(
+          lead.assigned_to,
+          contact?.full_name,
+          contact?.phone || contact?.whatsapp,
+          data.interest_type || "Properti Pilihan"
+        );
+      } catch (waErr) {
+        console.error("Gagal mengalirkan WA otomatis di createLead:", waErr);
+      }
+    }
+
     return lead as CRMLead;
   },
 
   async updateLead(id: string, data: Partial<CRMLead>) {
+    // Cek agen lama
+    const oldLead = await this.getLeadById(id).catch(() => null);
+
     const { error } = await supabase
       .from("crm_leads")
       .update({
@@ -283,7 +327,20 @@ export const crmService = {
       .eq("id", id);
 
     if (error) throw new Error(error.message);
-    return await this.getLeadById(id);
+
+    const updatedLead = await this.getLeadById(id);
+
+    // ⚡ OTOMATISASI WHATSAPP JIKA AGEN DIUBAH / DITUGASKAN BARU
+    if (data.assigned_to && data.assigned_to !== oldLead?.assigned_to) {
+      await sendWaNotification(
+        data.assigned_to,
+        updatedLead.contact?.full_name,
+        updatedLead.contact?.phone || updatedLead.contact?.whatsapp,
+        updatedLead.interest_type || "Properti Pilihan"
+      );
+    }
+
+    return updatedLead;
   },
 
   async updateStatus(id: string, status: LeadStatus) {
@@ -330,7 +387,6 @@ export const crmService = {
       .order("created_at", { ascending: false });
 
     if (error) {
-      // Fallback jika join ke users gagal
       console.warn("Activities join to users failed, falling back to basic query");
       const { data: basicData, error: basicError } = await supabase
         .from("crm_activities")
@@ -427,7 +483,7 @@ export const crmService = {
         .order("full_name", { ascending: true });
 
       if (error) {
-        console.warn("Tabel users belum dibuat, menggunakan mock data");
+        console.warn("Tabel users error / belum dibuat, menggunakan mock data");
         return [
           { id: "1", full_name: "Admin", email: "admin@plms.com", avatar_url: null },
           { id: "2", full_name: "Agent 1", email: "agent1@plms.com", avatar_url: null },
@@ -458,7 +514,7 @@ export const crmService = {
   },
 
   // ============================================================
-  // PROPERTIES (untuk interest selection)
+  // PROPERTIES
   // ============================================================
   async getPropertiesForLead() {
     const { data, error } = await supabase
@@ -494,7 +550,7 @@ export const crmService = {
   },
 
   // ============================================================
-  // FOLLOW-UPS (dengan fallback untuk relasi)
+  // FOLLOW-UPS
   // ============================================================
   async getFollowups(filters: {
     lead_id?: string;
@@ -533,7 +589,6 @@ export const crmService = {
     const { data, error, count } = await query;
 
     if (error) {
-      // Fallback: query tanpa assigned_user
       console.warn("Followups join to users failed, falling back to basic query");
       const basicQuery = supabase
         .from("crm_followups")
@@ -582,7 +637,6 @@ export const crmService = {
       .single();
 
     if (error) {
-      // Fallback
       const { data: basicData, error: basicError } = await supabase
         .from("crm_followups")
         .select(`
@@ -628,12 +682,11 @@ export const crmService = {
     return followup;
   },
 
-  // ✅ FIX: tambahkan assigned_to opsional
   async updateFollowup(id: string, data: {
     followup_date?: string;
     notes?: string;
     status?: "pending" | "completed" | "cancelled";
-    assigned_to?: string; // tambahkan ini
+    assigned_to?: string;
   }) {
     const updateData: any = {
       ...data,
@@ -684,27 +737,27 @@ export const crmService = {
   // STATISTICS
   // ============================================================
   async getCRMStats() {
-    const { data: totalLeads, error: totalError } = await supabase
+    const { count: totalLeads, error: totalError } = await supabase
       .from("crm_leads")
       .select("*", { count: "exact", head: true });
 
     if (totalError) throw new Error(totalError.message);
 
-    const { data: newLeads, error: newError } = await supabase
+    const { count: newLeads, error: newError } = await supabase
       .from("crm_leads")
       .select("*", { count: "exact", head: true })
       .eq("status", "new");
 
     if (newError) throw new Error(newError.message);
 
-    const { data: contactedLeads, error: contactedError } = await supabase
+    const { count: contactedLeads, error: contactedError } = await supabase
       .from("crm_leads")
       .select("*", { count: "exact", head: true })
       .eq("status", "contacted");
 
     if (contactedError) throw new Error(contactedError.message);
 
-    const { data: wonLeads, error: wonError } = await supabase
+    const { count: wonLeads, error: wonError } = await supabase
       .from("crm_leads")
       .select("*", { count: "exact", head: true })
       .eq("status", "won");
@@ -714,14 +767,14 @@ export const crmService = {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const { data: todayLeads, error: todayError } = await supabase
+    const { count: todayLeads, error: todayError } = await supabase
       .from("crm_leads")
       .select("*", { count: "exact", head: true })
       .gte("created_at", today.toISOString());
 
     if (todayError) throw new Error(todayError.message);
 
-    const { data: pendingFollowups, error: pendingError } = await supabase
+    const { count: pendingFollowups, error: pendingError } = await supabase
       .from("crm_followups")
       .select("*", { count: "exact", head: true })
       .eq("status", "pending")
@@ -747,23 +800,28 @@ export const crmService = {
       return { data: [], count: 0 };
     }
 
-    const { data, error, count } = await supabase
+    const { data, error } = await supabase
       .from("crm_leads")
       .select(`
         *,
         contact:crm_contacts(*)
-      `, { count: "exact" })
-      .or(
-        `contact.full_name.ilike.%${query}%,
-         contact.phone.ilike.%${query}%,
-         contact.email.ilike.%${query}%,
-         contact.city.ilike.%${query}%`
-      )
+      `)
       .order("created_at", { ascending: false })
-      .limit(20);
+      .limit(30);
 
     if (error) throw new Error(error.message);
-    return { data: data || [], count: count || 0 };
+
+    // Filtering di JavaScript untuk menghindari Syntax Error Supabase PostgREST
+    const lowerQuery = query.toLowerCase();
+    const filtered = (data || []).filter((item: any) => {
+      const name = item.contact?.full_name?.toLowerCase() || "";
+      const phone = item.contact?.phone?.toLowerCase() || "";
+      const email = item.contact?.email?.toLowerCase() || "";
+      const city = item.contact?.city?.toLowerCase() || "";
+      return name.includes(lowerQuery) || phone.includes(lowerQuery) || email.includes(lowerQuery) || city.includes(lowerQuery);
+    });
+
+    return { data: filtered, count: filtered.length };
   },
 
   async bulkUpdateStatus(leadIds: string[], status: LeadStatus) {
@@ -798,6 +856,22 @@ export const crmService = {
       .in("id", leadIds);
 
     if (error) throw new Error(error.message);
+
+    // ⚡ OTOMATISASI WHATSAPP UNTUK BULK ASSIGN
+    for (const leadId of leadIds) {
+      try {
+        const lead = await this.getLeadById(leadId);
+        await sendWaNotification(
+          assignedTo,
+          lead.contact?.full_name,
+          lead.contact?.phone || lead.contact?.whatsapp,
+          lead.interest_type || "Properti Pilihan"
+        );
+      } catch (err) {
+        console.error("Gagal kirim WA bulkAssign:", err);
+      }
+    }
+
     return true;
   },
 
@@ -832,7 +906,6 @@ export const crmService = {
       .order("followup_date", { ascending: true });
 
     if (error) {
-      // Fallback
       const { data: basicData, error: basicError } = await supabase
         .from("crm_followups")
         .select(`

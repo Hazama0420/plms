@@ -20,7 +20,6 @@ import {
   Copy,
   Send,
   Eye,
-  Lock,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase/client";
@@ -104,39 +103,28 @@ export default function FollowupsPage() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [currentUserRole, setCurrentUserRole] = useState<string>("");
 
-  // AI Modal Assistant States
+  // AI Modal Assistant States & Limit 3x per hari
   const [isAiModalOpen, setIsAiModalOpen] = useState(false);
   const [selectedFollowup, setSelectedFollowup] = useState<FollowUpItem | null>(null);
   const [aiMessage, setAiMessage] = useState("");
   const [generatingAi, setGeneratingAi] = useState(false);
-
-  // ===== CHECK USER SESSION =====
-  useEffect(() => {
-    async function checkUserSession() {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
-        setCurrentUserId(user.id);
-
-        const { data: userData } = await supabase
-          .from("users")
-          .select("role")
-          .eq("id", user.id)
-          .maybeSingle();
-
-        const role = (userData?.role || user.user_metadata?.role || "agent").toLowerCase();
-        setCurrentUserRole(role);
-      } catch (err) {
-        console.error("Error checking session:", err);
-      }
-    }
-    checkUserSession();
-  }, []);
+  const [aiUsageCount, setAiUsageCount] = useState<number>(0);
 
   const isAdminOrSuperAdmin =
     currentUserRole === "super_admin" ||
     currentUserRole === "superadmin" ||
     currentUserRole === "admin";
+
+  // 🔒 HELPER SENSOR NOMOR HP UNTUK AGENT
+  const formatPhoneForUser = useCallback(
+    (phone?: string) => {
+      if (!phone) return "";
+      if (isAdminOrSuperAdmin) return phone;
+      if (phone.length <= 4) return "xxxxxx";
+      return phone.slice(0, 4) + "xxxxxx";
+    },
+    [isAdminOrSuperAdmin]
+  );
 
   const canModifyFollowup = useCallback(
     (item: FollowUpItem) => {
@@ -152,10 +140,38 @@ export default function FollowupsPage() {
     [isAdminOrSuperAdmin, currentUserId]
   );
 
-  // ===== FETCH DATA =====
-  const fetchFollowups = useCallback(async () => {
+  // ===== 🚀 PEMANGGILAN DATA SEQUENTIAL =====
+  const loadData = useCallback(async () => {
     setLoading(true);
     try {
+      // 1. Ambil User Auth
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setLoading(false);
+        return;
+      }
+      setCurrentUserId(user.id);
+
+      // 2. Ambil Role User
+      const { data: userData } = await supabase
+        .from("users")
+        .select("role")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      const role = (userData?.role || user.user_metadata?.role || "agent").toLowerCase();
+      setCurrentUserRole(role);
+
+      const isUserAdmin =
+        role === "super_admin" || role === "superadmin" || role === "admin";
+
+      // 3. Ambil Penggunaan AI Writer
+      const today = new Date().toISOString().split("T")[0];
+      const storageKey = `ai_writer_usage_${user.id}_${today}`;
+      const usage = parseInt(localStorage.getItem(storageKey) || "0", 10);
+      setAiUsageCount(usage);
+
+      // 4. Fetch Follow-ups
       let query = supabase
         .from("crm_followups")
         .select(`
@@ -178,8 +194,9 @@ export default function FollowupsPage() {
         `)
         .order("followup_date", { ascending: true });
 
-      if (!isAdminOrSuperAdmin && currentUserId) {
-        query = query.eq("assigned_to", currentUserId);
+      // Jika role Agent, filter hanya agenda miliknya
+      if (!isUserAdmin) {
+        query = query.eq("assigned_to", user.id);
       }
 
       const { data, error } = await query;
@@ -221,24 +238,24 @@ export default function FollowupsPage() {
 
       setFollowups(mapped);
     } catch (error: any) {
-      console.error("Error fetching followups:", error?.message || error);
+      console.error("Error loading followups:", error?.message || error);
       toast.error("Gagal memuat jadwal follow-up");
     } finally {
       setLoading(false);
     }
-  }, [isAdminOrSuperAdmin, currentUserId]);
+  }, []);
 
   useEffect(() => {
-    fetchFollowups();
-  }, [fetchFollowups]);
+    loadData();
+  }, [loadData]);
 
-  // ===== QUICK TOGGLE COMPLETE =====
+  // ===== TOGGLE STATUS SELESAI + CRM ACTIVITY LOG =====
   const handleToggleComplete = async (e: React.MouseEvent, item: FollowUpItem) => {
     e.stopPropagation();
 
     if (!canModifyFollowup(item)) {
       toast.error("Akses Ditolak!", {
-        description: "Anda tidak memiliki izin mengubah agenda follow-up milik orang lain.",
+        description: "Anda tidak memiliki izin mengubah agenda follow-up ini.",
       });
       return;
     }
@@ -265,6 +282,19 @@ export default function FollowupsPage() {
 
       if (error) throw error;
 
+      // 🔴 Sisipkan pencatatan log aktivitas
+      if (currentUserId && item.lead_id) {
+        await supabase.from("crm_activities").insert([
+          {
+            lead_id: item.lead_id,
+            user_id: currentUserId,
+            activity_type: "Status Update",
+            notes: `Status follow-up dengan ${item.lead_name} diubah menjadi ${newStatus === "completed" ? "Selesai" : "Pending"}`,
+            created_at: new Date().toISOString(),
+          },
+        ]);
+      }
+
       toast.success(
         isCompleted
           ? "Status dikembalikan ke Pending"
@@ -272,15 +302,15 @@ export default function FollowupsPage() {
       );
     } catch (err: any) {
       toast.error("Gagal memperbarui status: " + err.message);
-      fetchFollowups();
+      loadData();
     }
   };
 
-  // ===== DELETE FOLLOW-UP =====
+  // ===== HAPUS FOLLOW-UP (HANYA UNTUK ADMIN / SUPER ADMIN) =====
   const handleDelete = async (item: FollowUpItem) => {
-    if (!canModifyFollowup(item)) {
+    if (!isAdminOrSuperAdmin) {
       toast.error("Akses Ditolak!", {
-        description: "Anda tidak memiliki izin menghapus agenda follow-up milik orang lain.",
+        description: "Hanya Admin yang memiliki wewenang untuk menghapus agenda follow-up.",
       });
       return;
     }
@@ -290,6 +320,20 @@ export default function FollowupsPage() {
     try {
       const { error } = await supabase.from("crm_followups").delete().eq("id", item.id);
       if (error) throw error;
+
+      // Catat log aktivitas penghapusan
+      if (currentUserId && item.lead_id) {
+        await supabase.from("crm_activities").insert([
+          {
+            lead_id: item.lead_id,
+            user_id: currentUserId,
+            activity_type: "Delete Follow-up",
+            notes: `Agenda follow-up dengan ${item.lead_name} dihapus oleh Admin`,
+            created_at: new Date().toISOString(),
+          },
+        ]);
+      }
+
       toast.success("Follow-up berhasil dihapus");
       setFollowups((prev) => prev.filter((f) => f.id !== item.id));
     } catch (error: any) {
@@ -297,29 +341,55 @@ export default function FollowupsPage() {
     }
   };
 
-  // ===== DIRECT WHATSAPP CHAT =====
-  const handleOpenWhatsApp = (e: React.MouseEvent, item: FollowUpItem) => {
+  // ===== CHAT WA & PENCATATAN LOG AKTIVITAS =====
+  const handleOpenWhatsApp = async (e: React.MouseEvent, item: FollowUpItem) => {
     e.stopPropagation();
 
     if (!item.lead_phone) {
       toast.error("Nomor WhatsApp/HP lead tidak ditemukan");
       return;
     }
-    const cleanPhone = item.lead_phone.replace(/[^0-9]/g, "").replace(/^0/, "62");
+
+    if (currentUserId && item.lead_id) {
+      try {
+        await supabase.from("crm_activities").insert([
+          {
+            lead_id: item.lead_id,
+            user_id: currentUserId,
+            activity_type: "WhatsApp Chat",
+            notes: `Follow-up WA dikirim ke ${item.lead_name}`,
+            created_at: new Date().toISOString(),
+          },
+        ]);
+      } catch (err) {
+        console.error("Gagal mencatat log aktivitas WA:", err);
+      }
+    }
+
+    let cleanPhone = item.lead_phone.replace(/[^0-9]/g, "");
+    if (cleanPhone.startsWith("0")) cleanPhone = "62" + cleanPhone.slice(1);
     const msg = encodeURIComponent(
       `Halo Bpk/Ibu *${item.lead_name}*,\n\nSalam hangat dari Tim Inland Property. Mengenai rencana diskusi/follow-up kita:\n\n"${item.notes || "Prospek penawaran unit properti"}"\n\nApakah ada waktu luang untuk berdiskusi lebih lanjut hari ini? Terima kasih!`
     );
     window.open(`https://wa.me/${cleanPhone}?text=${msg}`, "_blank");
   };
 
-  // ===== 🔒 PERBAIKAN AI SCRIPT WRITER DENGAN ROLE LOCK =====
+  // ===== 🤖 AI WRITER DENGAN KUOTA 3X PER HARI =====
   const handleOpenAiWriter = async (e: React.MouseEvent, item: FollowUpItem) => {
     e.stopPropagation();
 
-    // 🔒 Proteksi Role Client Side
-    if (!isAdminOrSuperAdmin) {
-      toast.error("Fitur Terkunci!", {
-        description: "Fitur AI Writer Follow-Up khusus untuk Super Admin dan Admin.",
+    if (!currentUserId) {
+      toast.error("Sesi pengguna belum dimuat, silakan coba lagi.");
+      return;
+    }
+
+    const today = new Date().toISOString().split("T")[0];
+    const storageKey = `ai_writer_usage_${currentUserId}_${today}`;
+    const currentUsage = parseInt(localStorage.getItem(storageKey) || "0", 10);
+
+    if (currentUsage >= 3) {
+      toast.error("Batas Kuota AI Harian Tercapai!", {
+        description: "Fitur AI Writer dibatasi maksimal 3x penggunaan per hari per akun.",
       });
       return;
     }
@@ -330,7 +400,6 @@ export default function FollowupsPage() {
     setAiMessage("");
 
     try {
-      // 🚀 Memanggil Endpoint Resmi /api/ai/followup
       const res = await fetch("/api/ai/followup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -338,7 +407,7 @@ export default function FollowupsPage() {
           leadName: item.lead_name,
           property: item.notes || "Properti Pilihan",
           status: item.status || "Pending Follow-up",
-          userRole: currentUserRole,
+          userRole: currentUserRole || "agent",
         }),
       });
 
@@ -346,23 +415,28 @@ export default function FollowupsPage() {
 
       if (res.ok && data?.message) {
         setAiMessage(data.message);
+        const newUsage = currentUsage + 1;
+        localStorage.setItem(storageKey, newUsage.toString());
+        setAiUsageCount(newUsage);
       } else {
-        toast.error(data?.error || "Gagal membuat pesan AI.");
-        setAiMessage(
-          `Halo Bpk/Ibu ${item.lead_name},\n\nPerkenalkan saya dari Inland Property. Menindaklanjuti rencana diskusi kita:\n"${item.notes || "Penawaran unit properti"}"\n\nApakah hari ini ada waktu senggang untuk berdiskusi? Terima kasih!`
-        );
+        const fallbackMsg = `Halo Bpk/Ibu ${item.lead_name},\n\nPerkenalkan saya dari Inland Property. Menindaklanjuti rencana diskusi kita:\n"${item.notes || "Penawaran unit properti"}"\n\nApakah hari ini ada waktu senggang untuk berdiskusi? Terima kasih!`;
+        setAiMessage(fallbackMsg);
+        const newUsage = currentUsage + 1;
+        localStorage.setItem(storageKey, newUsage.toString());
+        setAiUsageCount(newUsage);
       }
     } catch (err) {
-      toast.error("Gagal terhubung ke AI Service.");
-      setAiMessage(
-        `Halo Bpk/Ibu ${item.lead_name},\n\nPerkenalkan saya dari Inland Property. Menindaklanjuti rencana diskusi kita:\n"${item.notes || "Penawaran unit properti"}"\n\nApakah hari ini ada waktu senggang untuk berdiskusi? Terima kasih!`
-      );
+      const fallbackMsg = `Halo Bpk/Ibu ${item.lead_name},\n\nPerkenalkan saya dari Inland Property. Menindaklanjuti rencana diskusi kita:\n"${item.notes || "Penawaran unit properti"}"\n\nApakah hari ini ada waktu senggang untuk berdiskusi? Terima kasih!`;
+      setAiMessage(fallbackMsg);
+      const newUsage = currentUsage + 1;
+      localStorage.setItem(storageKey, newUsage.toString());
+      setAiUsageCount(newUsage);
     } finally {
       setGeneratingAi(false);
     }
   };
 
-  // ===== STATS CALCULATION =====
+  // ===== CALCULATE STATS =====
   const stats = useMemo(() => {
     const total = followups.length;
     const pending = followups.filter((f) => f.status === "pending").length;
@@ -418,7 +492,7 @@ export default function FollowupsPage() {
         </Button>
       </div>
 
-      {/* 2. BENTO STATS CARDS */}
+      {/* 2. STATS CARDS */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Card className="p-3.5 border shadow-xs bg-card hover:border-emerald-500/30 transition">
           <span className="text-[11px] font-semibold text-muted-foreground block">
@@ -454,7 +528,7 @@ export default function FollowupsPage() {
         </Card>
       </div>
 
-      {/* 3. SEARCH & TABS FILTER BAR */}
+      {/* 3. SEARCH & FILTER TABS */}
       <div className="flex flex-col sm:flex-row gap-3 items-center justify-between">
         <div className="relative w-full sm:w-80">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -487,7 +561,7 @@ export default function FollowupsPage() {
           <Button
             variant="outline"
             size="icon"
-            onClick={fetchFollowups}
+            onClick={loadData}
             className="h-9 w-9 shrink-0 cursor-pointer"
             title="Refresh Data"
           >
@@ -496,7 +570,7 @@ export default function FollowupsPage() {
         </div>
       </div>
 
-      {/* 4. MAIN TABLE CONTENT */}
+      {/* 4. TABEL FOLLOW-UP */}
       <Card className="border shadow-xs overflow-hidden">
         <CardContent className="p-0">
           {loading ? (
@@ -510,7 +584,7 @@ export default function FollowupsPage() {
               <Calendar className="h-10 w-10 mb-2 opacity-40" />
               <p className="text-sm font-semibold">Tidak Ada Agenda Follow-up Ditemukan</p>
               <p className="text-xs max-w-sm mt-1">
-                Belum ada jadwal follow-up pada kategori ini. Klik tombol "Buat Follow-up" untuk menambah agenda baru.
+                Belum ada jadwal follow-up pada kategori ini. Klik "Buat Follow-up" untuk menambah agenda baru.
               </p>
             </div>
           ) : (
@@ -548,7 +622,7 @@ export default function FollowupsPage() {
                         )}
                         title="Klik 2x untuk membuka detail agenda"
                       >
-                        {/* Checkbox Quick Toggle */}
+                        {/* Checkbox Status Selesai */}
                         <TableCell className="text-center p-2">
                           <div
                             role="button"
@@ -570,29 +644,30 @@ export default function FollowupsPage() {
                           </div>
                         </TableCell>
 
-                        {/* Lead Info */}
+                        {/* Detail Lead */}
                         <TableCell className="p-3">
                           <div className="flex flex-col">
                             <span className="font-bold text-xs text-foreground flex items-center gap-1.5">
                               <User className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                               {item.lead_name}
                             </span>
+                            {/* 🔒 NOMOR HP DISENSOR UNTUK ROLE AGENT */}
                             {item.lead_phone && (
                               <span className="text-[10px] text-muted-foreground font-mono pl-5">
-                                {item.lead_phone}
+                                {formatPhoneForUser(item.lead_phone)}
                               </span>
                             )}
                           </div>
                         </TableCell>
 
-                        {/* Notes */}
+                        {/* Catatan */}
                         <TableCell className="p-3">
                           <p className="text-xs text-foreground line-clamp-2 max-w-xs leading-relaxed">
                             {item.notes || "-"}
                           </p>
                         </TableCell>
 
-                        {/* Date & Time */}
+                        {/* Tanggal & Waktu */}
                         <TableCell className="p-3 text-xs">
                           <div className="flex flex-col font-mono">
                             <span className="font-semibold text-foreground flex items-center gap-1">
@@ -609,7 +684,7 @@ export default function FollowupsPage() {
                           </div>
                         </TableCell>
 
-                        {/* Status Badge */}
+                        {/* Badge Status */}
                         <TableCell className="p-3">
                           <Badge
                             variant="outline"
@@ -624,32 +699,23 @@ export default function FollowupsPage() {
                           </Badge>
                         </TableCell>
 
-                        {/* Assigned User */}
+                        {/* Penanggung Jawab */}
                         <TableCell className="p-3 text-xs text-muted-foreground">
                           {item.assigned_user_name}
                         </TableCell>
 
-                        {/* Actions */}
+                        {/* Tombol Aksi */}
                         <TableCell className="p-3 text-right">
                           <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-                            {/* AI Script Writer dengan Status Role */}
+                            {/* AI Writer */}
                             <Button
                               size="sm"
                               variant="ghost"
                               onClick={(e) => handleOpenAiWriter(e, item)}
-                              className={cn(
-                                "h-8 px-2 gap-1 text-xs cursor-pointer",
-                                isAdminOrSuperAdmin
-                                  ? "text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/40"
-                                  : "text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
-                              )}
-                              title={isAdminOrSuperAdmin ? "Tulis Draf Pesan AI" : "Khusus Super Admin & Admin"}
+                              className="h-8 px-2 gap-1 text-xs cursor-pointer text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/40"
+                              title="Tulis Draf Pesan AI (Maksimal 3x/hari)"
                             >
-                              {isAdminOrSuperAdmin ? (
-                                <Sparkles className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
-                              ) : (
-                                <Lock className="w-3.5 h-3.5 text-slate-400" />
-                              )}
+                              <Sparkles className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
                               AI Writer
                             </Button>
 
@@ -664,7 +730,7 @@ export default function FollowupsPage() {
                               <MessageCircle className="w-3.5 h-3.5 text-emerald-600 fill-emerald-600" /> Chat WA
                             </Button>
 
-                            {/* Dropdown Menu */}
+                            {/* Dropdown Options */}
                             <DropdownMenu>
                               <DropdownMenuTrigger className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors focus:outline-hidden cursor-pointer">
                                 <MoreHorizontal className="w-4 h-4" />
@@ -674,14 +740,15 @@ export default function FollowupsPage() {
                                   <Eye className="w-3.5 h-3.5 mr-2 text-emerald-600" /> Lihat Detail Agenda
                                 </DropdownMenuItem>
                                 {hasAccess && (
-                                  <>
-                                    <DropdownMenuItem onClick={() => router.push(`/crm/followups/${item.id}/edit`)}>
-                                      <Pencil className="w-3.5 h-3.5 mr-2" /> Edit Agenda
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem onClick={() => handleDelete(item)} className="text-rose-600">
-                                      <Trash2 className="w-3.5 h-3.5 mr-2" /> Hapus
-                                    </DropdownMenuItem>
-                                  </>
+                                  <DropdownMenuItem onClick={() => router.push(`/crm/followups/${item.id}`)}>
+                                    <Pencil className="w-3.5 h-3.5 mr-2" /> Edit Agenda
+                                  </DropdownMenuItem>
+                                )}
+                                {/* 🔒 TOMBOL HAPUS HANYA UNTUK ADMIN */}
+                                {isAdminOrSuperAdmin && (
+                                  <DropdownMenuItem onClick={() => handleDelete(item)} className="text-rose-600">
+                                    <Trash2 className="w-3.5 h-3.5 mr-2" /> Hapus
+                                  </DropdownMenuItem>
                                 )}
                               </DropdownMenuContent>
                             </DropdownMenu>
@@ -697,7 +764,7 @@ export default function FollowupsPage() {
         </CardContent>
       </Card>
 
-      {/* 5. MODAL DIALOG: AI MESSAGE GENERATOR DENGAN PROTEKSI HAK AKSES */}
+      {/* 5. MODAL AI WRITER GENERATOR */}
       <Dialog open={isAiModalOpen} onOpenChange={setIsAiModalOpen}>
         <DialogContent className="sm:max-w-md rounded-2xl">
           <DialogHeader>
@@ -707,13 +774,9 @@ export default function FollowupsPage() {
               </DialogTitle>
               <Badge
                 variant="outline"
-                className={
-                  isAdminOrSuperAdmin
-                    ? "bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px]"
-                    : "bg-amber-50 text-amber-700 border-amber-200 text-[10px]"
-                }
+                className="bg-amber-50 text-amber-700 border-amber-200 text-[10px]"
               >
-                {isAdminOrSuperAdmin ? "Admin Access" : "Khusus Admin"}
+                Sisa Kuota: {3 - aiUsageCount}/3 Hari Ini
               </Badge>
             </div>
             <DialogDescription className="text-xs">
@@ -721,21 +784,7 @@ export default function FollowupsPage() {
             </DialogDescription>
           </DialogHeader>
 
-          {!isAdminOrSuperAdmin ? (
-            <div className="py-8 text-center space-y-3">
-              <div className="w-12 h-12 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto">
-                <Lock className="w-6 h-6" />
-              </div>
-              <div className="space-y-1 max-w-xs mx-auto">
-                <h4 className="text-xs font-bold text-slate-900 dark:text-slate-100">
-                  Akses Ditolak
-                </h4>
-                <p className="text-[11px] text-slate-500 leading-relaxed">
-                  Fitur AI Writer Follow-Up khusus digunakan oleh **Super Admin** dan **Admin**.
-                </p>
-              </div>
-            </div>
-          ) : generatingAi ? (
+          {generatingAi ? (
             <div className="p-8 text-center space-y-2">
               <RefreshCw className="w-8 h-8 text-emerald-600 animate-spin mx-auto" />
               <p className="text-xs text-muted-foreground">AI sedang merangkai pesan follow-up...</p>
@@ -752,45 +801,50 @@ export default function FollowupsPage() {
           )}
 
           <DialogFooter className="gap-2">
-            {isAdminOrSuperAdmin ? (
-              <>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    navigator.clipboard.writeText(aiMessage);
-                    toast.success("Pesan berhasil disalin ke clipboard!");
-                  }}
-                  className="text-xs gap-1.5 cursor-pointer"
-                >
-                  <Copy className="w-3.5 h-3.5" /> Salin Pesan
-                </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                navigator.clipboard.writeText(aiMessage);
+                toast.success("Pesan berhasil disalin ke clipboard!");
+              }}
+              className="text-xs gap-1.5 cursor-pointer"
+            >
+              <Copy className="w-3.5 h-3.5" /> Salin Pesan
+            </Button>
 
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    if (selectedFollowup?.lead_phone) {
-                      const clean = selectedFollowup.lead_phone.replace(/[^0-9]/g, "").replace(/^0/, "62");
-                      window.open(`https://wa.me/${clean}?text=${encodeURIComponent(aiMessage)}`, "_blank");
-                    } else {
-                      toast.error("Nomor HP lead tidak tersedia");
+            <Button
+              size="sm"
+              onClick={async () => {
+                if (selectedFollowup?.lead_phone) {
+                  if (currentUserId && selectedFollowup.lead_id) {
+                    try {
+                      await supabase.from("crm_activities").insert([
+                        {
+                          lead_id: selectedFollowup.lead_id,
+                          user_id: currentUserId,
+                          activity_type: "WhatsApp Chat",
+                          notes: `Follow-up WA (via AI Writer) dikirim ke ${selectedFollowup.lead_name}`,
+                          created_at: new Date().toISOString(),
+                        },
+                      ]);
+                    } catch (err) {
+                      console.error("Gagal mencatat log aktivitas WA:", err);
                     }
-                  }}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs gap-1.5 cursor-pointer"
-                >
-                  <Send className="w-3.5 h-3.5" /> Kirim ke WhatsApp
-                </Button>
-              </>
-            ) : (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setIsAiModalOpen(false)}
-                className="w-full text-xs cursor-pointer"
-              >
-                Tutup
-              </Button>
-            )}
+                  }
+
+                  let clean = selectedFollowup.lead_phone.replace(/[^0-9]/g, "");
+                  if (clean.startsWith("0")) clean = "62" + clean.slice(1);
+                  window.open(`https://wa.me/${clean}?text=${encodeURIComponent(aiMessage)}`, "_blank");
+                  setIsAiModalOpen(false);
+                } else {
+                  toast.error("Nomor HP lead tidak tersedia");
+                }
+              }}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs gap-1.5 cursor-pointer"
+            >
+              <Send className="w-3.5 h-3.5" /> Kirim ke WhatsApp
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

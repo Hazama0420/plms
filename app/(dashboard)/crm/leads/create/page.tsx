@@ -153,8 +153,11 @@ export default function CreateLeadPage() {
   // Multi-select properties
   const [selectedProperties, setSelectedProperties] = useState<string[]>([]);
 
-  // Check if current user is admin
-  const isAdmin = currentUserRole === "admin" || currentUserRole === "super_admin";
+  // Check if current user is admin / super admin
+  const isAdmin =
+    currentUserRole === "admin" ||
+    currentUserRole === "super_admin" ||
+    currentUserRole === "superadmin";
 
   // ===== CLICK OUTSIDE EVENT LISTENER =====
   useEffect(() => {
@@ -201,7 +204,7 @@ export default function CreateLeadPage() {
           setCurrentUserName(loggedInName);
 
           // Jika bukan admin (Agent biasa), kunci 'assigned_to' ke ID akunnya sendiri secara otomatis
-          const userIsAdmin = loggedInRole === "admin" || loggedInRole === "super_admin";
+          const userIsAdmin = loggedInRole === "admin" || loggedInRole === "super_admin" || loggedInRole === "superadmin";
           if (!userIsAdmin) {
             setForm((prev) => ({ ...prev, assigned_to: user.id }));
           }
@@ -242,10 +245,10 @@ export default function CreateLeadPage() {
     return contacts.filter(
       (c) =>
         c.full_name.toLowerCase().includes(contactSearch.toLowerCase()) ||
-        (c.phone && c.phone.includes(contactSearch)) ||
-        (c.email && c.email.toLowerCase().includes(contactSearch.toLowerCase()))
+        (isAdmin && c.phone && c.phone.includes(contactSearch)) ||
+        (isAdmin && c.email && c.email.toLowerCase().includes(contactSearch.toLowerCase()))
     );
-  }, [contacts, contactSearch]);
+  }, [contacts, contactSearch, isAdmin]);
 
   const filteredAgents = useMemo(() => {
     return agents.filter(
@@ -379,6 +382,7 @@ export default function CreateLeadPage() {
       setSaving(false);
     }
   };
+
   if (loading) {
     return (
       <div className="space-y-6 max-w-3xl mx-auto pb-12">
@@ -457,7 +461,8 @@ export default function CreateLeadPage() {
                   <span className="font-semibold text-foreground flex items-center gap-2 truncate">
                     <User className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                     {selectedContact.full_name}
-                    {selectedContact.phone && (
+                    {/* 🔒 NOMOR HANYA MUNCUL UNTUK ADMIN/SUPER ADMIN */}
+                    {isAdmin && selectedContact.phone && (
                       <span className="text-muted-foreground font-normal font-mono text-[11px]">
                         ({selectedContact.phone})
                       </span>
@@ -477,7 +482,7 @@ export default function CreateLeadPage() {
                   <div className="relative mb-2">
                     <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                     <Input
-                      placeholder="Ketik nama atau no HP..."
+                      placeholder={isAdmin ? "Ketik nama atau no HP..." : "Ketik nama kontak..."}
                       value={contactSearch}
                       onChange={(e) => setContactSearch(e.target.value)}
                       className="pl-8 h-8 text-xs"
@@ -505,9 +510,12 @@ export default function CreateLeadPage() {
                         >
                           <div>
                             <p className="font-medium text-foreground">{contact.full_name}</p>
-                            <p className="text-[10px] text-muted-foreground font-mono">
-                              {contact.phone || contact.email || "Tanpa No HP"}
-                            </p>
+                            {/* 🔒 NOMOR/EMAIL HANYA TAMPIL UNTUK ADMIN */}
+                            {isAdmin && (
+                              <p className="text-[10px] text-muted-foreground font-mono">
+                                {contact.phone || contact.email || "Tanpa No HP"}
+                              </p>
+                            )}
                           </div>
                           {form.contact_id === contact.id && (
                             <Check className="w-4 h-4 text-emerald-600 shrink-0" />

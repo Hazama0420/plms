@@ -7,7 +7,6 @@ import {
   ArrowLeft,
   Calendar,
   User,
-  Mail,
   MessageSquare,
   Loader2,
   Edit,
@@ -17,12 +16,8 @@ import {
   Clock,
   MessageCircle,
   AlertCircle,
-  Building2,
   ExternalLink,
-  Lock,
   UserCheck,
-  PhoneCall,
-  Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 import { format, isBefore, isToday } from "date-fns";
@@ -32,7 +27,7 @@ import { crmService } from "@/services/crm.service";
 import { supabase } from "@/lib/supabase/client";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -62,19 +57,19 @@ const statusConfig: Record<string, { label: string; color: string; bg: string; i
     label: "Pending",
     color: "text-amber-700 dark:text-amber-300",
     bg: "bg-amber-100 dark:bg-amber-950/60 border-amber-200",
-    icon: <Clock className="w-5 h-5 text-amber-600" />,
+    icon: <Clock className="w-4 h-4 text-amber-600" />,
   },
   completed: {
     label: "Selesai",
     color: "text-emerald-700 dark:text-emerald-300",
     bg: "bg-emerald-100 dark:bg-emerald-950/60 border-emerald-200",
-    icon: <CheckCircle className="w-5 h-5 text-emerald-600" />,
+    icon: <CheckCircle className="w-4 h-4 text-emerald-600" />,
   },
   cancelled: {
     label: "Dibatalkan",
     color: "text-slate-700 dark:text-slate-300",
     bg: "bg-slate-100 dark:bg-slate-800 border-slate-200",
-    icon: <XCircle className="w-5 h-5 text-slate-500" />,
+    icon: <XCircle className="w-4 h-4 text-slate-500" />,
   },
 };
 
@@ -103,8 +98,20 @@ export default function FollowupDetailPage() {
   });
 
   // Check RBAC Permissions
-  const isAdmin = currentUserRole === "admin" || currentUserRole === "super_admin";
+  const isAdmin =
+    currentUserRole === "admin" ||
+    currentUserRole === "super_admin" ||
+    currentUserRole === "superadmin";
+
   const canModify = isAdmin || followup?.assigned_to === currentUserId || followup?.created_by === currentUserId;
+
+  // 🔒 HELPER SENSOR NOMOR HP UNTUK AGENT
+  const formatPhoneForUser = useCallback((phone?: string) => {
+    if (!phone) return "";
+    if (isAdmin) return phone;
+    if (phone.length <= 4) return "xxxxxx";
+    return phone.slice(0, 4) + "xxxxxx";
+  }, [isAdmin]);
 
   // ===== FETCH DATA =====
   const fetchData = useCallback(async () => {
@@ -119,7 +126,9 @@ export default function FollowupDetailPage() {
           .select("role")
           .eq("id", user.id)
           .maybeSingle();
-        setCurrentUserRole((userData?.role || "agent").toLowerCase());
+
+        const role = (userData?.role || user.user_metadata?.role || "agent").toLowerCase();
+        setCurrentUserRole(role);
       }
 
       // 2. Fetch Detail Follow-up
@@ -151,7 +160,7 @@ export default function FollowupDetailPage() {
     fetchData();
   }, [fetchData]);
 
-  // ===== HANDLER UPDATE STATUS =====
+  // ===== HANDLER UPDATE STATUS + CRM ACTIVITY LOG =====
   const handleUpdateStatus = async (status: "pending" | "completed" | "cancelled") => {
     if (!canModify) {
       toast.error("Akses ditolak: Anda tidak memiliki wewenang mengubah data ini.");
@@ -162,7 +171,24 @@ export default function FollowupDetailPage() {
     try {
       await crmService.updateFollowup(followupId, { status });
 
-      toast.success(`Status berhasil diperbarui menjadi ${statusConfig[status]?.label}`);
+      // 🔴 Sisipkan pencatatan log aktivitas ke crm_activities
+      const leadId = followup?.lead_id;
+      const leadName = followup?.lead?.contact?.full_name || followup?.lead?.full_name || "Klien";
+      const statusLabel = statusConfig[status]?.label || status;
+
+      if (currentUserId && leadId) {
+        await supabase.from("crm_activities").insert([
+          {
+            lead_id: leadId,
+            user_id: currentUserId,
+            activity_type: "Status Update",
+            notes: `Status follow-up untuk ${leadName} diperbarui menjadi: ${statusLabel}`,
+            created_at: new Date().toISOString(),
+          },
+        ]);
+      }
+
+      toast.success(`Status berhasil diperbarui menjadi ${statusLabel}`);
       await fetchData();
     } catch (error: any) {
       console.error("Error updating status:", error);
@@ -187,6 +213,20 @@ export default function FollowupDetailPage() {
         notes: editForm.notes || undefined,
       });
 
+      // Catat log aktivitas edit agenda
+      const leadId = followup?.lead_id;
+      if (currentUserId && leadId) {
+        await supabase.from("crm_activities").insert([
+          {
+            lead_id: leadId,
+            user_id: currentUserId,
+            activity_type: "Edit Follow-up",
+            notes: `Detail jadwal/catatan follow-up diperbarui.`,
+            created_at: new Date().toISOString(),
+          },
+        ]);
+      }
+
       toast.success("Follow-up berhasil diperbarui!");
       setShowEditDialog(false);
       await fetchData();
@@ -198,10 +238,10 @@ export default function FollowupDetailPage() {
     }
   };
 
-  // ===== HANDLER DELETE =====
+  // ===== HANDLER DELETE (Hanya untuk Admin) =====
   const handleDelete = async () => {
-    if (!canModify) {
-      toast.error("Akses ditolak: Anda tidak memiliki wewenang menghapus data ini.");
+    if (!isAdmin) {
+      toast.error("Akses ditolak: Hanya Admin yang dapat menghapus agenda.");
       return;
     }
 
@@ -219,8 +259,8 @@ export default function FollowupDetailPage() {
     }
   };
 
-  // Direct WhatsApp Link
-  const handleOpenWhatsApp = () => {
+  // ===== DIRECT WHATSAPP LINK + CRM ACTIVITY LOGGING =====
+  const handleOpenWhatsApp = async () => {
     const contactPhone = followup?.lead?.contact?.phone || followup?.lead?.phone;
     if (!contactPhone) {
       toast.error("Nomor WhatsApp lead tidak tersedia");
@@ -228,7 +268,27 @@ export default function FollowupDetailPage() {
     }
 
     const leadName = followup?.lead?.contact?.full_name || followup?.lead?.full_name || "Bpk/Ibu";
-    const cleanPhone = contactPhone.replace(/[^0-9]/g, "").replace(/^0/, "62");
+    const leadId = followup?.lead_id;
+
+    // 🔴 Catat log aktivitas ke crm_activities
+    if (currentUserId && leadId) {
+      try {
+        await supabase.from("crm_activities").insert([
+          {
+            lead_id: leadId,
+            user_id: currentUserId,
+            activity_type: "WhatsApp Chat",
+            notes: `Follow-up WA dikirim ke ${leadName} dari halaman Detail`,
+            created_at: new Date().toISOString(),
+          },
+        ]);
+      } catch (err) {
+        console.error("Gagal mencatat log aktivitas WA:", err);
+      }
+    }
+
+    let cleanPhone = contactPhone.replace(/[^0-9]/g, "");
+    if (cleanPhone.startsWith("0")) cleanPhone = "62" + cleanPhone.slice(1);
     const msg = encodeURIComponent(
       `Halo Bpk/Ibu *${leadName}*,\n\nSalam hangat dari Inland Property. Menindaklanjuti jadwal diskusi kita:\n\n"${followup?.notes || "Prospek unit properti"}"\n\nApakah ada waktu luang untuk berdiskusi lebih lanjut hari ini? Terima kasih!`
     );
@@ -247,12 +307,12 @@ export default function FollowupDetailPage() {
 
   if (loading) {
     return (
-      <div className="space-y-6 max-w-3xl mx-auto pb-16">
-        <Skeleton className="h-10 w-48 rounded-xl" />
-        <Card className="p-6 space-y-4">
-          <Skeleton className="h-16 w-full rounded-xl" />
-          <Skeleton className="h-32 w-full rounded-xl" />
-          <Skeleton className="h-48 w-full rounded-xl" />
+      <div className="space-y-4 max-w-3xl mx-auto pb-12 px-3">
+        <Skeleton className="h-8 w-40 rounded-lg" />
+        <Card className="p-4 space-y-3">
+          <Skeleton className="h-12 w-full rounded-lg" />
+          <Skeleton className="h-24 w-full rounded-lg" />
+          <Skeleton className="h-32 w-full rounded-lg" />
         </Card>
       </div>
     );
@@ -260,16 +320,16 @@ export default function FollowupDetailPage() {
 
   if (!followup) {
     return (
-      <div className="flex h-80 flex-col items-center justify-center gap-3 text-center">
-        <div className="p-4 bg-muted rounded-full">
-          <Calendar className="w-10 h-10 text-muted-foreground" />
+      <div className="flex h-72 flex-col items-center justify-center gap-2 text-center px-4">
+        <div className="p-3 bg-muted rounded-full">
+          <Calendar className="w-8 h-8 text-muted-foreground" />
         </div>
-        <p className="text-base font-bold text-foreground">Agenda Follow-up Tidak Ditemukan</p>
-        <p className="text-xs text-muted-foreground max-w-sm">
+        <p className="text-sm font-bold text-foreground">Agenda Follow-up Tidak Ditemukan</p>
+        <p className="text-xs text-muted-foreground max-w-xs">
           Data mungkin telah dihapus atau Anda tidak memiliki akses untuk melihat agenda ini.
         </p>
-        <Button onClick={() => router.push("/crm/followups")} className="mt-2 bg-emerald-600 hover:bg-emerald-700 text-xs">
-          <ArrowLeft className="w-4 h-4 mr-1.5" /> Kembali ke Daftar Follow-up
+        <Button onClick={() => router.push("/crm/followups")} size="sm" className="mt-2 bg-emerald-600 hover:bg-emerald-700 text-xs h-8">
+          <ArrowLeft className="w-3.5 h-3.5 mr-1" /> Kembali ke Daftar Follow-up
         </Button>
       </div>
     );
@@ -288,116 +348,115 @@ export default function FollowupDetailPage() {
   const leadEmail = contactData.email || followup.lead?.email || "";
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6 pb-16">
-      {/* 1. HEADER UTAMA */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b pb-4">
-        <div className="flex items-center gap-3">
+    <div className="max-w-3xl mx-auto space-y-4 pb-12 px-3 sm:px-4">
+      {/* 1. HEADER UTAMA (COMPACT & CLEAN) */}
+      <div className="flex items-center justify-between border-b pb-3 gap-2">
+        <div className="flex items-center gap-2.5">
           <Button
             variant="outline"
             size="icon"
             onClick={() => router.push("/crm/followups")}
-            className="h-9 w-9 rounded-xl shrink-0"
+            className="h-8 w-8 rounded-lg shrink-0"
           >
-            <ArrowLeft className="h-4 w-4" />
+            <ArrowLeft className="h-3.5 w-3.5" />
           </Button>
           <div>
-            <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
+            <h1 className="text-base sm:text-lg font-bold tracking-tight text-foreground flex items-center gap-1.5">
               📅 Detail Agenda Follow-up
             </h1>
-            <p className="text-xs text-muted-foreground">
-              Komitmen interaksi dengan klien <span className="font-semibold text-foreground">{leadName}</span>
+            <p className="text-[11px] text-muted-foreground leading-none mt-0.5">
+              Klien: <span className="font-semibold text-foreground">{leadName}</span>
             </p>
           </div>
         </div>
 
-        {/* AKSI AKSI UTAMA */}
-        <div className="flex items-center gap-2 self-end sm:self-auto">
+        {/* AKSI TOMBOL */}
+        <div className="flex items-center gap-1.5 shrink-0">
           {leadPhone && (
             <Button
               size="sm"
               onClick={handleOpenWhatsApp}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20 text-xs gap-1.5 h-9"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs gap-1 h-8 px-2.5 shadow-xs"
             >
-              <MessageCircle className="w-4 h-4 fill-white" /> Chat WA
+              <MessageCircle className="w-3.5 h-3.5 fill-white" /> Chat WA
             </Button>
           )}
 
           {canModify && (
-            <>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowEditDialog(true)}
-                className="text-xs h-9 gap-1.5"
-              >
-                <Edit className="w-3.5 h-3.5" /> Edit Agenda
-              </Button>
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={() => setShowDeleteDialog(true)}
-                className="text-xs h-9 gap-1.5"
-              >
-                <Trash2 className="w-3.5 h-3.5" /> Hapus
-              </Button>
-            </>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowEditDialog(true)}
+              className="text-xs h-8 gap-1 px-2.5"
+            >
+              <Edit className="w-3 h-3" /> Edit
+            </Button>
+          )}
+
+          {/* 🔒 TOMBOL HAPUS HANYA UNTUK ADMIN */}
+          {isAdmin && (
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => setShowDeleteDialog(true)}
+              className="text-xs h-8 gap-1 px-2.5"
+            >
+              <Trash2 className="w-3 h-3" /> Hapus
+            </Button>
           )}
         </div>
       </div>
 
-      {/* 2. CARD RINGKASAN STATUS & OVERDUE WARNING */}
-      <Card className="border shadow-md bg-card overflow-hidden">
-        <CardContent className="p-5 sm:p-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-4">
+      {/* 2. CARD RINGKASAN STATUS */}
+      <Card className="border shadow-2xs bg-card">
+        <CardContent className="p-3.5 sm:p-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
               <div
                 className={cn(
-                  "p-3.5 rounded-2xl border flex items-center justify-center shrink-0",
+                  "p-2.5 rounded-xl border flex items-center justify-center shrink-0",
                   isOverdue
                     ? "bg-rose-100 dark:bg-rose-950/60 border-rose-300 text-rose-600"
                     : statusConfig[followup.status]?.bg
                 )}
               >
-                {isOverdue ? <AlertCircle className="w-6 h-6 text-rose-600" /> : statusConfig[followup.status]?.icon}
+                {isOverdue ? <AlertCircle className="w-4 h-4 text-rose-600" /> : statusConfig[followup.status]?.icon}
               </div>
 
               <div>
-                <span className="text-[11px] font-semibold text-muted-foreground block uppercase tracking-wider">
-                  Status Follow-up Saat Ini
+                <span className="text-[10px] font-semibold text-muted-foreground block uppercase tracking-wider">
+                  Status Saat Ini
                 </span>
-                <div className="flex items-center gap-2 mt-1">
+                <div className="flex items-center gap-2 mt-0.5">
                   <Badge
                     variant="outline"
                     className={cn(
-                      "text-xs font-bold px-2.5 py-0.5 border",
+                      "text-[10px] font-bold px-2 py-0.2 border",
                       isOverdue
                         ? "bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300 border-rose-200"
                         : statusConfig[followup.status]?.bg,
                       isOverdue ? "" : statusConfig[followup.status]?.color
                     )}
                   >
-                    {isOverdue ? "Terlewat (Overdue)" : statusConfig[followup.status]?.label || followup.status}
+                    {isOverdue ? "Overdue" : statusConfig[followup.status]?.label || followup.status}
                   </Badge>
-
                   {isOverdue && (
-                    <span className="text-[11px] font-semibold text-rose-600 flex items-center gap-1">
-                      ⚠️ Melewati batas target
-                    </span>
+                    <span className="text-[10px] font-medium text-rose-600">⚠️ Melewati batas target</span>
                   )}
                 </div>
               </div>
             </div>
 
-            {/* Quick Status Switcher Select */}
+            {/* Quick Status Switcher */}
             {canModify && (
-              <div className="flex items-center gap-2 shrink-0">
-                <Label className="text-xs text-muted-foreground whitespace-nowrap">Ubah Status:</Label>
+              <div className="flex items-center gap-2 shrink-0 pt-1 sm:pt-0 border-t sm:border-t-0 border-border/50">
+                <Label className="text-[11px] text-muted-foreground whitespace-nowrap">Ubah Status:</Label>
                 <Select
                   value={followup.status}
                   onValueChange={(val) => handleUpdateStatus(val as any)}
                   disabled={saving}
                 >
-                  <SelectTrigger className="w-[140px] h-9 text-xs bg-background">
+                  <SelectTrigger className="w-[130px] h-8 text-xs bg-background">
                     <SelectValue placeholder="Pilih status" />
                   </SelectTrigger>
                   <SelectContent>
@@ -412,37 +471,37 @@ export default function FollowupDetailPage() {
         </CardContent>
       </Card>
 
-      {/* 3. BENTO GRID: JADWAL & AGENT PENANGGUNG JAWAB */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Card Jadwal Waktu */}
-        <Card className="border shadow-xs bg-card">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-              <Calendar className="w-4 h-4 text-amber-500" /> Waktu Target Follow-up
+      {/* 3. BENTO GRID: JADWAL & AGENT */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {/* Jadwal Waktu */}
+        <Card className="border shadow-2xs bg-card">
+          <CardHeader className="p-3 pb-1">
+            <CardTitle className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+              <Calendar className="w-3.5 h-3.5 text-amber-500" /> Waktu Target Follow-up
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-1">
-            <p className="text-base sm:text-lg font-bold font-mono text-foreground">
-              {dateObj ? format(dateObj, "EEEE, dd MMMM yyyy", { locale: id }) : "-"}
+          <CardContent className="p-3 pt-0 space-y-0.5">
+            <p className="text-xs sm:text-sm font-bold font-mono text-foreground">
+              {dateObj ? format(dateObj, "EEEE, dd MMM yyyy", { locale: id }) : "-"}
             </p>
             <p className="text-xs font-mono font-semibold text-emerald-600 flex items-center gap-1">
-              <Clock className="w-3.5 h-3.5" /> Pukul {dateObj ? format(dateObj, "HH:mm", { locale: id }) : "-"} WIB
+              <Clock className="w-3 h-3" /> Pukul {dateObj ? format(dateObj, "HH:mm", { locale: id }) : "-"} WIB
             </p>
           </CardContent>
         </Card>
 
-        {/* Card Agent In-Charge */}
-        <Card className="border shadow-xs bg-card">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-              <UserCheck className="w-4 h-4 text-blue-500" /> Penanggung Jawab (Agent)
+        {/* Agent In-Charge */}
+        <Card className="border shadow-2xs bg-card">
+          <CardHeader className="p-3 pb-1">
+            <CardTitle className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+              <UserCheck className="w-3.5 h-3.5 text-blue-500" /> Penanggung Jawab
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="flex items-center gap-3">
-              <Avatar className="h-9 w-9 border border-blue-200">
+          <CardContent className="p-3 pt-0">
+            <div className="flex items-center gap-2.5">
+              <Avatar className="h-7 w-7 border border-blue-200">
                 <AvatarImage src={followup.assigned_user?.avatar_url || undefined} />
-                <AvatarFallback className="bg-blue-50 text-blue-700 font-bold text-xs">
+                <AvatarFallback className="bg-blue-50 text-blue-700 font-bold text-[10px]">
                   {getInitials(followup.assigned_user?.full_name || "Agent")}
                 </AvatarFallback>
               </Avatar>
@@ -450,7 +509,7 @@ export default function FollowupDetailPage() {
                 <p className="text-xs font-bold text-foreground truncate">
                   {followup.assigned_user?.full_name || followup.assigned_to || "Belum Di-assign"}
                 </p>
-                <p className="text-[11px] text-muted-foreground font-mono truncate">
+                <p className="text-[10px] text-muted-foreground font-mono truncate">
                   {followup.assigned_user?.email || "Tidak ada email"}
                 </p>
               </div>
@@ -459,39 +518,39 @@ export default function FollowupDetailPage() {
         </Card>
       </div>
 
-      {/* 4. CARD PROFIL LEAD KLIEN */}
-      <Card className="border shadow-xs bg-card overflow-hidden">
-        <CardHeader className="bg-muted/30 border-b pb-3">
-          <CardTitle className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-            <User className="w-4 h-4 text-emerald-600" /> Informasi Profil Lead Klien
+      {/* 4. CARD PROFIL LEAD KLIEN (DENGAN SENSOR NO HP UNTUK AGENT) */}
+      <Card className="border shadow-2xs bg-card overflow-hidden">
+        <CardHeader className="bg-muted/30 border-b p-3 pb-2.5">
+          <CardTitle className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+            <User className="w-3.5 h-3.5 text-emerald-600" /> Informasi Profil Lead Klien
           </CardTitle>
         </CardHeader>
-        <CardContent className="p-5 space-y-4">
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex items-center gap-3.5">
-              <Avatar className="h-12 w-12 border-2 border-emerald-500/20">
-                <AvatarFallback className="bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 font-bold text-sm">
+        <CardContent className="p-3.5">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <Avatar className="h-10 w-10 border border-emerald-500/20">
+                <AvatarFallback className="bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 font-bold text-xs">
                   {getInitials(leadName)}
                 </AvatarFallback>
               </Avatar>
               <div>
-                <p className="font-bold text-sm sm:text-base text-foreground">{leadName}</p>
-                <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground mt-0.5 font-mono">
-                  {leadPhone && <span className="flex items-center gap-1">📞 {leadPhone}</span>}
+                <p className="font-bold text-xs sm:text-sm text-foreground">{leadName}</p>
+                <div className="flex flex-wrap items-center gap-2.5 text-[11px] text-muted-foreground mt-0.5 font-mono">
+                  {/* 🔒 NOMOR HP DISENSOR JIKA ROLE AGENT */}
+                  {leadPhone && <span className="flex items-center gap-1">📞 {formatPhoneForUser(leadPhone)}</span>}
                   {leadEmail && <span className="flex items-center gap-1">✉️ {leadEmail}</span>}
                 </div>
               </div>
             </div>
 
-            {/* Link menuju Lead Detail Page */}
             {followup.lead_id && (
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => router.push(`/crm/leads/${followup.lead_id}`)}
-                className="text-xs h-8 gap-1 shrink-0"
+                className="text-[11px] h-7 gap-1 shrink-0 px-2.5"
               >
-                Lihat Detail Lead <ExternalLink className="w-3 h-3 ml-0.5" />
+                Detail Lead <ExternalLink className="w-3 h-3 ml-0.5" />
               </Button>
             )}
           </div>
@@ -499,15 +558,15 @@ export default function FollowupDetailPage() {
       </Card>
 
       {/* 5. CARD CATATAN & PLAN ACTIVITY */}
-      <Card className="border shadow-xs bg-card">
-        <CardHeader className="pb-3 border-b">
-          <CardTitle className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-            <MessageSquare className="w-4 h-4 text-purple-500" /> Catatan & Rencana Aktivitas
+      <Card className="border shadow-2xs bg-card">
+        <CardHeader className="p-3 pb-2 border-b">
+          <CardTitle className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+            <MessageSquare className="w-3.5 h-3.5 text-purple-500" /> Catatan & Rencana Aktivitas
           </CardTitle>
         </CardHeader>
-        <CardContent className="p-5">
+        <CardContent className="p-3.5">
           {followup.notes ? (
-            <p className="text-xs sm:text-sm text-foreground whitespace-pre-wrap leading-relaxed font-sans bg-muted/30 p-3.5 rounded-xl border border-border/60">
+            <p className="text-xs text-foreground whitespace-pre-wrap leading-relaxed font-sans bg-muted/40 p-3 rounded-lg border border-border/50">
               {followup.notes}
             </p>
           ) : (
@@ -530,15 +589,14 @@ export default function FollowupDetailPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-2 text-xs">
-            {/* Status Select */}
-            <div className="space-y-1.5">
+          <div className="space-y-3 py-1 text-xs">
+            <div className="space-y-1">
               <Label className="text-xs font-bold">Status Follow-up</Label>
               <Select
                 value={editForm.status}
                 onValueChange={(val) => setEditForm({ ...editForm, status: val || "pending" })}
               >
-                <SelectTrigger className="h-9 text-xs bg-background">
+                <SelectTrigger className="h-8 text-xs bg-background">
                   <SelectValue placeholder="Pilih status" />
                 </SelectTrigger>
                 <SelectContent>
@@ -549,37 +607,35 @@ export default function FollowupDetailPage() {
               </Select>
             </div>
 
-            {/* Tanggal & Waktu */}
-            <div className="space-y-1.5">
+            <div className="space-y-1">
               <Label className="text-xs font-bold">Tanggal & Waktu Follow-up</Label>
               <Input
                 type="datetime-local"
                 value={editForm.followup_date}
                 onChange={(e) => setEditForm({ ...editForm, followup_date: e.target.value })}
-                className="h-9 text-xs font-mono"
+                className="h-8 text-xs font-mono"
               />
             </div>
 
-            {/* Catatan */}
-            <div className="space-y-1.5">
+            <div className="space-y-1">
               <Label className="text-xs font-bold">Catatan Activity</Label>
               <Textarea
                 value={editForm.notes}
                 onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
                 placeholder="Catatan rencana follow-up..."
-                rows={4}
+                rows={3}
                 className="text-xs leading-relaxed"
               />
             </div>
           </div>
 
-          <DialogFooter className="gap-2">
+          <DialogFooter className="gap-2 pt-1">
             <Button
               type="button"
               variant="outline"
               size="sm"
               onClick={() => setShowEditDialog(false)}
-              className="text-xs"
+              className="text-xs h-8"
             >
               Batal
             </Button>
@@ -588,51 +644,53 @@ export default function FollowupDetailPage() {
               size="sm"
               disabled={saving}
               onClick={handleSaveEdit}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs gap-1.5"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs gap-1.5 h-8"
             >
-              {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+              {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
               Simpan Perubahan
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* MODAL DIALOG 2: DELETE CONFIRMATION */}
-      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <DialogContent className="sm:max-w-md rounded-2xl">
-          <DialogHeader>
-            <DialogTitle className="text-base font-bold text-rose-600 flex items-center gap-2">
-              ⚠️ Konfirmasi Hapus Follow-up
-            </DialogTitle>
-            <DialogDescription className="text-xs">
-              Apakah Anda yakin ingin menghapus agenda follow-up ini? Tindakan ini permanen dan tidak dapat dibatalkan.
-            </DialogDescription>
-          </DialogHeader>
+      {/* MODAL DIALOG 2: DELETE CONFIRMATION (HANYA UNTUK ADMIN) */}
+      {isAdmin && (
+        <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+          <DialogContent className="sm:max-w-md rounded-2xl">
+            <DialogHeader>
+              <DialogTitle className="text-base font-bold text-rose-600 flex items-center gap-2">
+                ⚠️ Konfirmasi Hapus Follow-up
+              </DialogTitle>
+              <DialogDescription className="text-xs">
+                Apakah Anda yakin ingin menghapus agenda follow-up ini? Tindakan ini permanen dan tidak dapat dibatalkan.
+              </DialogDescription>
+            </DialogHeader>
 
-          <DialogFooter className="gap-2 pt-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setShowDeleteDialog(false)}
-              className="text-xs"
-            >
-              Batal
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              size="sm"
-              disabled={saving}
-              onClick={handleDelete}
-              className="text-xs gap-1.5"
-            >
-              {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
-              Ya, Hapus
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            <DialogFooter className="gap-2 pt-1">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setShowDeleteDialog(false)}
+                className="text-xs h-8"
+              >
+                Batal
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                disabled={saving}
+                onClick={handleDelete}
+                className="text-xs gap-1 h-8"
+              >
+                {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                Ya, Hapus
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }

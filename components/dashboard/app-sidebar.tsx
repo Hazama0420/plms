@@ -33,6 +33,7 @@ import {
   Plus,
   Calculator,
   MessageSquare,
+  Activity,
 } from "lucide-react";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -134,6 +135,8 @@ const NAV_ITEMS: NavItem[] = [
     children: [
       { label: "User Management", icon: Users, href: "/admin/users", roles: ["super_admin", "admin"] },
       { label: "Inbox Support", icon: MessageSquare, href: "/admin/support", roles: ["super_admin", "admin"] },
+      // 🟢 Subhalaman Logs ditambahkan di sini secara rapi dan terstruktur
+      { label: "System Logs", icon: Activity, href: "/admin/logs", roles: ["super_admin", "admin"] },
     ],
   },
   {
@@ -168,7 +171,6 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
     admin: true,
   });
 
-  // FIX: Supaya tidak stuck saat diakses sebagai Tamu/Guest (unauthenticated)
   const isLoading = userLoading || (!!user && roleLoading);
   const isViewer = !user || userRole === "viewer";
 
@@ -320,35 +322,35 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
         >
           <CollapsibleTrigger
             className={cn(
-              "flex items-center justify-between w-full px-3 py-2.5 rounded-xl transition-all duration-200 text-xs font-semibold cursor-pointer",
+              "flex items-center justify-between w-full px-3 py-2 rounded-xl transition-all duration-200 text-xs font-semibold cursor-pointer",
               active || hasChildActive
                 ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 font-bold"
                 : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
             )}
           >
-            <span className="flex items-center gap-3">
-              <item.icon size={18} className={cn((active || hasChildActive) && "text-emerald-600 dark:text-emerald-400")} />
+            <span className="flex items-center gap-2.5">
+              <item.icon size={17} className={cn((active || hasChildActive) && "text-emerald-600 dark:text-emerald-400")} />
               <span>{item.label}</span>
             </span>
             {isExpanded ? (
-              <ChevronUp size={15} className="text-muted-foreground" />
+              <ChevronUp size={14} className="text-muted-foreground" />
             ) : (
-              <ChevronDown size={15} className="text-muted-foreground" />
+              <ChevronDown size={14} className="text-muted-foreground" />
             )}
           </CollapsibleTrigger>
-          <CollapsibleContent className="space-y-1 ml-4 pl-3 border-l-2 border-emerald-500/20 dark:border-emerald-500/10">
+          <CollapsibleContent className="space-y-0.5 ml-3.5 pl-2.5 border-l-2 border-emerald-500/20 dark:border-emerald-500/10 my-0.5">
             {visibleChildren.map((child) => (
               <button
                 key={child.href}
                 onClick={() => navigateAndClose(child.href)}
                 className={cn(
-                  "flex items-center gap-2.5 px-3 py-2 rounded-lg transition-all duration-200 text-xs w-full text-left cursor-pointer",
+                  "flex items-center gap-2 px-2.5 py-1.5 rounded-lg transition-all duration-200 text-xs w-full text-left cursor-pointer",
                   isActive(child)
                     ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 font-bold"
                     : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
                 )}
               >
-                <child.icon size={15} />
+                <child.icon size={14} />
                 <span>{child.label}</span>
                 {isActive(child) && (
                   <span className="ml-auto w-1.5 h-1.5 rounded-full bg-emerald-600 shadow-2xs" />
@@ -366,7 +368,7 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
         <button
           onClick={() => navigateAndClose(item.href)}
           className={cn(
-            "flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 text-xs font-semibold flex-1 w-full text-left cursor-pointer relative",
+            "flex items-center gap-2.5 px-3 py-2 rounded-xl transition-all duration-200 text-xs font-semibold flex-1 w-full text-left cursor-pointer relative",
             active
               ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 font-bold"
               : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
@@ -375,7 +377,7 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
           {active && (
             <span className="absolute left-0 top-2 bottom-2 w-1 bg-emerald-600 rounded-r-full" />
           )}
-          <item.icon size={18} className={cn(active && "text-emerald-600 dark:text-emerald-400")} />
+          <item.icon size={17} className={cn(active && "text-emerald-600 dark:text-emerald-400")} />
           <span>{item.label}</span>
           {active && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-emerald-600 shadow-2xs" />}
         </button>
@@ -391,7 +393,7 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
             }}
             title={`Tambah ${item.label}`}
           >
-            <Plus size={14} className="text-emerald-600 dark:text-emerald-400" />
+            <Plus size={13} className="text-emerald-600 dark:text-emerald-400" />
           </Button>
         )}
       </div>
@@ -407,7 +409,7 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
       <aside
         className={cn(
           "relative flex flex-col border-r border-border/70 bg-card text-card-foreground h-[100dvh] max-h-[100dvh] overflow-hidden shrink-0",
-          collapsed ? "w-16" : "w-64"
+          collapsed ? "w-16" : "w-60"
         )}
       >
         <div className="flex items-center h-16 px-4 border-b border-border/60 justify-between shrink-0">
@@ -416,12 +418,12 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
         </div>
         <div className="flex-1 px-3 py-4 space-y-2 overflow-hidden">
           {[1, 2, 3, 4, 5, 6].map((i) => (
-            <Skeleton key={i} className="h-9 w-full rounded-xl" />
+            <Skeleton key={i} className="h-8 w-full rounded-xl" />
           ))}
         </div>
         <div className="border-t border-border/60 p-3 space-y-2 shrink-0 bg-muted/20">
-          <Skeleton className="h-9 w-full rounded-xl" />
-          <Skeleton className="h-12 w-full rounded-xl" />
+          <Skeleton className="h-8 w-full rounded-xl" />
+          <Skeleton className="h-10 w-full rounded-xl" />
         </div>
       </aside>
     );
@@ -435,30 +437,30 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
     <aside
       className={cn(
         "relative flex flex-col border-r border-border/70 bg-card/95 backdrop-blur-md text-card-foreground transition-all duration-300 h-[100dvh] max-h-[100dvh] overflow-hidden shrink-0 select-none",
-        collapsed ? "w-16" : "w-64"
+        collapsed ? "w-16" : "w-60"
       )}
     >
-      {/* 1. HEADER BRAND (INLAND HIJAU, PROPERTY PUTIH/GELAP) */}
+      {/* 1. HEADER BRAND */}
       <div
         className={cn(
-          "flex items-center h-16 px-4 border-b border-border/60 shrink-0 bg-card/50",
+          "flex items-center h-16 px-3.5 border-b border-border/65 shrink-0 bg-card/50",
           collapsed ? "justify-center" : "justify-between"
         )}
       >
         {!collapsed && (
           <button
             onClick={() => navigateAndClose("/dashboard")}
-            className="flex items-center gap-2.5 text-left cursor-pointer group"
+            className="flex items-center gap-2 text-left cursor-pointer group"
           >
-            <div className="w-8 h-8 rounded-xl bg-emerald-600 flex items-center justify-center shadow-md shadow-emerald-600/20 group-hover:scale-105 transition-transform">
+            <div className="w-7 h-7 rounded-xl bg-emerald-600 flex items-center justify-center shadow-md shadow-emerald-600/20 group-hover:scale-105 transition-transform">
               <span className="text-white font-black text-xs tracking-wider">IP</span>
             </div>
             <div className="flex flex-col">
-              <span className="font-extrabold text-base tracking-tight leading-none flex items-center gap-1">
+              <span className="font-extrabold text-sm tracking-tight leading-none flex items-center gap-1">
                 <span className="text-emerald-600 dark:text-emerald-400">Inland</span>{" "}
                 <span className="text-slate-900 dark:text-white">Property</span>
               </span>
-              <span className="text-[10px] text-muted-foreground font-mono mt-0.5">Management System</span>
+              <span className="text-[9px] text-muted-foreground font-mono mt-0.5">Management System</span>
             </div>
           </button>
         )}
@@ -466,7 +468,7 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
         {collapsed && (
           <button
             onClick={() => navigateAndClose("/dashboard")}
-            className="w-8 h-8 rounded-xl bg-emerald-600 flex items-center justify-center shadow-md shadow-emerald-600/20 cursor-pointer"
+            className="w-7 h-7 rounded-xl bg-emerald-600 flex items-center justify-center shadow-md shadow-emerald-600/20 cursor-pointer"
           >
             <span className="text-white font-black text-xs">IP</span>
           </button>
@@ -476,54 +478,54 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
           variant="ghost"
           size="icon"
           className={cn(
-            "h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-accent rounded-xl cursor-pointer",
+            "h-7 w-7 text-muted-foreground hover:text-foreground hover:bg-accent rounded-xl cursor-pointer",
             collapsed &&
-              "absolute -right-3.5 top-4 rounded-full border border-border bg-card shadow-md z-20 h-7 w-7"
+              "absolute -right-3.5 top-4 rounded-full border border-border bg-card shadow-md z-20 h-6 w-6"
           )}
           onClick={toggleCollapse}
         >
-          {collapsed ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}
+          {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
         </Button>
       </div>
 
-      {/* 2. MIDDLE NAVIGATION LINKS */}
-      <div className="flex-1 min-h-0 w-full overflow-y-auto px-3 py-3 space-y-1 scrollbar-thin scrollbar-thumb-border hover:scrollbar-thumb-muted-foreground/30">
-        <nav className="space-y-1">
+      {/* 2. MIDDLE NAVIGATION LINKS (COMPACT & RAPIH TANPA TERLIHAT SESAK) */}
+      <div className="flex-1 min-h-0 w-full overflow-y-auto px-2.5 py-2.5 space-y-0.5 scrollbar-thin scrollbar-thumb-border hover:scrollbar-thumb-muted-foreground/30">
+        <nav className="space-y-0.5">
           {filteredNavItems.map((item) => renderNavItem(item))}
         </nav>
       </div>
 
       {/* 3. FOOTER CONTROL BAR */}
-      <div className="border-t border-border/70 p-3 space-y-2 shrink-0 bg-muted/20">
+      <div className="border-t border-border/70 p-2.5 space-y-1.5 shrink-0 bg-muted/20">
         {/* Toggle Dark Mode */}
         <Button
           variant="ghost"
           size={collapsed ? "icon" : "default"}
           className={cn(
-            "w-full justify-start gap-2.5 text-muted-foreground hover:text-foreground hover:bg-accent text-xs h-9 rounded-xl cursor-pointer",
+            "w-full justify-start gap-2.5 text-muted-foreground hover:text-foreground hover:bg-accent text-xs h-8 rounded-xl cursor-pointer",
             collapsed && "justify-center px-0"
           )}
           onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
         >
           {theme === "dark" ? (
-            <Sun size={17} className="text-amber-500 shrink-0" />
+            <Sun size={15} className="text-amber-500 shrink-0" />
           ) : (
-            <Moon size={17} className="text-slate-600 dark:text-slate-400 shrink-0" />
+            <Moon size={15} className="text-slate-600 dark:text-slate-400 shrink-0" />
           )}
           {!collapsed && (
             <span className="text-xs font-semibold">{theme === "dark" ? "Mode Terang" : "Mode Gelap"}</span>
           )}
         </Button>
 
-        {/* User Card (Mengarah ke Settings) */}
+        {/* User Card */}
         <button
           className={cn(
-            "flex items-center gap-2.5 p-2 rounded-xl transition-all w-full text-left bg-card border border-border/60 hover:border-emerald-500/40 hover:bg-accent/50 cursor-pointer shadow-2xs group",
+            "flex items-center gap-2 p-1.5 rounded-xl transition-all w-full text-left bg-card border border-border/60 hover:border-emerald-500/40 hover:bg-accent/50 cursor-pointer shadow-2xs group",
             collapsed && "justify-center border-none bg-transparent p-0"
           )}
           onClick={() => navigateAndClose("/settings")}
         >
-          <Avatar className="h-8 w-8 border border-emerald-500/30 shrink-0 shadow-2xs">
+          <Avatar className="h-7 w-7 border border-emerald-500/30 shrink-0 shadow-2xs">
             <AvatarImage src={userAvatar || undefined} />
             <AvatarFallback className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold">
               {getInitials(userFullName)}
@@ -531,12 +533,10 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
           </Avatar>
           {!collapsed && (
             <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-bold text-foreground truncate group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
-                  {userFullName}
-                </p>
-              </div>
-              <p className="text-[10px] text-muted-foreground truncate capitalize">
+              <p className="text-xs font-bold text-foreground truncate group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
+                {userFullName}
+              </p>
+              <p className="text-[10px] text-muted-foreground truncate capitalize leading-none mt-0.5">
                 {user ? (userRole ? userRole.replace("_", " ") : "Pengguna") : "Tamu"}
               </p>
             </div>
@@ -549,12 +549,12 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
             variant="ghost"
             size={collapsed ? "icon" : "default"}
             className={cn(
-              "w-full justify-start gap-2.5 text-muted-foreground hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-500/10 text-xs h-9 rounded-xl cursor-pointer",
+              "w-full justify-start gap-2.5 text-muted-foreground hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-500/10 text-xs h-8 rounded-xl cursor-pointer",
               collapsed && "justify-center px-0"
             )}
             onClick={handleLogout}
           >
-            <LogOut size={17} className="shrink-0" />
+            <LogOut size={15} className="shrink-0" />
             {!collapsed && <span className="text-xs font-semibold">Keluar Akun</span>}
           </Button>
         )}

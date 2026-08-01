@@ -1,7 +1,7 @@
 // app/(dashboard)/layout.tsx
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { Menu } from "lucide-react";
 import { AppSidebar } from "@/components/dashboard/app-sidebar";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -9,6 +9,7 @@ import { NotificationBell } from "@/components/notification-bell";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { BottomNav } from "@/components/layout/BottomNav";
+import { PageLoader } from "@/components/ui/page-loader"; // 🟢 Impor PageLoader
 import { cn } from "@/lib/utils";
 
 export default function DashboardLayout({
@@ -48,6 +49,11 @@ export default function DashboardLayout({
 
   return (
     <div className="flex h-screen w-full bg-background overflow-hidden">
+      {/* 🟢 Global Page Loading Overlay (Animasi layar buram saat pindah halaman) */}
+      <Suspense fallback={null}>
+        <PageLoader />
+      </Suspense>
+
       {/* Desktop Sidebar (Fleksibel mengikuti ukuran collapsed AppSidebar) */}
       <div className="hidden md:flex shrink-0">
         <AppSidebar />

@@ -19,7 +19,6 @@ import {
   MoreVertical,
   ShieldAlert,
   MessageCircle,
-  Phone,
   Maximize2,
   Lock,
   ChevronLeft,
@@ -68,7 +67,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Label } from "@/components/ui/label";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 
 type PropertyStatus = "draft" | "review" | "published" | "sold" | "rented" | "archived";
@@ -125,6 +123,13 @@ interface LocationData {
 const DEFAULT_FALLBACK_IMAGE =
   "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=1600&q=80";
 
+// 🔒 Helper Sensor Nomor HP di Deskripsi
+const maskPhoneNumbers = (text?: string | null): string => {
+  if (!text) return "Belum ada deskripsi rinci untuk properti ini.";
+  const phoneRegex = /(?:\+?62|0)8[1-9][0-9\-\s]{6,12}/g;
+  return text.replace(phoneRegex, "xxxxxx");
+};
+
 export default function PropertyDetailPage() {
   const router = useRouter();
   const params = useParams();
@@ -137,7 +142,6 @@ export default function PropertyDetailPage() {
   const [newStatus, setNewStatus] = useState<PropertyStatus>("draft");
   const [updating, setUpdating] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [activeTab, setActiveTab] = useState("details");
   const [activeImage, setActiveImage] = useState<string>("");
 
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
@@ -148,6 +152,13 @@ export default function PropertyDetailPage() {
   const [agents, setAgents] = useState<any[]>([]);
   const [fetchedAssignedAgent, setFetchedAssignedAgent] = useState<any>(null);
   const [assignLoading, setAssignLoading] = useState(false);
+
+  // State Modal Form Leads CRM
+  const [showLeadModal, setShowLeadModal] = useState(false);
+  const [leadName, setLeadName] = useState("");
+  const [leadPhone, setLeadPhone] = useState("");
+  const [leadMessage, setLeadMessage] = useState("");
+  const [submittingLead, setSubmittingLead] = useState(false);
 
   const [locationData, setLocationData] = useState<LocationData>({
     countries: [],
@@ -191,18 +202,6 @@ export default function PropertyDetailPage() {
     return list;
   };
 
-  const getWaLink = (phone?: string, title?: string) => {
-    if (!phone) return "#";
-    let cleanPhone = phone.replace(/[^0-9]/g, "");
-    if (cleanPhone.startsWith("0")) {
-      cleanPhone = "62" + cleanPhone.slice(1);
-    }
-    const text = encodeURIComponent(
-      `Pesan Resmi Inland Property:\nSaya berminat dan ingin menjadwalkan konsultasi/survei lokasi untuk properti: *${title || "Properti"}*`
-    );
-    return `https://wa.me/${cleanPhone}?text=${text}`;
-  };
-
   useEffect(() => {
     const fetchUserAndRole = async () => {
       try {
@@ -218,7 +217,6 @@ export default function PropertyDetailPage() {
           const role = userData?.role || user.user_metadata?.role || "agent";
           setUserRole(role.toLowerCase());
         } else {
-          // 🟢 JIKA TAMU (BELUM LOGIN)
           setUserRole("guest");
         }
       } catch (err) {
@@ -367,6 +365,24 @@ export default function PropertyDetailPage() {
     return Array.isArray(property.address) ? property.address[0] : property.address;
   }, [property?.address]);
 
+  // 📍 PENGGABUNGAN ALAMAT LENGKAP (Provinsi, Kota/Kabupaten, Kecamatan)
+  const formattedFullLocation = useMemo(() => {
+    if (!addressObj && !property?.address) return "Alamat lokasi belum dikonfigurasi";
+
+    const prov = resolveLocationName(addressObj, "province_id", "province_name", "provinces", locationData.provinces);
+    const city = resolveLocationName(addressObj, "city_id", "city_name", "cities", locationData.cities);
+    const dist = resolveLocationName(addressObj, "district_id", "district_name", "districts", locationData.districts);
+    const detailAddress = addressObj?.address || addressObj?.full_address || property?.address?.address || "";
+
+    const regionParts = [dist, city, prov].filter((p) => p && p !== "-");
+    const regionString = regionParts.length > 0 ? regionParts.join(", ") : "";
+
+    if (detailAddress && regionString) {
+      return `${detailAddress}, ${regionString}`;
+    }
+    return detailAddress || regionString || "Alamat lokasi belum dikonfigurasi";
+  }, [addressObj, locationData, property?.address]);
+
   const specObj = useMemo(() => {
     if (!property?.specifications) return {};
     return Array.isArray(property.specifications) ? property.specifications[0] : property.specifications;
@@ -386,6 +402,134 @@ export default function PropertyDetailPage() {
     if (!property?.building) return {};
     return Array.isArray(property.building) ? property.building[0] : property.building;
   }, [property?.building]);
+
+  const calculatedPrice = priceObj?.selling_price || priceObj?.rental_price || priceObj?.price || 0;
+
+  // Handler Submit Lead & Otomatisasi Fonnte
+  const handleLeadSubmit = async (e: React.FormEvent, targetPhone: string) => {
+    e.preventDefault();
+    if (!leadName || !leadPhone) {
+      toast.error("Mohon lengkapi Nama dan No WhatsApp Anda.");
+      return;
+    }
+
+    setSubmittingLead(true);
+    try {
+      const cleanLeadPhone = leadPhone.replace(/[^0-9]/g, "");
+      let contactId: string | null = null;
+      
+      const { data: existingContact } = await supabase
+        .from("crm_contacts")
+        .select("id")
+        .eq("phone", cleanLeadPhone)
+        .maybeSingle();
+
+      if (existingContact) {
+        contactId = existingContact.id;
+      } else {
+        const randomCode = `CNT-${Date.now().toString().slice(-6)}`;
+        const { data: newContact, error: contactErr } = await supabase
+          .from("crm_contacts")
+          .insert([
+            { 
+              contact_code: randomCode,
+              full_name: leadName, 
+              phone: cleanLeadPhone,
+              whatsapp: cleanLeadPhone 
+            }
+          ])
+          .select("id")
+          .single();
+        
+        if (contactErr) throw contactErr;
+        contactId = newContact.id;
+      }
+
+      const targetAgentId = property?.assigned_to || property?.user_id || null;
+
+      const { data: newLead, error: leadErr } = await supabase
+        .from("crm_leads")
+        .insert([
+          {
+            contact_id: contactId,
+            property_id: property?.id || null,
+            assigned_to: targetAgentId,
+            source: "Website Property Detail",
+            status: "new",
+            interest_type: property?.title || property?.listing_type || "Properti Pilihan",
+            budget: calculatedPrice || null,
+            notes: leadMessage || `Tertarik dengan properti: ${property?.title} (${property?.listing_code})`,
+          },
+        ])
+        .select("id")
+        .single();
+
+      if (leadErr) throw leadErr;
+
+      if (property?.id && newLead?.id) {
+        await supabase.from("crm_interests").insert([
+          {
+            lead_id: newLead.id,
+            property_id: property.id,
+            priority: 1,
+            interest_level: "high",
+            notes: `Inquiry otomatis dari website: ${property.title}`,
+          },
+        ]);
+      }
+
+      if (targetAgentId) {
+        try {
+          await fetch("/api/notifications/whatsapp", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              agentId: targetAgentId,
+              leadName: leadName,
+              clientPhone: cleanLeadPhone || leadPhone,
+              propertyInterest: property?.title || "Properti Pilihan",
+            }),
+          });
+        } catch (waErr) {
+          console.error("Gagal pemicu WA otomatis:", waErr);
+        }
+      }
+
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        await supabase.from("crm_activities").insert([
+          {
+            lead_id: newLead.id,
+            user_id: user?.id || targetAgentId || null,
+            activity_type: "Lead Masuk (Website)",
+            notes: `Prospek baru "${leadName}" berminat pada properti "${property?.title || 'Properti'}"`
+          }
+        ]);
+      } catch (actErr) {
+        console.error("Gagal log aktivitas:", actErr);
+      }
+
+      toast.success("Berhasil! Data Anda tercatat dan agen kami telah dinotifikasi.");
+
+      let cleanTargetPhone = targetPhone ? targetPhone.replace(/[^0-9]/g, "") : "";
+      if (cleanTargetPhone.startsWith("0")) cleanTargetPhone = "62" + cleanTargetPhone.slice(1);
+
+      const text = encodeURIComponent(
+        `Halo, saya *${leadName}* tertarik dengan properti *${property?.title}* (${property?.listing_code}). ${leadMessage ? `Pesan: "${leadMessage}"` : "Mohon informasi lebih lanjut."}`
+      );
+      
+      setShowLeadModal(false);
+      setLeadName("");
+      setLeadPhone("");
+      setLeadMessage("");
+
+      window.open(`https://wa.me/${cleanTargetPhone}?text=${text}`, "_blank");
+    } catch (err: any) {
+      toast.error("Gagal menyimpan data lead", { description: err.message || JSON.stringify(err) });
+    } finally {
+      setSubmittingLead(false);
+    }
+  };
 
   const handleAssignAgent = async (agentId: string | null) => {
     if (!property) return;
@@ -498,9 +642,9 @@ export default function PropertyDetailPage() {
 
   if (loading) {
     return (
-      <div className="space-y-6 max-w-7xl mx-auto px-4 py-8">
+      <div className="space-y-6 max-w-7xl mx-auto px-3 sm:px-6 py-6">
         <Skeleton className="h-10 w-48 rounded-xl" />
-        <Skeleton className="h-[380px] w-full rounded-3xl" />
+        <Skeleton className="h-[280px] sm:h-[380px] w-full rounded-3xl" />
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-4">
             <Skeleton className="h-72 w-full rounded-3xl" />
@@ -515,9 +659,9 @@ export default function PropertyDetailPage() {
 
   if (!property) {
     return (
-      <div className="flex flex-col items-center justify-center h-[70vh] text-center max-w-md mx-auto space-y-4">
+      <div className="flex flex-col items-center justify-center h-[70vh] text-center max-w-md mx-auto space-y-4 p-4">
         <div className="w-16 h-16 rounded-2xl bg-muted/50 flex items-center justify-center text-2xl border border-border/60 shadow-xs">🏠</div>
-        <h2 className="text-xl font-bold text-foreground">Properti Tidak Ditemukan</h2>
+        <h2 className="text-lg font-bold text-foreground">Properti Tidak Ditemukan</h2>
         <p className="text-xs text-muted-foreground leading-relaxed">
           Data properti ini mungkin telah dihapus atau Anda tidak memiliki hak akses untuk melihatnya.
         </p>
@@ -528,13 +672,11 @@ export default function PropertyDetailPage() {
     );
   }
 
-  const calculatedPrice = priceObj?.selling_price || priceObj?.rental_price || priceObj?.price || 0;
-
   return (
-    <div className="space-y-8 pb-24 max-w-7xl mx-auto px-4 sm:px-6 pt-2">
+    <div className="space-y-6 pb-28 sm:pb-24 max-w-7xl mx-auto px-3 sm:px-6 pt-2 text-foreground">
       {/* 1. TOP HEADER & BAR AKSI */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-border/60 pb-5">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-border/60 pb-4">
+        <div className="flex items-center gap-2.5 w-full sm:w-auto">
           <Button
             variant="outline"
             size="icon"
@@ -543,15 +685,15 @@ export default function PropertyDetailPage() {
           >
             <ArrowLeft className="h-4 w-4" />
           </Button>
-          <div>
-            <div className="flex items-center gap-2.5 flex-wrap">
-              <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-foreground">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-base sm:text-2xl font-extrabold tracking-tight truncate">
                 {property.title}
               </h1>
               <Badge
                 variant="outline"
                 className={cn(
-                  "text-[10px] font-bold uppercase tracking-wider px-3 py-0.5 rounded-full border shadow-2xs",
+                  "text-[9px] sm:text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full border shadow-2xs shrink-0",
                   statusConfig[property.status]?.color,
                   statusConfig[property.status]?.bg
                 )}
@@ -559,25 +701,24 @@ export default function PropertyDetailPage() {
                 {statusConfig[property.status]?.label || property.status}
               </Badge>
             </div>
-            <p className="text-xs text-muted-foreground mt-1 flex items-center gap-2 font-mono">
-              <span>{property.listing_code}</span>
+            <p className="text-[11px] text-muted-foreground mt-0.5 flex items-center gap-1.5 font-mono">
+              <span className="font-semibold text-foreground">{property.listing_code}</span>
               <span>•</span>
-              <span className="text-foreground font-sans font-medium">{property.property_type}</span>
+              <span className="text-emerald-600 font-sans font-medium">{property.property_type}</span>
             </p>
           </div>
         </div>
 
-        {/* HEADER ACTIONS */}
+        {/* AKSI DESKTOP & MOBILE DROPDOWN */}
         <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
           <Button
             variant="outline"
             size="sm"
             onClick={() => router.push(`/kpr-calculator?property_id=${property.id}`)}
-            className="border-emerald-500/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10 text-xs h-9 font-semibold gap-2 rounded-xl cursor-pointer"
+            className="border-emerald-500/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10 text-xs h-9 font-semibold gap-1.5 rounded-xl cursor-pointer"
           >
-            <Calculator className="h-4 w-4 text-emerald-600" />
-            <span className="hidden sm:inline">Kalkulator KPR</span>
-            <span className="sm:hidden">KPR</span>
+            <Calculator className="h-3.5 w-3.5 text-emerald-600" />
+            <span>Simulasi KPR</span>
           </Button>
 
           {canEdit && (
@@ -645,19 +786,19 @@ export default function PropertyDetailPage() {
       </div>
 
       {!canEdit && (
-        <div className="p-3.5 bg-amber-500/10 border border-amber-500/20 rounded-2xl flex items-center gap-3 text-amber-800 dark:text-amber-300 text-xs backdrop-blur-sm">
+        <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-2xl flex items-center gap-2.5 text-amber-800 dark:text-amber-300 text-[11px] backdrop-blur-sm">
           <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0" />
           <span>
             {userRole === "agent"
-              ? "Properti ini diposting oleh agen lain. Anda dapat melihat detail lengkapnya tanpa akses edit atau hapus."
+              ? "Properti ini diposting oleh agen lain. Anda dapat melihat detail lengkapnya tanpa akses edit."
               : "Halaman ini ditampilkan dalam mode baca saja (Read-Only)."}
           </span>
         </div>
       )}
 
       {/* 2. HERO BANNER FOTO */}
-      <div className="space-y-3">
-        <div className="relative group w-full aspect-[16/10] sm:aspect-[21/9] max-h-[440px] rounded-3xl overflow-hidden border border-border/70 bg-slate-950 shadow-lg">
+      <div className="space-y-2.5">
+        <div className="relative group w-full aspect-[4/3] sm:aspect-[21/9] max-h-[440px] rounded-2xl sm:rounded-3xl overflow-hidden border border-border/70 bg-slate-950 shadow-md">
           <img
             src={activeImage || DEFAULT_FALLBACK_IMAGE}
             alt={property.title}
@@ -667,13 +808,13 @@ export default function PropertyDetailPage() {
               (e.target as HTMLImageElement).src = DEFAULT_FALLBACK_IMAGE;
             }}
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-slate-950/20 to-transparent opacity-90" />
+          <div className="absolute inset-0 bg-gradient-to-t from-slate-950/85 via-slate-950/20 to-transparent opacity-90" />
 
-          <div className="absolute top-4 left-4 flex gap-2">
-            <Badge className={cn("text-xs font-bold uppercase tracking-wider px-3.5 py-1 shadow-xs border-0 text-white", property.listing_type === "sewa" ? "bg-amber-600" : "bg-emerald-600")}>
+          <div className="absolute top-3 left-3 flex gap-1.5 flex-wrap">
+            <Badge className={cn("text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 shadow-xs border-0 text-white", property.listing_type === "sewa" ? "bg-amber-600" : "bg-emerald-600")}>
               {property.listing_type === "jual" ? "DIJUAL" : "DISEWAKAN"}
             </Badge>
-            <Badge variant="outline" className="text-xs px-3.5 py-1 font-semibold backdrop-blur-md bg-slate-950/60 border-white/20 text-white">
+            <Badge variant="outline" className="text-[10px] px-2.5 py-0.5 font-semibold backdrop-blur-md bg-slate-950/60 border-white/20 text-white">
               {property.property_type}
             </Badge>
           </div>
@@ -681,32 +822,32 @@ export default function PropertyDetailPage() {
           <Button
             size="sm"
             onClick={() => openLightbox(activeImage || DEFAULT_FALLBACK_IMAGE)}
-            className="absolute top-4 right-4 bg-slate-950/70 hover:bg-slate-950/90 backdrop-blur-md text-white text-xs font-medium gap-1.5 border border-white/15 rounded-xl cursor-pointer shadow-md"
+            className="absolute top-3 right-3 bg-slate-950/70 hover:bg-slate-950/90 backdrop-blur-md text-white text-[11px] font-medium gap-1 border border-white/15 rounded-xl cursor-pointer h-8 px-2.5"
           >
             <Maximize2 className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Perbesar Foto</span>
           </Button>
 
-          <div className="absolute bottom-4 left-4 right-4 flex items-end justify-between">
-            <div className="text-white font-mono font-black text-lg sm:text-2xl bg-slate-950/80 px-4.5 py-2 rounded-2xl backdrop-blur-md border border-white/15 shadow-md">
+          <div className="absolute bottom-3 left-3 right-3 flex items-end justify-between gap-2">
+            <div className="text-white font-mono font-black text-base sm:text-2xl bg-slate-950/80 px-3.5 py-1.5 rounded-xl backdrop-blur-md border border-white/15 shadow-md">
               {formatCurrency(calculatedPrice)}
             </div>
-            <div className="bg-slate-950/80 backdrop-blur-md text-white text-xs px-3.5 py-2 rounded-xl border border-white/15 flex items-center gap-1.5 font-medium shadow-md">
-              <ImageIcon className="w-3.5 h-3.5 text-emerald-400" />
+            <div className="bg-slate-950/80 backdrop-blur-md text-white text-[10px] sm:text-xs px-2.5 py-1.5 rounded-xl border border-white/15 flex items-center gap-1 font-medium shadow-md">
+              <ImageIcon className="w-3 h-3 text-emerald-400" />
               <span>{allImages.length > 0 ? `${allImages.length} Foto` : "1 Foto"}</span>
             </div>
           </div>
         </div>
 
         {allImages.length > 1 && (
-          <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-none">
+          <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
             {allImages.map((imgUrl, idx) => (
               <button
                 key={idx}
                 type="button"
                 onClick={() => setActiveImage(imgUrl)}
                 className={cn(
-                  "relative w-20 h-14 sm:w-24 sm:h-16 rounded-2xl overflow-hidden shrink-0 border-2 transition-all cursor-pointer shadow-2xs",
+                  "relative w-16 h-12 sm:w-24 sm:h-16 rounded-xl overflow-hidden shrink-0 border-2 transition-all cursor-pointer shadow-2xs",
                   activeImage === imgUrl
                     ? "border-emerald-500 ring-2 ring-emerald-500/30 scale-102"
                     : "border-border/60 opacity-60 hover:opacity-100"
@@ -726,389 +867,287 @@ export default function PropertyDetailPage() {
         )}
       </div>
 
-      {/* 3. MAIN GRID CONTENT */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 space-y-6">
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-3 h-11 p-1 bg-muted/50 rounded-2xl border border-border/60 backdrop-blur-sm">
-              <TabsTrigger value="details" className="text-xs font-semibold rounded-xl cursor-pointer">
-                📋 Spesifikasi
-              </TabsTrigger>
-              <TabsTrigger value="location" className="text-xs font-semibold rounded-xl cursor-pointer">
-                📍 Wilayah & Lokasi
-              </TabsTrigger>
-              <TabsTrigger value="media" className="text-xs font-semibold rounded-xl cursor-pointer">
-                🖼️ Galeri Foto ({allImages.length})
-              </TabsTrigger>
-            </TabsList>
+      {/* 3. KONTEN UTAMA */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* KOLOM KIRI: SPESIFIKASI & ALAMAT KONSOLIDASI */}
+        <div className="lg:col-span-2 space-y-5">
+          <Card className="border border-border/70 shadow-2xs rounded-2xl bg-card overflow-hidden">
+            <CardHeader className="p-4 pb-3 border-b border-border/60">
+              <CardTitle className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-emerald-600" /> Ringkasan Informasi Utama & Spesifikasi
+              </CardTitle>
+            </CardHeader>
 
-            {/* TAB SPESIFIKASI */}
-            <TabsContent value="details" className="mt-5 space-y-6">
-              <Card className="border border-border/70 shadow-2xs rounded-3xl bg-card overflow-hidden">
-                <CardHeader className="p-6 pb-4 border-b border-border/60">
-                  <CardTitle className="text-sm font-bold text-foreground flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-emerald-600" /> Ringkasan Informasi Utama
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="p-6 space-y-6 text-xs">
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-5">
-                    <div>
-                      <Label className="text-muted-foreground text-[11px] font-medium">Kode Listing</Label>
-                      <p className="font-mono font-bold text-foreground text-sm mt-0.5">{property.listing_code}</p>
-                    </div>
-                    <div>
-                      <Label className="text-muted-foreground text-[11px] font-medium">Tipe Properti</Label>
-                      <p className="font-semibold text-foreground mt-0.5">{property.property_type}</p>
-                    </div>
-                    <div>
-                      <Label className="text-muted-foreground text-[11px] font-medium">Jenis Transaksi</Label>
-                      <p className="font-semibold text-foreground mt-0.5">{property.listing_type === "jual" ? "Penjualan (Jual)" : "Penyewaan (Sewa)"}</p>
-                    </div>
-                    <div>
-                      <Label className="text-muted-foreground text-[11px] font-medium">Kategori</Label>
-                      <p className="font-semibold text-foreground mt-0.5">{property.property_category || "-"}</p>
-                    </div>
-                    <div>
-                      <Label className="text-muted-foreground text-[11px] font-medium">Sertifikat / Legalitas</Label>
-                      <p className="font-semibold text-emerald-600 dark:text-emerald-400 mt-0.5 flex items-center gap-1">
-                        <FileCheck className="w-3.5 h-3.5" />
-                        {specObj?.certificate || "SHM - Sertifikat Hak Milik"}
-                      </p>
-                    </div>
-                    <div>
-                      <Label className="text-muted-foreground text-[11px] font-medium">Didaftarkan Pada</Label>
-                      <p className="font-medium text-foreground mt-0.5">{formatRelativeTime(property.created_at)}</p>
-                    </div>
+            <CardContent className="p-4 space-y-5 text-xs">
+              {/* MATRIX SPESIFIKASI */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                <div>
+                  <Label className="text-muted-foreground text-[10px] font-medium">Kode Listing</Label>
+                  <p className="font-mono font-bold text-foreground text-xs mt-0.5">{property.listing_code}</p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground text-[10px] font-medium">Tipe Properti</Label>
+                  <p className="font-semibold text-foreground mt-0.5">{property.property_type}</p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground text-[10px] font-medium">Jenis Transaksi</Label>
+                  <p className="font-semibold text-foreground mt-0.5">{property.listing_type === "jual" ? "Penjualan (Jual)" : "Penyewaan (Sewa)"}</p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground text-[10px] font-medium">Kategori</Label>
+                  <p className="font-semibold text-foreground mt-0.5">{property.property_category || "-"}</p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground text-[10px] font-medium">Sertifikat / Legalitas</Label>
+                  <p className="font-semibold text-emerald-600 dark:text-emerald-400 mt-0.5 flex items-center gap-1">
+                    <FileCheck className="w-3.5 h-3.5" />
+                    {specObj?.certificate || "SHM - Hak Milik"}
+                  </p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground text-[10px] font-medium">Didaftarkan Pada</Label>
+                  <p className="font-medium text-foreground mt-0.5">{formatRelativeTime(property.created_at)}</p>
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* 📍 BLOK LOKASI & ALAMAT LENGKAP KONSOLIDASI */}
+              <div>
+                <Label className="text-muted-foreground text-[10px] font-medium flex items-center gap-1.5 mb-1.5">
+                  <MapPin className="w-3.5 h-3.5 text-rose-500" />
+                  Lokasi & Alamat Lengkap
+                </Label>
+                <div className="bg-muted/30 p-3.5 rounded-xl border border-border/50 text-xs font-medium text-foreground leading-relaxed">
+                  {formattedFullLocation}
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* DESKRIPSI DENGAN MASKING NOMOR TELEPON */}
+              <div>
+                <Label className="text-muted-foreground text-[10px] font-medium">Deskripsi Properti</Label>
+                <p className="text-xs text-foreground mt-1.5 whitespace-pre-wrap leading-relaxed bg-muted/20 p-3.5 rounded-xl border border-border/40 font-normal">
+                  {maskPhoneNumbers(property.description)}
+                </p>
+              </div>
+
+              {property.selling_point && (
+                <div>
+                  <Label className="text-muted-foreground text-[10px] font-medium">💎 Keunggulan Utama (Selling Point)</Label>
+                  <div className="text-xs text-foreground font-medium mt-1.5 p-3.5 bg-emerald-500/10 rounded-xl border border-emerald-500/20 text-emerald-950 dark:text-emerald-200">
+                    {property.selling_point}
                   </div>
+                </div>
+              )}
 
-                  <Separator />
+              <Separator />
 
-                  <div>
-                    <Label className="text-muted-foreground text-[11px] font-medium">Deskripsi Properti</Label>
-                    <p className="text-xs text-foreground mt-2 whitespace-pre-wrap leading-relaxed font-normal bg-muted/20 p-4 rounded-2xl border border-border/40">
-                      {property.description || "Belum ada deskripsi rinci untuk properti ini."}
+              {/* FASILITAS BANGUNAN */}
+              <div>
+                <Label className="text-muted-foreground text-[10px] font-medium mb-2.5 block">Fasilitas & Karakteristik</Label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                  <div className="p-3 bg-muted/40 rounded-xl border border-border/60 text-center">
+                    <p className="text-xs font-bold text-foreground">{specObj?.bedroom || 0} Ruang</p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5 flex items-center justify-center gap-1">
+                      <Bed className="w-3 h-3 text-emerald-600" /> Kamar Tidur
                     </p>
                   </div>
 
-                  {property.selling_point && (
-                    <div>
-                      <Label className="text-muted-foreground text-[11px] font-medium">💎 Keunggulan Utama (Selling Point)</Label>
-                      <div className="text-xs text-foreground font-medium mt-2 p-4 bg-emerald-500/10 rounded-2xl border border-emerald-500/20 text-emerald-950 dark:text-emerald-200">
-                        {property.selling_point}
-                      </div>
-                    </div>
-                  )}
-
-                  <Separator />
-
-                  <div>
-                    <Label className="text-muted-foreground text-[11px] font-medium mb-3 block">Fasilitas & Karakteristik Bangunan</Label>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                      <div className="p-3.5 bg-muted/40 rounded-2xl border border-border/60 text-center">
-                        <p className="text-xs font-bold text-foreground">{specObj?.bedroom || 0} Ruang</p>
-                        <p className="text-[10px] text-muted-foreground mt-0.5 flex items-center justify-center gap-1">
-                          <Bed className="w-3 h-3 text-emerald-600" /> Kamar Tidur
-                        </p>
-                      </div>
-
-                      <div className="p-3.5 bg-muted/40 rounded-2xl border border-border/60 text-center">
-                        <p className="text-xs font-bold text-foreground">{specObj?.bathroom || 0} Ruang</p>
-                        <p className="text-[10px] text-muted-foreground mt-0.5 flex items-center justify-center gap-1">
-                          <Bath className="w-3 h-3 text-emerald-600" /> Kamar Mandi
-                        </p>
-                      </div>
-
-                      <div className="p-3.5 bg-muted/40 rounded-2xl border border-border/60 text-center">
-                        <p className="text-xs font-bold text-foreground">{landObj?.land_area || specObj?.land_area || 0} m²</p>
-                        <p className="text-[10px] text-muted-foreground mt-0.5 flex items-center justify-center gap-1">
-                          <Building2 className="w-3 h-3 text-emerald-600" /> Luas Tanah
-                        </p>
-                      </div>
-
-                      <div className="p-3.5 bg-muted/40 rounded-2xl border border-border/60 text-center">
-                        <p className="text-xs font-bold text-foreground">{buildingObj?.building_area || specObj?.building_area || 0} m²</p>
-                        <p className="text-[10px] text-muted-foreground mt-0.5 flex items-center justify-center gap-1">
-                          <Building2 className="w-3 h-3 text-emerald-600" /> Luas Bangunan
-                        </p>
-                      </div>
-
-                      {specObj?.carport && (
-                        <div className="p-3.5 bg-muted/40 rounded-2xl border border-border/60 text-center">
-                          <p className="text-xs font-bold text-foreground">{specObj.carport} Kendaraan</p>
-                          <p className="text-[10px] text-muted-foreground mt-0.5 flex items-center justify-center gap-1">
-                            <Car className="w-3 h-3 text-emerald-600" /> Carport
-                          </p>
-                        </div>
-                      )}
-
-                      {specObj?.electricity && (
-                        <div className="p-3.5 bg-muted/40 rounded-2xl border border-border/60 text-center">
-                          <p className="text-xs font-bold text-foreground">{specObj.electricity} VA</p>
-                          <p className="text-[10px] text-muted-foreground mt-0.5 flex items-center justify-center gap-1">
-                            <Zap className="w-3 h-3 text-amber-500" /> Daya Listrik
-                          </p>
-                        </div>
-                      )}
-
-                      {specObj?.facing && (
-                        <div className="p-3.5 bg-muted/40 rounded-2xl border border-border/60 text-center">
-                          <p className="text-xs font-bold text-foreground">{specObj.facing}</p>
-                          <p className="text-[10px] text-muted-foreground mt-0.5 flex items-center justify-center gap-1">
-                            <Compass className="w-3 h-3 text-blue-500" /> Arah Hadap
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            {/* TAB LOKASI */}
-            <TabsContent value="location" className="mt-5">
-              <Card className="border border-border/70 shadow-2xs rounded-3xl bg-card overflow-hidden">
-                <CardHeader className="p-6 pb-4 border-b border-border/60">
-                  <CardTitle className="text-sm font-bold text-foreground flex items-center gap-2">
-                    <MapPin className="w-4 h-4 text-rose-500" /> Detail Rincian Wilayah & Alamat
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="p-6 space-y-6 text-xs">
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-5">
-                    <div>
-                      <Label className="text-muted-foreground text-[10px] font-medium">Negara</Label>
-                      <p className="font-semibold text-foreground mt-0.5">
-                        {resolveLocationName(addressObj, "country_id", "country_name", "countries", locationData.countries)}
-                      </p>
-                    </div>
-                    <div>
-                      <Label className="text-muted-foreground text-[10px] font-medium">Provinsi</Label>
-                      <p className="font-semibold text-foreground mt-0.5">
-                        {resolveLocationName(addressObj, "province_id", "province_name", "provinces", locationData.provinces)}
-                      </p>
-                    </div>
-                    <div>
-                      <Label className="text-muted-foreground text-[10px] font-medium">Kota / Kabupaten</Label>
-                      <p className="font-semibold text-foreground mt-0.5">
-                        {resolveLocationName(addressObj, "city_id", "city_name", "cities", locationData.cities)}
-                      </p>
-                    </div>
-                    <div>
-                      <Label className="text-muted-foreground text-[10px] font-medium">Kecamatan</Label>
-                      <p className="font-semibold text-foreground mt-0.5">
-                        {resolveLocationName(addressObj, "district_id", "district_name", "districts", locationData.districts)}
-                      </p>
-                    </div>
-                    <div>
-                      <Label className="text-muted-foreground text-[10px] font-medium">Kelurahan / Desa</Label>
-                      <p className="font-semibold text-foreground mt-0.5">
-                        {resolveLocationName(addressObj, "village_id", "village_name", "villages", locationData.villages)}
-                      </p>
-                    </div>
-                    <div>
-                      <Label className="text-muted-foreground text-[10px] font-medium">Kode Pos</Label>
-                      <p className="font-mono font-semibold text-foreground mt-0.5">
-                        {addressObj?.postal_code || "-"}
-                      </p>
-                    </div>
-                  </div>
-
-                  <Separator />
-
-                  <div>
-                    <Label className="text-muted-foreground text-[10px] font-medium">Alamat Lengkap</Label>
-                    <p className="font-medium text-foreground mt-2 leading-relaxed bg-muted/30 p-4 rounded-2xl border border-border/50">
-                      {addressObj?.address || addressObj?.full_address || property.address?.address || "Alamat lengkap belum dikonfigurasi"}
+                  <div className="p-3 bg-muted/40 rounded-xl border border-border/60 text-center">
+                    <p className="text-xs font-bold text-foreground">{specObj?.bathroom || 0} Ruang</p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5 flex items-center justify-center gap-1">
+                      <Bath className="w-3 h-3 text-emerald-600" /> Kamar Mandi
                     </p>
                   </div>
-                </CardContent>
-              </Card>
-            </TabsContent>
 
-            {/* TAB GALERI FOTO */}
-            <TabsContent value="media" className="mt-5">
-              <Card className="border border-border/70 shadow-2xs rounded-3xl bg-card overflow-hidden">
-                <CardHeader className="p-6 pb-4 border-b border-border/60">
-                  <CardTitle className="text-sm font-bold text-foreground flex items-center gap-2">
-                    <ImageIcon className="w-4 h-4 text-emerald-600" /> Dokumentasi Galeri Foto
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="p-6">
-                  {allImages.length > 0 ? (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                      {allImages.map((imageUrl, idx) => (
-                        <div
-                          key={idx}
-                          onClick={() => openLightbox(idx)}
-                          className="relative group aspect-square rounded-2xl border border-border/70 overflow-hidden bg-muted cursor-pointer shadow-2xs"
-                        >
-                          <img
-                            src={imageUrl}
-                            alt={`Dokumentasi ${idx + 1}`}
-                            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).src = DEFAULT_FALLBACK_IMAGE;
-                            }}
-                          />
-                          <div className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white text-xs font-semibold gap-1.5 backdrop-blur-2xs">
-                            <Maximize2 className="w-4 h-4" /> Perbesar
-                          </div>
-                        </div>
-                      ))}
+                  <div className="p-3 bg-muted/40 rounded-xl border border-border/60 text-center">
+                    <p className="text-xs font-bold text-foreground">{landObj?.land_area || specObj?.land_area || 0} m²</p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5 flex items-center justify-center gap-1">
+                      <Building2 className="w-3 h-3 text-emerald-600" /> Luas Tanah
+                    </p>
+                  </div>
+
+                  <div className="p-3 bg-muted/40 rounded-xl border border-border/60 text-center">
+                    <p className="text-xs font-bold text-foreground">{buildingObj?.building_area || specObj?.building_area || 0} m²</p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5 flex items-center justify-center gap-1">
+                      <Building2 className="w-3 h-3 text-emerald-600" /> Luas Bangunan
+                    </p>
+                  </div>
+
+                  {specObj?.carport && (
+                    <div className="p-3 bg-muted/40 rounded-xl border border-border/60 text-center">
+                      <p className="text-xs font-bold text-foreground">{specObj.carport} Mobil</p>
+                      <p className="text-[10px] text-muted-foreground mt-0.5 flex items-center justify-center gap-1">
+                        <Car className="w-3 h-3 text-emerald-600" /> Carport
+                      </p>
                     </div>
-                  ) : (
-                    <p className="text-muted-foreground text-center py-10 text-xs italic">Belum ada foto dokumentasi yang diunggah.</p>
                   )}
-                </CardContent>
-              </Card>
-            </TabsContent>
-          </Tabs>
+
+                  {specObj?.electricity && (
+                    <div className="p-3 bg-muted/40 rounded-xl border border-border/60 text-center">
+                      <p className="text-xs font-bold text-foreground">{specObj.electricity} VA</p>
+                      <p className="text-[10px] text-muted-foreground mt-0.5 flex items-center justify-center gap-1">
+                        <Zap className="w-3 h-3 text-amber-500" /> Daya Listrik
+                      </p>
+                    </div>
+                  )}
+
+                  {specObj?.facing && (
+                    <div className="p-3 bg-muted/40 rounded-xl border border-border/60 text-center">
+                      <p className="text-xs font-bold text-foreground">{specObj.facing}</p>
+                      <p className="text-[10px] text-muted-foreground mt-0.5 flex items-center justify-center gap-1">
+                        <Compass className="w-3 h-3 text-blue-500" /> Hadap
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
-        {/* KOLOM KANAN - SIDEBAR KONTROL & AGEN */}
-        <div className="lg:col-span-1 space-y-6">
-          {/* 🟢 CARD AGEN / PENANGGUNG JAWAB */}
-          <Card className="border border-border/70 shadow-2xs rounded-3xl bg-card overflow-hidden">
-            <CardHeader className="p-5 pb-3 border-b border-border/60">
-              <CardTitle className="text-xs font-bold text-foreground flex items-center gap-2">
-                <Users className="h-4 w-4 text-emerald-600" /> 
-                {userRole === "viewer" || userRole === "guest" ? "Agent" : "Penanggung Jawab Properti (Agen)"}
+        {/* KOLOM KANAN: CARD AGEN REDESAIN (FOKUS FOTO KECIL-BESAR & NAMA) */}
+        <div className="lg:col-span-1 space-y-5">
+          <Card className="border border-border/70 shadow-2xs rounded-2xl bg-card overflow-hidden">
+            <CardHeader className="p-4 pb-3 border-b border-border/60">
+              <CardTitle className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                <Users className="h-3.5 w-3.5 text-emerald-600" /> 
+                Agen Penanggung Jawab
               </CardTitle>
             </CardHeader>
             <CardContent className="p-5 space-y-4 text-xs">
-              {isSuperAdmin ? (
-                <div className="space-y-1.5">
+              {isSuperAdmin && (
+                <div className="space-y-1">
                   <Label className="text-[10px] text-muted-foreground font-medium">Atur Agen Penanggung Jawab:</Label>
                   <Select
                     value={property?.assigned_to || ""}
                     onValueChange={(val) => handleAssignAgent(val || null)}
                     disabled={assignLoading}
                   >
-                    <SelectTrigger className="w-full h-9 text-xs rounded-xl bg-background border-border/80">
+                    <SelectTrigger className="w-full h-8 text-xs rounded-xl bg-background border-border/80">
                       <span>
                         {agents.find((a) => a.id === property?.assigned_to)?.full_name ||
-                          agents.find((a) => a.id === property?.assigned_to)?.email ||
                           assignedAgent?.full_name ||
-                          assignedAgent?.email ||
                           "Pilih agen resmi..."}
                       </span>
                     </SelectTrigger>
                     <SelectContent className="rounded-xl">
-                      <SelectItem value="" className="text-xs text-rose-600 font-medium">❌ Tanpa Agen Penanggung Jawab</SelectItem>
+                      <SelectItem value="" className="text-xs text-rose-600 font-medium">❌ Tanpa Agen</SelectItem>
                       {agents.map((agent) => (
                         <SelectItem key={agent.id} value={agent.id} className="text-xs">
-                          <div className="flex items-center gap-2">
-                            <Avatar className="h-4 w-4">
-                              <AvatarImage src={agent.avatar_url || undefined} />
-                              <AvatarFallback className="text-[8px] font-bold">
-                                {getInitials(agent.full_name || agent.email)}
-                              </AvatarFallback>
-                            </Avatar>
-                            <span>{agent.full_name || agent.email}</span>
-                          </div>
+                          {agent.full_name || agent.email}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
-              ) : userRole !== "viewer" && userRole !== "guest" ? (
-                <div className="flex items-center gap-2 p-3 bg-muted/40 rounded-2xl text-[11px] text-muted-foreground border border-border/50">
-                  <Lock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                  <span>Penugasan agen diatur oleh Super Admin.</span>
-                </div>
-              ) : null}
+              )}
 
               {assignedAgent ? (
-                <div className="p-4 bg-emerald-500/10 rounded-2xl border border-emerald-500/20 space-y-3">
-                  <div className="flex items-center gap-3">
-                    <Avatar className="h-11 w-11 border border-emerald-500/30 shadow-2xs shrink-0">
-                      <AvatarImage src={assignedAgent.avatar_url || undefined} />
-                      <AvatarFallback className="text-xs font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
-                        {getInitials(assignedAgent.full_name || assignedAgent.email)}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-bold text-foreground text-xs truncate">
-                        {assignedAgent.full_name || "Agen Resmi Inland Property"}
-                      </p>
-                      <p className="text-[10px] text-muted-foreground truncate">{assignedAgent.email}</p>
-                      {(assignedAgent.phone || assignedAgent.whatsapp) && (
-                        <span className="inline-flex items-center gap-1 font-mono text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold mt-0.5">
-                          <Phone className="w-3 h-3" />
-                          {assignedAgent.whatsapp || assignedAgent.phone}
-                        </span>
-                      )}
-                    </div>
+                /* 🎯 CARD AGEN REDESAIN PROSENSI UTAMA (FOKUS FOTO BOLA BESAR & NAMA SAJA) */
+                <div className="flex flex-col items-center text-center p-5 bg-gradient-to-b from-emerald-500/10 via-emerald-500/5 to-transparent rounded-2xl border border-emerald-500/20 space-y-3">
+                  <Avatar className="h-20 w-20 border-2 border-emerald-500/40 shadow-md">
+                    <AvatarImage src={assignedAgent.avatar_url || undefined} className="object-cover" />
+                    <AvatarFallback className="text-lg font-black bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200">
+                      {getInitials(assignedAgent.full_name || assignedAgent.email)}
+                    </AvatarFallback>
+                  </Avatar>
+
+                  <div className="space-y-0.5">
+                    <p className="font-extrabold text-foreground text-sm sm:text-base leading-snug">
+                      {assignedAgent.full_name || "Agen Resmi Inland Property"}
+                    </p>
+                    <Badge variant="outline" className="text-[9px] font-semibold border-emerald-500/30 text-emerald-700 dark:text-emerald-400 bg-emerald-500/10">
+                      Agen Penanggung Jawab
+                    </Badge>
                   </div>
 
-                  {(assignedAgent.phone || assignedAgent.whatsapp) && (
-                    <a
-                      href={getWaLink(assignedAgent.whatsapp || assignedAgent.phone, property.title)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center justify-center gap-2 w-full py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold text-xs transition shadow-sm cursor-pointer"
-                    >
-                      <MessageCircle className="w-4 h-4 fill-white text-emerald-600" />
-                      <span>Hubungi via WhatsApp</span>
-                    </a>
-                  )}
+                  {/* 🟢 TOMBOL UTAMA */}
+                  <Button
+                    onClick={() => setShowLeadModal(true)}
+                    className="flex items-center justify-center gap-2 w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs shadow-md cursor-pointer h-12 transition-all active:scale-[0.98] mt-2"
+                  >
+                    <MessageCircle className="w-5 h-5 fill-white text-emerald-600" />
+                    <span>Hubungi Agen via WhatsApp</span>
+                  </Button>
                 </div>
               ) : (
-                <p className="text-[11px] text-muted-foreground italic text-center py-2">
-                  Belum ada agen penanggung jawab yang ditugaskan.
-                </p>
+                <div className="p-4 bg-muted/30 rounded-xl text-center space-y-2">
+                  <p className="text-[11px] text-muted-foreground italic">
+                    Belum ada agen spesifik yang ditugaskan.
+                  </p>
+                  <Button
+                    onClick={() => setShowLeadModal(true)}
+                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold text-xs h-10 cursor-pointer"
+                  >
+                    <MessageCircle className="w-4 h-4 mr-1.5" /> Konsultasi Properti
+                  </Button>
+                </div>
               )}
             </CardContent>
           </Card>
 
           {/* CARD PEMILIK PROPERTI */}
           {property.owner && (
-            <Card className="border border-border/70 shadow-2xs rounded-3xl bg-card overflow-hidden">
-              <CardHeader className="p-5 pb-3 border-b border-border/60">
-                <CardTitle className="text-xs font-bold text-foreground flex items-center gap-2">
-                  <User className="h-4 w-4 text-emerald-600" /> Pemilik Properti
+            <Card className="border border-border/70 shadow-2xs rounded-2xl bg-card overflow-hidden">
+              <CardHeader className="p-4 pb-2 border-b border-border/60">
+                <CardTitle className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                  <User className="h-3.5 w-3.5 text-emerald-600" /> Pemilik Properti
                 </CardTitle>
               </CardHeader>
-              <CardContent className="p-5 space-y-3 text-xs">
-                <div className="flex items-center gap-3">
-                  <Avatar className="h-9 w-9 border border-border">
-                    <AvatarFallback className="bg-emerald-500/10 text-emerald-700 font-bold text-xs">
+              <CardContent className="p-4 space-y-2 text-xs">
+                <div className="flex items-center gap-2.5">
+                  <Avatar className="h-8 w-8 border border-border">
+                    <AvatarFallback className="bg-emerald-500/10 text-emerald-700 font-bold text-[10px]">
                       {property.owner.full_name?.charAt(0).toUpperCase() || "P"}
                     </AvatarFallback>
                   </Avatar>
                   <div>
-                    <p className="font-bold text-foreground">{property.owner.full_name}</p>
-                    <p className="text-[10px] text-muted-foreground font-mono">{property.owner.owner_code}</p>
+                    <p className="font-bold text-foreground text-xs">{property.owner.full_name}</p>
+                    <p className="text-[9px] text-muted-foreground font-mono">{property.owner.owner_code}</p>
                   </div>
                 </div>
-                <Separator />
-                {property.owner.phone && (
-                  <div className="flex items-center gap-2 text-muted-foreground font-mono">
-                    <Phone className="w-3.5 h-3.5" />
-                    <span>{property.owner.phone}</span>
-                  </div>
-                )}
               </CardContent>
             </Card>
           )}
         </div>
       </div>
 
-      {/* 4. LIGHTBOX MODAL */}
+      {/* 4. FLOATING ACTION BAR LAYAR HP */}
+      <div className="fixed bottom-0 left-0 right-0 p-3 bg-background/95 backdrop-blur-md border-t border-border z-40 sm:hidden flex items-center gap-2 shadow-lg">
+        <Button
+          onClick={() => setShowLeadModal(true)}
+          className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-11 rounded-xl shadow-md gap-2 cursor-pointer"
+        >
+          <MessageCircle className="w-4 h-4 fill-white text-emerald-600" />
+          <span>Chat WhatsApp Agent</span>
+        </Button>
+        <Button
+          variant="outline"
+          onClick={() => router.push(`/kpr-calculator?property_id=${property.id}`)}
+          className="h-11 border-emerald-500/30 text-emerald-700 dark:text-emerald-400 font-semibold text-xs px-3 rounded-xl cursor-pointer"
+        >
+          <Calculator className="w-4 h-4" />
+        </Button>
+      </div>
+
+      {/* 5. LIGHTBOX PREVIEW */}
       <Dialog open={previewIndex !== null} onOpenChange={(open) => !open && setPreviewIndex(null)}>
-        <DialogContent className="w-full max-w-full sm:max-w-4xl md:max-w-5xl lg:max-w-6xl xl:w-[92vw] p-4 bg-slate-950 border-slate-800 text-white rounded-3xl overflow-hidden flex flex-col justify-between">
-          <DialogHeader className="pb-3 border-b border-slate-800 flex flex-row items-center justify-between">
-            <DialogTitle className="text-xs sm:text-sm font-bold flex items-center gap-2 text-white">
-              <ImageIcon className="w-4 h-4 text-emerald-400" />
-              Foto Properti {previewIndex !== null ? `#${previewIndex + 1}` : ""} / {allImages.length || 1}
+        <DialogContent className="w-full max-w-full sm:max-w-4xl p-3 bg-slate-950 border-slate-800 text-white rounded-2xl overflow-hidden flex flex-col justify-between">
+          <DialogHeader className="pb-2 border-b border-slate-800 flex flex-row items-center justify-between">
+            <DialogTitle className="text-xs font-bold text-white">
+              Foto {previewIndex !== null ? `#${previewIndex + 1}` : ""} / {allImages.length || 1}
             </DialogTitle>
           </DialogHeader>
 
           {previewIndex !== null && (
-            <div className="space-y-4 py-2 flex-1 flex flex-col justify-center">
-              <div className="relative w-full h-[50vh] sm:h-[65vh] md:h-[72vh] bg-black/90 rounded-2xl overflow-hidden flex items-center justify-center border border-slate-800 shadow-inner group">
+            <div className="py-2 flex-1 flex flex-col justify-center">
+              <div className="relative w-full h-[55vh] sm:h-[70vh] bg-black/90 rounded-xl overflow-hidden flex items-center justify-center border border-slate-800">
                 <img
                   src={allImages[previewIndex] || DEFAULT_FALLBACK_IMAGE}
-                  alt={`Pratinjau Foto ${previewIndex + 1}`}
+                  alt={`Pratinjau ${previewIndex + 1}`}
                   className="max-w-full max-h-full object-contain"
                   onError={(e) => {
                     (e.target as HTMLImageElement).src = DEFAULT_FALLBACK_IMAGE;
@@ -1120,16 +1159,16 @@ export default function PropertyDetailPage() {
                     <button
                       type="button"
                       onClick={() => setPreviewIndex((prev) => (prev !== null ? (prev === 0 ? allImages.length - 1 : prev - 1) : 0))}
-                      className="absolute left-3 top-1/2 -translate-y-1/2 p-2 rounded-full bg-slate-950/70 hover:bg-emerald-600 text-white transition backdrop-blur-md cursor-pointer"
+                      className="absolute left-2 top-1/2 -translate-y-1/2 p-2 rounded-full bg-slate-950/70 hover:bg-emerald-600 text-white transition backdrop-blur-md cursor-pointer"
                     >
-                      <ChevronLeft className="w-6 h-6" />
+                      <ChevronLeft className="w-5 h-5" />
                     </button>
                     <button
                       type="button"
                       onClick={() => setPreviewIndex((prev) => (prev !== null ? (prev === allImages.length - 1 ? 0 : prev + 1) : 0))}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-full bg-slate-950/70 hover:bg-emerald-600 text-white transition backdrop-blur-md cursor-pointer"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-full bg-slate-950/70 hover:bg-emerald-600 text-white transition backdrop-blur-md cursor-pointer"
                     >
-                      <ChevronRight className="w-6 h-6" />
+                      <ChevronRight className="w-5 h-5" />
                     </button>
                   </>
                 )}
@@ -1139,17 +1178,89 @@ export default function PropertyDetailPage() {
         </DialogContent>
       </Dialog>
 
+      {/* 6. MODAL FORM CAPTURE LEADS */}
+      <Dialog open={showLeadModal} onOpenChange={setShowLeadModal}>
+        <DialogContent className="sm:max-w-md rounded-2xl bg-card border border-border p-5 max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-sm font-bold flex items-center gap-1.5 text-foreground">
+              <MessageCircle className="w-4 h-4 text-emerald-600" />
+              Konsultasi & Tanya Properti
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              Lengkapi data Anda agar agen penanggung jawab kami dapat segera merespons ketertarikan Anda pada <span className="font-semibold text-emerald-600">{property?.title}</span>.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={(e) => handleLeadSubmit(e, assignedAgent?.whatsapp || assignedAgent?.phone || "6281234567890")} className="space-y-3.5 py-1">
+            <div className="space-y-1">
+              <Label className="text-xs font-medium text-foreground">Nama Lengkap</Label>
+              <input
+                type="text"
+                required
+                placeholder="Contoh: Budi Santoso"
+                value={leadName}
+                onChange={(e) => setLeadName(e.target.value)}
+                className="w-full h-10 px-3 text-xs rounded-xl border border-border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs font-medium text-foreground">Nomor WhatsApp / HP</Label>
+              <input
+                type="tel"
+                required
+                placeholder="Contoh: 081234567890"
+                value={leadPhone}
+                onChange={(e) => setLeadPhone(e.target.value)}
+                className="w-full h-10 px-3 text-xs rounded-xl border border-border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs font-medium text-foreground">Pesan / Catatan Khusus (Opsional)</Label>
+              <textarea
+                placeholder="Contoh: Apakah bisa survei lokasi minggu ini?"
+                value={leadMessage}
+                onChange={(e) => setLeadMessage(e.target.value)}
+                rows={3}
+                className="w-full p-3 text-xs rounded-xl border border-border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none"
+              />
+            </div>
+
+            <DialogFooter className="gap-2 pt-2 sm:gap-0">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setShowLeadModal(false)}
+                className="text-xs rounded-xl cursor-pointer h-10"
+              >
+                Batal
+              </Button>
+              <Button
+                type="submit"
+                disabled={submittingLead}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs rounded-xl cursor-pointer gap-1.5 h-10 font-bold"
+              >
+                {submittingLead && <Loader2 className="h-4 w-4 animate-spin" />}
+                Kirim & Buka WhatsApp
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
       {/* DIALOG UBAH STATUS */}
       {canEdit && (
         <Dialog open={showStatusDialog} onOpenChange={setShowStatusDialog}>
-          <DialogContent className="sm:max-w-md rounded-3xl">
+          <DialogContent className="sm:max-w-md rounded-2xl">
             <DialogHeader>
-              <DialogTitle className="text-base font-bold">Ubah Status Publikasi</DialogTitle>
+              <DialogTitle className="text-sm font-bold">Ubah Status Publikasi</DialogTitle>
               <DialogDescription className="text-xs">
                 Pilih status ketersediaan properti untuk mengontrol visibilitas publik.
               </DialogDescription>
             </DialogHeader>
-            <div className="space-y-4 py-2">
+            <div className="space-y-3 py-1">
               <Select value={newStatus} onValueChange={(val) => setNewStatus(val as PropertyStatus)}>
                 <SelectTrigger className="h-10 text-xs rounded-xl">
                   <SelectValue placeholder="Pilih status" />
@@ -1165,10 +1276,10 @@ export default function PropertyDetailPage() {
               </Select>
             </div>
             <DialogFooter className="gap-2">
-              <Button variant="outline" size="sm" onClick={() => setShowStatusDialog(false)} className="text-xs rounded-xl cursor-pointer">
+              <Button variant="outline" size="sm" onClick={() => setShowStatusDialog(false)} className="text-xs rounded-xl cursor-pointer h-9">
                 Batal
               </Button>
-              <Button size="sm" onClick={handleUpdateStatus} disabled={updating} className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs rounded-xl cursor-pointer">
+              <Button size="sm" onClick={handleUpdateStatus} disabled={updating} className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs rounded-xl cursor-pointer h-9">
                 {updating && <Loader2 className="h-4 w-4 animate-spin mr-1.5" />}
                 Simpan Perubahan
               </Button>
@@ -1180,18 +1291,18 @@ export default function PropertyDetailPage() {
       {/* DIALOG HAPUS PROPERTI */}
       {canEdit && (
         <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-          <DialogContent className="sm:max-w-md rounded-3xl">
+          <DialogContent className="sm:max-w-md rounded-2xl">
             <DialogHeader>
-              <DialogTitle className="text-base font-bold text-rose-600">⚠️ Konfirmasi Hapus Properti</DialogTitle>
+              <DialogTitle className="text-sm font-bold text-rose-600">⚠️ Konfirmasi Hapus Properti</DialogTitle>
               <DialogDescription className="text-xs">
                 Apakah Anda yakin ingin menghapus data properti <strong className="text-foreground">"{property.title}"</strong>? Tindakan ini bersifat permanen.
               </DialogDescription>
             </DialogHeader>
             <DialogFooter className="gap-2">
-              <Button variant="outline" size="sm" onClick={() => setShowDeleteDialog(false)} className="text-xs rounded-xl cursor-pointer">
+              <Button variant="outline" size="sm" onClick={() => setShowDeleteDialog(false)} className="text-xs rounded-xl cursor-pointer h-9">
                 Batal
               </Button>
-              <Button variant="destructive" size="sm" onClick={handleDelete} disabled={deleting} className="text-xs rounded-xl cursor-pointer">
+              <Button variant="destructive" size="sm" onClick={handleDelete} disabled={deleting} className="text-xs rounded-xl cursor-pointer h-9">
                 {deleting && <Loader2 className="h-4 w-4 animate-spin mr-1.5" />}
                 Hapus Permanen
               </Button>

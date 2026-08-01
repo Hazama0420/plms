@@ -105,6 +105,8 @@ export default function DashboardPage() {
   const isExecutive = userRole === "commissioner";
   const isViewer = userRole === "viewer" || !isLoggedIn;
 
+  // Hanya Super Admin & Admin yang bisa melihat KPI/Widget khusus manajemen
+  const canSeeAdminManagement = isAdmin; 
   const canSeeAiSummary = isSuperAdmin || isAdmin || isAgent || isExecutive;
 
   // 1. Fetch AI Summary
@@ -264,25 +266,70 @@ export default function DashboardPage() {
         setFeaturedProperties([]);
       }
 
-      // Activity Logs Real-Time
-      const { data: actLogs } = await supabase
+     // Activity Logs Real-Time (Mengambil data lengkap beserta Nama & No WhatsApp dari crm_contacts)
+      let actLogs: ActivityLogItem[] = [];
+      const { data: actLogsData, error: actError } = await supabase
         .from("crm_activities")
-        .select("*")
+        .select(`
+          id,
+          activity_type,
+          notes,
+          created_at,
+          users:user_id ( full_name, email )
+        `)
         .order("created_at", { ascending: false })
         .limit(5);
 
-      if (actLogs && actLogs.length > 0) {
-        setActivityLogs(
-          actLogs.map((log: any) => ({
+      if (!actError && actLogsData && actLogsData.length > 0) {
+        actLogs = actLogsData.map((log: any) => {
+          const userData = Array.isArray(log.users) ? log.users[0] : log.users;
+          const userName = userData?.full_name || userData?.email || "Sistem / Tamu";
+          const desc = log.notes ? `${log.activity_type}: ${log.notes}` : log.activity_type || "Aktivitas CRM";
+
+          return {
             id: log.id,
-            description: log.description || log.action || "Aktivitas CRM",
-            user_name: log.user_name || "Administrator",
+            description: desc,
+            user_name: userName,
             time: log.created_at || new Date().toISOString(),
-          }))
-        );
+          };
+        });
       } else {
-        setActivityLogs([]);
+        // 🔄 SMART FALLBACK: Ambil data dari tabel crm_leads & join ke crm_contacts
+        const { data: leadsFallback } = await supabase
+          .from("crm_leads")
+          .select(`
+            id,
+            interest_type,
+            notes,
+            created_at,
+            crm_contacts (
+              full_name,
+              phone
+            )
+          `)
+          .order("created_at", { ascending: false })
+          .limit(5);
+
+        if (leadsFallback && leadsFallback.length > 0) {
+          actLogs = leadsFallback.map((lead: any) => {
+            // Mengambil data kontak dengan aman baik berupa objek maupun array
+            const contact = Array.isArray(lead.crm_contacts) ? lead.crm_contacts[0] || {} : lead.crm_contacts || {};
+            const contactName = contact.full_name || "Pengunjung Publik";
+            const contactPhone = contact.phone ? `(${contact.phone})` : "";
+            const userNotes = lead.notes ? `"${lead.notes}"` : "Tertarik dengan properti";
+
+            return {
+              id: lead.id,
+              // 🟢 Menampilkan Format: Nama (No HP): Pesan
+              description: `${contactName} ${contactPhone}: ${userNotes}`,
+              user_name: "Website Lead Capture",
+              time: lead.created_at || new Date().toISOString(),
+            };
+          });
+        }
       }
+
+      setActivityLogs(actLogs);
 
       // Leads Data Real-Time
       const { data: leadsData } = await supabase
@@ -501,96 +548,50 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      {/* 🟢 2. KPI RINGKASAN METRIK */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {isAgent && (
-          <>
-            <Card className="border border-[#F4EFE6] bg-white shadow-2xs rounded-xl">
-              <CardContent className="p-3.5 space-y-1">
-                <div className="flex items-center justify-between text-slate-500">
-                  <span className="text-xs font-medium">Leads Hari Ini</span>
-                  <Users className="w-4 h-4 text-emerald-600" />
-                </div>
-                <h3 className="text-lg font-bold text-slate-900">{stats?.todayLeads || 0} Prospek</h3>
-              </CardContent>
-            </Card>
+      {/* 🟢 2. KPI RINGKASAN METRIK KHUSUS ADMIN & SUPER ADMIN */}
+      {canSeeAdminManagement && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <Card className="border border-[#F4EFE6] bg-white shadow-2xs rounded-xl">
+            <CardContent className="p-3.5 space-y-1">
+              <div className="flex items-center justify-between text-slate-500">
+                <span className="text-xs font-medium">Listing Aktif</span>
+                <Building2 className="w-4 h-4 text-emerald-600" />
+              </div>
+              <h3 className="text-lg font-bold text-slate-900">{stats?.activeListings || 0} Unit</h3>
+            </CardContent>
+          </Card>
 
-            <Card className="border border-[#F4EFE6] bg-white shadow-2xs rounded-xl">
-              <CardContent className="p-3.5 space-y-1">
-                <div className="flex items-center justify-between text-slate-500">
-                  <span className="text-xs font-medium">Listing Aktif</span>
-                  <Building2 className="w-4 h-4 text-emerald-600" />
-                </div>
-                <h3 className="text-lg font-bold text-slate-900">{stats?.activeListings || 0} Unit</h3>
-              </CardContent>
-            </Card>
+          <Card className="border border-[#F4EFE6] bg-white shadow-2xs rounded-xl">
+            <CardContent className="p-3.5 space-y-1">
+              <div className="flex items-center justify-between text-slate-500">
+                <span className="text-xs font-medium">Total Properti</span>
+                <Building2 className="w-4 h-4 text-emerald-600" />
+              </div>
+              <h3 className="text-lg font-bold text-slate-900">{stats?.totalProperties || 0} Unit</h3>
+            </CardContent>
+          </Card>
 
-            <Card className="border border-[#F4EFE6] bg-white shadow-2xs rounded-xl">
-              <CardContent className="p-3.5 space-y-1">
-                <div className="flex items-center justify-between text-slate-500">
-                  <span className="text-xs font-medium">Agenda Survei</span>
-                  <Calendar className="w-4 h-4 text-emerald-600" />
-                </div>
-                <h3 className="text-lg font-bold text-slate-900">Terjadwal</h3>
-              </CardContent>
-            </Card>
+          <Card className="border border-[#F4EFE6] bg-white shadow-2xs rounded-xl">
+            <CardContent className="p-3.5 space-y-1">
+              <div className="flex items-center justify-between text-slate-500">
+                <span className="text-xs font-medium">Total Leads CRM</span>
+                <Users className="w-4 h-4 text-emerald-600" />
+              </div>
+              <h3 className="text-lg font-bold text-slate-900">{stats?.todayLeads || 0} Prospek</h3>
+            </CardContent>
+          </Card>
 
-            <Card className="border border-[#F4EFE6] bg-white shadow-2xs rounded-xl">
-              <CardContent className="p-3.5 space-y-1">
-                <div className="flex items-center justify-between text-slate-500">
-                  <span className="text-xs font-medium">Estimasi Komisi</span>
-                  <DollarSign className="w-4 h-4 text-emerald-600" />
-                </div>
-                <h3 className="text-sm font-bold font-mono text-emerald-600">{formatIDR(0)}</h3>
-              </CardContent>
-            </Card>
-          </>
-        )}
-
-        {(isAdmin || isViewer || isExecutive) && (
-          <>
-            <Card className="border border-[#F4EFE6] bg-white shadow-2xs rounded-xl">
-              <CardContent className="p-3.5 space-y-1">
-                <div className="flex items-center justify-between text-slate-500">
-                  <span className="text-xs font-medium">Listing Aktif</span>
-                  <Building2 className="w-4 h-4 text-emerald-600" />
-                </div>
-                <h3 className="text-lg font-bold text-slate-900">{stats?.activeListings || 0} Unit</h3>
-              </CardContent>
-            </Card>
-
-            <Card className="border border-[#F4EFE6] bg-white shadow-2xs rounded-xl">
-              <CardContent className="p-3.5 space-y-1">
-                <div className="flex items-center justify-between text-slate-500">
-                  <span className="text-xs font-medium">Total Properti</span>
-                  <Building2 className="w-4 h-4 text-emerald-600" />
-                </div>
-                <h3 className="text-lg font-bold text-slate-900">{stats?.totalProperties || 0} Unit</h3>
-              </CardContent>
-            </Card>
-
-            <Card className="border border-[#F4EFE6] bg-white shadow-2xs rounded-xl">
-              <CardContent className="p-3.5 space-y-1">
-                <div className="flex items-center justify-between text-slate-500">
-                  <span className="text-xs font-medium">Total Leads CRM</span>
-                  <Users className="w-4 h-4 text-emerald-600" />
-                </div>
-                <h3 className="text-lg font-bold text-slate-900">{stats?.todayLeads || 0} Prospek</h3>
-              </CardContent>
-            </Card>
-
-            <Card className="border border-[#F4EFE6] bg-white shadow-2xs rounded-xl">
-              <CardContent className="p-3.5 space-y-1">
-                <div className="flex items-center justify-between text-slate-500">
-                  <span className="text-xs font-medium">Status Sistem</span>
-                  <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                </div>
-                <h3 className="text-xs font-bold text-emerald-600">Terverifikasi (Online)</h3>
-              </CardContent>
-            </Card>
-          </>
-        )}
-      </div>
+          <Card className="border border-[#F4EFE6] bg-white shadow-2xs rounded-xl">
+            <CardContent className="p-3.5 space-y-1">
+              <div className="flex items-center justify-between text-slate-500">
+                <span className="text-xs font-medium">Status Sistem</span>
+                <ShieldCheck className="w-4 h-4 text-emerald-600" />
+              </div>
+              <h3 className="text-xs font-bold text-emerald-600">Terverifikasi (Online)</h3>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* 🟢 3. MAIN BENTO GRID */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -806,8 +807,8 @@ export default function DashboardPage() {
             </Card>
           )}
 
-          {/* AUDIT LOG UNTUK SUPER ADMIN */}
-          {isSuperAdmin && (
+          {/* AUDIT LOG HANYA UNTUK SUPER ADMIN & ADMIN */}
+          {canSeeAdminManagement && (
             <Card className="border border-[#F4EFE6] bg-white shadow-2xs rounded-xl">
               <CardHeader className="p-3.5 border-b border-[#F4EFE6] flex flex-row items-center justify-between">
                 <CardTitle className="text-xs font-bold text-slate-900 flex items-center gap-2">

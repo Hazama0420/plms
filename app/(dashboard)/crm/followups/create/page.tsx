@@ -1,7 +1,7 @@
 // app/(dashboard)/crm/followups/create/page.tsx
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -11,12 +11,10 @@ import {
   Search,
   User,
   UserCheck,
-  Calendar,
   Clock,
   ChevronDown,
   Check,
   Lock,
-  Plus,
 } from "lucide-react";
 
 import { crmService } from "@/services/crm.service";
@@ -81,7 +79,21 @@ export default function CreateFollowupPage() {
     notes: "",
   });
 
-  const isAdmin = currentUserRole === "admin" || currentUserRole === "super_admin";
+  const isAdmin =
+    currentUserRole === "admin" ||
+    currentUserRole === "super_admin" ||
+    currentUserRole === "superadmin";
+
+  // 🔒 HELPER SENSOR NOMOR HP UNTUK AGENT
+  const formatPhoneForUser = useCallback(
+    (phone?: string | null) => {
+      if (!phone) return "";
+      if (isAdmin) return phone;
+      if (phone.length <= 4) return "xxxxxx";
+      return phone.slice(0, 4) + "xxxxxx";
+    },
+    [isAdmin]
+  );
 
   // ===== CLICK OUTSIDE EVENT LISTENER =====
   useEffect(() => {
@@ -214,7 +226,7 @@ export default function CreateFollowupPage() {
     handleChange("followup_date", isoLocal);
   };
 
-  // ===== SUBMIT FORM =====
+  // ===== SUBMIT FORM + CRM ACTIVITY LOGGING =====
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.lead_id || !form.followup_date) {
@@ -222,8 +234,8 @@ export default function CreateFollowupPage() {
       return;
     }
 
-    const assignedToId = isAdmin 
-      ? (form.assigned_to || currentUserId) 
+    const assignedToId = isAdmin
+      ? (form.assigned_to || currentUserId)
       : (currentUserId || form.assigned_to);
 
     if (!assignedToId) {
@@ -233,6 +245,7 @@ export default function CreateFollowupPage() {
 
     setSaving(true);
     try {
+      // 1. Buat agenda follow-up
       await crmService.createFollowup({
         lead_id: form.lead_id,
         assigned_to: assignedToId,
@@ -240,6 +253,22 @@ export default function CreateFollowupPage() {
         notes: form.notes || undefined,
         created_by: currentUserId || undefined,
       } as any);
+
+      // 🔴 2. Sisipkan pencatatan log aktivitas ke crm_activities
+      if (currentUserId && form.lead_id) {
+        const targetLead = leads.find((l) => l.id === form.lead_id);
+        const leadName = targetLead?.lead_name || "Klien";
+        
+        await supabase.from("crm_activities").insert([
+          {
+            lead_id: form.lead_id,
+            user_id: currentUserId,
+            activity_type: "Schedule Follow-up",
+            notes: `Agenda follow-up baru dijadwalkan untuk ${leadName} pada ${form.followup_date.replace("T", " ")}`,
+            created_at: new Date().toISOString(),
+          },
+        ]);
+      }
 
       toast.success("Jadwal follow-up berhasil dibuat!");
       router.push("/crm/followups");
@@ -256,54 +285,51 @@ export default function CreateFollowupPage() {
 
   if (loading) {
     return (
-      <div className="space-y-6 max-w-2xl mx-auto pb-12">
-        <Skeleton className="h-10 w-48 rounded-xl" />
-        <Card className="p-6 space-y-4 border shadow-xs">
-          <Skeleton className="h-12 w-full rounded-xl" />
-          <Skeleton className="h-12 w-full rounded-xl" />
-          <Skeleton className="h-32 w-full rounded-xl" />
+      <div className="space-y-4 max-w-xl mx-auto pb-12 px-3">
+        <Skeleton className="h-8 w-40 rounded-lg" />
+        <Card className="p-4 space-y-3">
+          <Skeleton className="h-10 w-full rounded-lg" />
+          <Skeleton className="h-10 w-full rounded-lg" />
+          <Skeleton className="h-28 w-full rounded-lg" />
         </Card>
       </div>
     );
   }
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6 pb-16">
+    <div className="max-w-xl mx-auto space-y-4 pb-12 px-3 sm:px-4">
       {/* HEADER */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2.5 border-b pb-3">
         <Button
           variant="outline"
           size="icon"
           onClick={() => router.back()}
-          className="h-9 w-9 rounded-xl shrink-0"
+          className="h-8 w-8 rounded-lg shrink-0"
         >
-          <ArrowLeft className="h-4 w-4" />
+          <ArrowLeft className="h-3.5 w-3.5" />
         </Button>
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
+          <h1 className="text-base sm:text-lg font-bold tracking-tight text-foreground flex items-center gap-1.5">
             📅 Tambah Jadwal Follow-up
           </h1>
-          <p className="text-xs text-muted-foreground">
-            Jadwalkan kontak kembali dengan lead untuk memelihara minat prospek.
+          <p className="text-[11px] text-muted-foreground leading-none mt-0.5">
+            Jadwalkan kontak kembali dengan lead untuk memelihara prospek.
           </p>
         </div>
       </div>
 
       {/* FORM CARD */}
       <form onSubmit={handleSubmit}>
-        <Card className="border shadow-md bg-card overflow-hidden">
-          <CardHeader className="bg-slate-50/50 dark:bg-slate-900/40 border-b pb-4">
-            <CardTitle className="text-sm font-bold flex items-center gap-2">
-              <Clock className="w-4 h-4 text-emerald-600" /> Rincian Agenda Follow-up
+        <Card className="border shadow-2xs bg-card overflow-hidden">
+          <CardHeader className="bg-muted/30 border-b p-3 pb-2.5">
+            <CardTitle className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+              <Clock className="w-3.5 h-3.5 text-emerald-600" /> Rincian Agenda Follow-up
             </CardTitle>
-            <CardDescription className="text-xs">
-              Pilih lead target, tentukan penanggung jawab, dan setel waktu pengingat.
-            </CardDescription>
           </CardHeader>
 
-          <CardContent className="p-5 sm:p-6 space-y-5">
-            {/* 1. PILIH LEAD PROSPEK (SEARCHABLE DROPDOWN) */}
-            <div className="space-y-2 relative" ref={leadRef}>
+          <CardContent className="p-3.5 sm:p-4 space-y-3.5">
+            {/* 1. PILIH LEAD PROSPEK (SEARCHABLE DROPDOWN DENGAN SENSOR NOMOR HP) */}
+            <div className="space-y-1 relative" ref={leadRef}>
               <Label className="text-xs font-bold text-foreground">
                 Pilih Lead Prospek <span className="text-rose-500">*</span>
               </Label>
@@ -313,7 +339,7 @@ export default function CreateFollowupPage() {
                 tabIndex={0}
                 onClick={() => setIsLeadOpen(!isLeadOpen)}
                 onKeyDown={(e) => e.key === "Enter" && setIsLeadOpen(!isLeadOpen)}
-                className="w-full flex items-center justify-between h-10 px-3 rounded-md border border-input bg-background text-xs cursor-pointer hover:border-emerald-500 transition focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                className="w-full flex items-center justify-between h-9 px-3 rounded-md border border-input bg-background text-xs cursor-pointer hover:border-emerald-500 transition focus:outline-hidden"
               >
                 {selectedLead ? (
                   <span className="font-semibold text-foreground flex items-center gap-2 truncate">
@@ -321,7 +347,7 @@ export default function CreateFollowupPage() {
                     {selectedLead.lead_name}
                     {selectedLead.phone && (
                       <span className="text-muted-foreground font-normal font-mono text-[11px]">
-                        ({selectedLead.phone})
+                        ({formatPhoneForUser(selectedLead.phone)})
                       </span>
                     )}
                   </span>
@@ -347,7 +373,7 @@ export default function CreateFollowupPage() {
                     />
                   </div>
 
-                  <div className="max-h-52 overflow-y-auto space-y-1">
+                  <div className="max-h-48 overflow-y-auto space-y-1">
                     {filteredLeads.length === 0 ? (
                       <p className="p-3 text-center text-xs text-muted-foreground">
                         Belum ada data lead yang cocok.
@@ -369,11 +395,11 @@ export default function CreateFollowupPage() {
                           <div>
                             <p className="font-medium text-foreground">{item.lead_name}</p>
                             <p className="text-[10px] text-muted-foreground font-mono">
-                              {item.phone || "Tidak ada telepon"}
+                              {formatPhoneForUser(item.phone) || "Tidak ada telepon"}
                             </p>
                           </div>
                           {form.lead_id === item.id && (
-                            <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+                            <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                           )}
                         </div>
                       ))
@@ -383,37 +409,32 @@ export default function CreateFollowupPage() {
               )}
             </div>
 
-            {/* 2. ASSIGN TO AGENT (KONDISIONAL: TERKUNCI UNTUK AGENT, DROPDOWN UNTUK ADMIN) */}
-            <div className="space-y-2 relative" ref={agentRef}>
+            {/* 2. ASSIGN TO AGENT */}
+            <div className="space-y-1 relative" ref={agentRef}>
               <Label className="text-xs font-bold text-foreground">
                 Penanggung Jawab (Agent In-Charge) <span className="text-rose-500">*</span>
               </Label>
 
               {!isAdmin ? (
-                /* 🔒 TAMPILAN TERKUNCI UNTUK ROLE AGENT */
                 <div className="space-y-1">
-                  <div className="w-full flex items-center justify-between h-10 px-3 rounded-md border border-input bg-muted/50 text-xs cursor-not-allowed select-none">
+                  <div className="w-full flex items-center justify-between h-9 px-3 rounded-md border border-input bg-muted/50 text-xs cursor-not-allowed select-none">
                     <span className="font-semibold text-foreground flex items-center gap-2 truncate">
                       <UserCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                       {selectedAgent ? (selectedAgent.full_name || selectedAgent.email) : (currentUserName || "Agent In-Charge")}
                     </span>
                     <Badge variant="outline" className="text-[10px] bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 flex items-center gap-1">
-                      <Lock className="w-2.5 h-2.5" /> Akun Agent (Terkunci)
+                      <Lock className="w-2.5 h-2.5" /> Akun Agent
                     </Badge>
                   </div>
-                  <p className="text-[10px] text-muted-foreground">
-                    Secara otomatis ditugaskan ke akun Anda.
-                  </p>
                 </div>
               ) : (
-                /* 🔓 DROPDOWN INTERAKTIF UNTUK ADMIN / SUPER ADMIN */
                 <>
                   <div
                     role="button"
                     tabIndex={0}
                     onClick={() => setIsAgentOpen(!isAgentOpen)}
                     onKeyDown={(e) => e.key === "Enter" && setIsAgentOpen(!isAgentOpen)}
-                    className="w-full flex items-center justify-between h-10 px-3 rounded-md border border-input bg-background text-xs cursor-pointer hover:border-emerald-500 transition focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    className="w-full flex items-center justify-between h-9 px-3 rounded-md border border-input bg-background text-xs cursor-pointer hover:border-emerald-500 transition focus:outline-hidden"
                   >
                     {selectedAgent ? (
                       <span className="font-semibold text-foreground flex items-center gap-2 truncate">
@@ -428,7 +449,6 @@ export default function CreateFollowupPage() {
                     <ChevronDown className="h-4 w-4 opacity-50 shrink-0" />
                   </div>
 
-                  {/* Floating Agent Dropdown */}
                   {isAgentOpen && (
                     <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-popover border border-border rounded-xl shadow-xl p-2 space-y-1">
                       <div className="relative mb-2">
@@ -442,7 +462,7 @@ export default function CreateFollowupPage() {
                         />
                       </div>
 
-                      <div className="max-h-48 overflow-y-auto space-y-1">
+                      <div className="max-h-40 overflow-y-auto space-y-1">
                         {filteredAgents.map((agent) => (
                           <div
                             key={agent.id}
@@ -460,7 +480,7 @@ export default function CreateFollowupPage() {
                               {agent.full_name || agent.email}
                             </span>
                             {form.assigned_to === agent.id && (
-                              <Check className="w-4 h-4 text-blue-600 shrink-0" />
+                              <Check className="w-3.5 h-3.5 text-blue-600 shrink-0" />
                             )}
                           </div>
                         ))}
@@ -472,7 +492,7 @@ export default function CreateFollowupPage() {
             </div>
 
             {/* 3. TANGGAL & WAKTU FOLLOW-UP WITH PRESETS */}
-            <div className="space-y-2">
+            <div className="space-y-1">
               <div className="flex items-center justify-between">
                 <Label htmlFor="followup_date" className="text-xs font-bold text-foreground">
                   Tanggal & Waktu Follow-up <span className="text-rose-500">*</span>
@@ -481,21 +501,21 @@ export default function CreateFollowupPage() {
                   <button
                     type="button"
                     onClick={() => setPresetDate(1)}
-                    className="text-[10px] font-medium bg-muted hover:bg-emerald-50 hover:text-emerald-700 dark:hover:bg-emerald-950/50 dark:hover:text-emerald-300 px-2 py-0.5 rounded-md transition border border-transparent hover:border-emerald-300"
+                    className="text-[10px] font-medium bg-muted hover:bg-emerald-50 hover:text-emerald-700 dark:hover:bg-emerald-950/50 dark:hover:text-emerald-300 px-1.5 py-0.5 rounded-md transition"
                   >
                     Besok
                   </button>
                   <button
                     type="button"
                     onClick={() => setPresetDate(3)}
-                    className="text-[10px] font-medium bg-muted hover:bg-emerald-50 hover:text-emerald-700 dark:hover:bg-emerald-950/50 dark:hover:text-emerald-300 px-2 py-0.5 rounded-md transition border border-transparent hover:border-emerald-300"
+                    className="text-[10px] font-medium bg-muted hover:bg-emerald-50 hover:text-emerald-700 dark:hover:bg-emerald-950/50 dark:hover:text-emerald-300 px-1.5 py-0.5 rounded-md transition"
                   >
                     +3 Hari
                   </button>
                   <button
                     type="button"
                     onClick={() => setPresetDate(7)}
-                    className="text-[10px] font-medium bg-muted hover:bg-emerald-50 hover:text-emerald-700 dark:hover:bg-emerald-950/50 dark:hover:text-emerald-300 px-2 py-0.5 rounded-md transition border border-transparent hover:border-emerald-300"
+                    className="text-[10px] font-medium bg-muted hover:bg-emerald-50 hover:text-emerald-700 dark:hover:bg-emerald-950/50 dark:hover:text-emerald-300 px-1.5 py-0.5 rounded-md transition"
                   >
                     +1 Minggu
                   </button>
@@ -507,40 +527,40 @@ export default function CreateFollowupPage() {
                 type="datetime-local"
                 value={form.followup_date}
                 onChange={(e) => handleChange("followup_date", e.target.value)}
-                className="h-10 text-xs font-mono"
+                className="h-9 text-xs font-mono"
                 required
               />
             </div>
 
             {/* 4. CATATAN / PLAN ACTIVITY */}
-            <div className="space-y-2">
+            <div className="space-y-1">
               <Label htmlFor="notes" className="text-xs font-bold text-foreground">
                 Catatan Rencana Aktivitas
               </Label>
               <Textarea
                 id="notes"
-                placeholder="Misal: Telepon via WhatsApp untuk menanyakan progres KPR, kirimkan brosur unit Tipe 36, atau atur janji survei lokasi..."
+                placeholder="Misal: Telepon via WhatsApp untuk menanyakan progres KPR, kirimkan brosur unit Tipe 36..."
                 value={form.notes}
                 onChange={(e) => handleChange("notes", e.target.value)}
-                rows={4}
+                rows={3}
                 className="text-xs leading-relaxed"
               />
             </div>
 
             {/* SUBMIT BUTTONS */}
-            <div className="flex items-center gap-2 pt-4 border-t">
+            <div className="flex items-center gap-2 pt-2 border-t">
               <Button
                 type="submit"
                 disabled={saving}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20 text-xs gap-2 px-5 h-9"
+                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs gap-1.5 px-4 h-8 shadow-xs"
               >
                 {saving ? (
                   <>
-                    <Loader2 className="h-4 w-4 animate-spin" /> Menyimpan...
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Menyimpan...
                   </>
                 ) : (
                   <>
-                    <Save className="h-4 w-4" /> Simpan Follow-up
+                    <Save className="h-3.5 w-3.5" /> Simpan Follow-up
                   </>
                 )}
               </Button>
@@ -549,7 +569,7 @@ export default function CreateFollowupPage() {
                 type="button"
                 variant="outline"
                 onClick={() => router.back()}
-                className="text-xs h-9"
+                className="text-xs h-8 px-3"
               >
                 Batal
               </Button>

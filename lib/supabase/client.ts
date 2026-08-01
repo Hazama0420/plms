@@ -1,18 +1,55 @@
+// lib/supabase/client.ts
 import { createBrowserClient } from "@supabase/ssr";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+// Storage cadangan di RAM jika localStorage dilarang oleh browser/iframe
+const memoryStore = new Map<string, string>();
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error(
-    "Missing Supabase environment variables. Please set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY."
+const safeStorage = {
+  getItem: (key: string): string | null => {
+    try {
+      if (typeof window !== "undefined" && window.localStorage) {
+        return window.localStorage.getItem(key);
+      }
+    } catch {
+      // Abaikan jika localStorage diblokir browser
+    }
+    return memoryStore.get(key) || null;
+  },
+  setItem: (key: string, value: string): void => {
+    try {
+      if (typeof window !== "undefined" && window.localStorage) {
+        window.localStorage.setItem(key, value);
+        return;
+      }
+    } catch {
+      // Abaikan jika localStorage diblokir browser
+    }
+    memoryStore.set(key, value);
+  },
+  removeItem: (key: string): void => {
+    try {
+      if (typeof window !== "undefined" && window.localStorage) {
+        window.localStorage.removeItem(key);
+        return;
+      }
+    } catch {
+      // Abaikan jika localStorage diblokir browser
+    }
+    memoryStore.delete(key);
+  },
+};
+
+export const createClient = () =>
+  createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      auth: {
+        storage: safeStorage, // 💡 Menagkap error storage agar tidak crash/melempar error di konsol
+        persistSession: true,
+        detectSessionInUrl: true,
+      },
+    }
   );
-}
 
-// 1. Export berupa fungsi createClient() (Sesuai standar Next.js Supabase SSR)
-export function createClient() {
-  return createBrowserClient(supabaseUrl!, supabaseAnonKey!);
-}
-
-// 2. Export berupa objek singleton 'supabase' (Untuk kompatibilitas kode lama)
-export const supabase = createBrowserClient(supabaseUrl, supabaseAnonKey);
+export const supabase = createClient();

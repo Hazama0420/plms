@@ -122,45 +122,50 @@ export default function LoginPage() {
 
   return (
     <div
-      className="relative min-h-screen flex items-center justify-center p-4 bg-cover bg-center bg-no-repeat"
+      className="relative min-h-screen flex items-center justify-center p-4 bg-cover bg-center bg-no-repeat select-none"
       style={{
-        backgroundImage: "url('/bg-login.webp')",
+        backgroundImage: "url('/bg-login.webp')", // Gambar Kota Dipertahankan
         backgroundAttachment: "fixed",
       }}
     >
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-[3px]" />
+      {/* OVERLAY TERTUTUP HALUS SEHINGGA PEMANDANGAN KOTA TETAP TERLIHAT INDAH */}
+      <div className="absolute inset-0 bg-slate-950/40 backdrop-blur-[2px]" />
 
-      <Card className="relative z-10 max-w-md w-full border border-white/20 shadow-2xl rounded-3xl bg-slate-950/75 backdrop-blur-xl text-white overflow-hidden my-auto">
-       <CardHeader className="text-center space-y-1.5 pt-6 pb-3">
-          
-          {/* LOGO ICON / GAMBAR */}
+      {/* KARTU LOGIN: GLASSMORPHISM PAS (TIDAK TERLALU GELAP & TIDAK TERLALU TERANG) */}
+      <Card className="relative z-10 max-w-md w-full border border-white/20 shadow-2xl rounded-3xl bg-slate-900/65 backdrop-blur-xl text-slate-100 overflow-hidden my-auto transition-all">
+        {/* AKSEN EMERALD ATAS */}
+        <div className="h-1.5 w-full bg-emerald-500/90 shadow-sm" />
+
+        <CardHeader className="text-center space-y-1.5 pt-6 pb-2 px-6 sm:px-8">
+          {/* LOGO PERUSAHAAN */}
           <div className="mx-auto flex items-center justify-center">
             <Image
               src="/logo.png"
               alt="Inland Property Logo"
               width={180}
               height={70}
-              className="h-16 w-auto object-contain drop-shadow-md"
+              className="h-15 w-auto object-contain drop-shadow-md"
               priority
             />
           </div>
 
-          {/* TEKS JUDUL NAMA WEB */}
+          {/* TEKS JUDUL */}
           <div className="space-y-0.5">
-            <CardTitle className="text-2xl font-black tracking-tight">
-              <span className="text-emerald-400">Inland</span> <span className="text-white">Property</span>
+            <CardTitle className="text-2xl font-black tracking-tight text-white">
+              <span className="text-emerald-400">Inland</span>{" "}
+              <span className="text-slate-100">Property</span>
             </CardTitle>
-            <CardDescription className="text-xs text-slate-300/80">
-              Property Listing Management System
+            <CardDescription className="text-xs text-slate-300/80 font-medium">
+              Property Listing & CRM Management System
             </CardDescription>
           </div>
         </CardHeader>
 
         <CardContent className="space-y-4 pb-8 px-6 sm:px-8">
-          <form onSubmit={handleLogin} className="space-y-4">
-            
+          <form onSubmit={handleLogin} className="space-y-3.5">
+            {/* PESAN ERROR */}
             {error && (
-              <div className="p-3 bg-rose-500/20 border border-rose-500/30 rounded-2xl text-xs text-rose-200 flex items-start gap-2.5">
+              <div className="p-3 bg-rose-500/20 border border-rose-500/30 rounded-2xl text-xs text-rose-200 flex items-start gap-2.5 backdrop-blur-md">
                 <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-rose-400" />
                 <div className="flex-1 space-y-1">
                   <p className="font-medium leading-relaxed">{error}</p>
@@ -177,9 +182,10 @@ export default function LoginPage() {
               </div>
             )}
 
+            {/* INPUT EMAIL */}
             <div className="space-y-1.5">
               <Label htmlFor="email" className="text-xs font-semibold text-slate-200">
-                Email
+                Alamat Email
               </Label>
               <div className="relative">
                 <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
@@ -189,12 +195,13 @@ export default function LoginPage() {
                   placeholder="nama@email.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="pl-10 h-10 text-xs rounded-xl bg-white/10 border-white/20 text-white placeholder:text-slate-400 focus-visible:ring-emerald-400"
+                  className="pl-10 h-10 text-xs rounded-xl bg-slate-900/50 border-white/20 text-white placeholder:text-slate-400 focus-visible:ring-emerald-400 focus-visible:border-emerald-400 transition-all"
                   required
                 />
               </div>
             </div>
 
+            {/* INPUT PASSWORD */}
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
                 <Label htmlFor="password" className="text-xs font-semibold text-slate-200">
@@ -215,7 +222,7 @@ export default function LoginPage() {
                   placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="pl-10 pr-10 h-10 text-xs rounded-xl bg-white/10 border-white/20 text-white placeholder:text-slate-400 focus-visible:ring-emerald-400"
+                  className="pl-10 pr-10 h-10 text-xs rounded-xl bg-slate-900/50 border-white/20 text-white placeholder:text-slate-400 focus-visible:ring-emerald-400 focus-visible:border-emerald-400 transition-all"
                   required
                 />
                 <button
@@ -228,6 +235,7 @@ export default function LoginPage() {
               </div>
             </div>
 
+            {/* INGAT SAYA */}
             <div className="flex items-center space-x-2 pt-0.5">
               <Checkbox
                 id="remember"
@@ -235,14 +243,15 @@ export default function LoginPage() {
                 onCheckedChange={(checked) => setRememberMe(checked as boolean)}
                 className="rounded-md border-white/30 data-[state=checked]:bg-emerald-500 data-[state=checked]:border-emerald-500"
               />
-              <Label htmlFor="remember" className="text-xs text-slate-300 cursor-pointer">
+              <Label htmlFor="remember" className="text-xs text-slate-300 font-medium cursor-pointer">
                 Ingat saya di perangkat ini
               </Label>
             </div>
 
+            {/* TOMBOL LOGIN */}
             <Button
               type="submit"
-              className="w-full h-10 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs rounded-xl shadow-lg shadow-emerald-600/30 transition-all cursor-pointer gap-2"
+              className="w-full h-10 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs rounded-xl shadow-lg shadow-emerald-600/30 transition-all cursor-pointer gap-2 mt-1"
               disabled={loading}
             >
               {loading ? (
@@ -258,38 +267,42 @@ export default function LoginPage() {
             </Button>
           </form>
 
+          {/* GARIS PEMBATAS */}
           <div className="relative my-3">
             <div className="absolute inset-0 flex items-center">
               <span className="w-full border-t border-white/20" />
             </div>
             <div className="relative flex justify-center text-[10px] uppercase font-bold tracking-wider">
-              <span className="bg-slate-900/90 px-2.5 py-0.5 rounded-full text-slate-400 border border-white/10">
+              <span className="bg-slate-900/80 px-2.5 py-0.5 rounded-full text-slate-300 border border-white/10 backdrop-blur-md">
                 Atau
               </span>
             </div>
           </div>
 
+          {/* TOMBOL GOOGLE LOGIN */}
           <Button
             type="button"
             variant="outline"
             onClick={handleGoogleLogin}
-            className="w-full h-10 text-xs font-semibold rounded-xl bg-white/10 border-white/20 text-white hover:bg-white/20 hover:text-white transition gap-2.5 cursor-pointer"
+            className="w-full h-10 text-xs font-semibold rounded-xl bg-white/10 border-white/25 text-white hover:bg-white/20 hover:text-white transition gap-2.5 cursor-pointer backdrop-blur-md"
           >
             <GoogleIcon />
             <span>Masuk dengan Google</span>
           </Button>
 
+          {/* TOMBOL DASHBOARD MODE TAMU */}
           <Button
             type="button"
             variant="ghost"
             onClick={() => router.push("/dashboard")}
-            className="w-full h-10 text-xs font-semibold rounded-xl text-emerald-300 hover:bg-emerald-500/20 hover:text-emerald-200 border border-emerald-500/30 gap-2 cursor-pointer mt-2"
+            className="w-full h-10 text-xs font-semibold rounded-xl text-emerald-300 hover:bg-emerald-500/20 hover:text-emerald-200 border border-emerald-500/35 gap-2 cursor-pointer mt-2 backdrop-blur-md"
           >
             <User className="w-4 h-4 text-emerald-400" />
             Jelajahi Dashboard (Mode Tamu)
             <ArrowRight className="w-3.5 h-3.5 ml-auto text-emerald-400" />
           </Button>
 
+          {/* LINK DAFTAR */}
           <p className="text-center text-xs text-slate-300 pt-2">
             Belum punya akun?{" "}
             <Link

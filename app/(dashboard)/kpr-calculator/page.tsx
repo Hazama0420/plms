@@ -428,12 +428,10 @@ function KprCalculatorContent() {
 
                 {/* PANELS OPTIONAL / ADVANCED BANKING SETTINGS */}
                 <Collapsible open={showAdvanced} onOpenChange={setShowAdvanced} className="...">
-  <CollapsibleTrigger>
-    <Button variant="ghost" size="sm" className="w-full text-xs text-muted-foreground ...">
-      <span className="flex items-center gap-1 font-medium">
-        ⚙️ Pengaturan Suku Bunga & Akad Bank
-      </span>
-    </Button>
+  <CollapsibleTrigger className="w-full">
+    <div className="w-full py-2 px-3 text-xs text-muted-foreground hover:bg-muted/60 hover:text-foreground rounded-xl flex items-center justify-center gap-1 font-medium transition-colors cursor-pointer">
+      ⚙️ Pengaturan Suku Bunga & Akad Bank
+    </div>
   </CollapsibleTrigger>
                   <CollapsibleContent className="space-y-3 pt-3">
                     <div className="p-3 bg-muted/40 rounded-xl space-y-3 border border-border/50">

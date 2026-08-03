@@ -39,6 +39,7 @@ import {
 import { toast } from "sonner";
 import { compressImage } from "@/lib/imageCompressor";
 import { supabase } from "@/lib/supabase/client";
+import { WatermarkedImage } from "@/components/ui/WatermarkedImage";
 
 // DATA STATIS
 const propertyTypes = [
@@ -118,7 +119,7 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
   const [cropRotation, setCropRotation] = useState(0);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
- // Sync Photos dari formData ke Local State dengan aman tanpa merusak struktur existing
+  // Sync Photos dari formData ke Local State
   useEffect(() => {
     if (formData.photos && Array.isArray(formData.photos) && photos.length === 0) {
       const normalized = formData.photos.map((p: any, idx: number) => {
@@ -172,53 +173,53 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
     setDraggedIndex(null);
   };
 
-  // Helper Upload File langsung ke Supabase Storage Bucket 'property-media'
+  // Upload File langsung ke Supabase Storage Bucket 'property-media'
   const uploadToStorage = async (file: File, originalName: string): Promise<PhotoItem | null> => {
-  try {
-    const ext = file.name.split(".").pop() || "jpg";
-    const cleanOriginalName = originalName.replace(/[^a-zA-Z0-9.-]/g, "_");
-    const fileName = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}.${ext}`;
-    const storagePath = `listings/${fileName}`;
+    try {
+      const ext = file.name.split(".").pop() || "jpg";
+      const cleanOriginalName = originalName.replace(/[^a-zA-Z0-9.-]/g, "_");
+      const fileName = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}.${ext}`;
+      const storagePath = `listings/${fileName}`;
 
-    const { data: uploadData, error: uploadError } = await supabase.storage
-      .from("property-media")
-      .upload(storagePath, file, {
-        cacheControl: "3600",
-        upsert: true,
-        contentType: file.type || "image/jpeg",
-      });
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from("property-media")
+        .upload(storagePath, file, {
+          cacheControl: "3600",
+          upsert: true,
+          contentType: file.type || "image/jpeg",
+        });
 
-    if (uploadError) {
-      console.error("Gagal upload foto ke Supabase Storage:", uploadError.message);
+      if (uploadError) {
+        console.error("Gagal upload foto ke Supabase Storage:", uploadError.message);
+        return null;
+      }
+
+      const { data: publicUrlData } = supabase.storage
+        .from("property-media")
+        .getPublicUrl(uploadData.path);
+
+      const publicUrl = publicUrlData.publicUrl;
+
+      return {
+        id: `photo-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        preview: publicUrl,
+        public_url: publicUrl,
+        media_type: "image",
+        file_name: fileName,
+        original_name: cleanOriginalName,
+        storage_path: uploadData.path,
+        mime_type: file.type || "image/jpeg",
+        file_size: file.size,
+        uploaded: true,
+        isExisting: false,
+      };
+    } catch (err) {
+      console.error("Error uploadToStorage:", err);
       return null;
     }
+  };
 
-    const { data: publicUrlData } = supabase.storage
-      .from("property-media")
-      .getPublicUrl(uploadData.path);
-
-    const publicUrl = publicUrlData.publicUrl;
-
-    return {
-      id: `photo-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      preview: publicUrl,
-      public_url: publicUrl,
-      media_type: "image",
-      file_name: fileName,
-      original_name: cleanOriginalName,
-      storage_path: uploadData.path,
-      mime_type: file.type || "image/jpeg",
-      file_size: file.size,
-      uploaded: true,
-      isExisting: false,
-    };
-  } catch (err) {
-    console.error("Error uploadToStorage:", err);
-    return null;
-  }
-};
-
-  // Kompresi Gambar & Tambah File dengan Auto-Upload ke Storage
+  // Kompresi Gambar & Tambah File dengan Auto-Upload (Foto Bersih ke Supabase)
   const processAndAddFiles = async (files: File[]) => {
     const validFiles = files.filter((file) => file.type.startsWith("image/"));
     if (validFiles.length === 0) return;
@@ -230,14 +231,14 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
       const uploadedPhotos: PhotoItem[] = [];
 
       for (const file of validFiles) {
-        // 1. Kompresi Gambar
+        // 1. Kompresi Gambar Asli (Tanpa watermark permanen)
         const compressedFile = await compressImage(file, {
           maxWidth: 1920,
           maxHeight: 1080,
           quality: 0.8,
         });
 
-        // 2. Upload langsung ke Supabase Storage
+        // 2. Upload ke Supabase Storage
         const uploadedItem = await uploadToStorage(compressedFile, file.name);
         if (uploadedItem) {
           uploadedPhotos.push(uploadedItem);
@@ -333,6 +334,7 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
       const croppedDataUrl = canvas.toDataURL("image/jpeg", 0.85);
       const rawCroppedFile = dataURLtoFile(croppedDataUrl, `cropped-${Date.now()}.jpg`);
 
+      // Kompresi hasil crop (Tanpa tempel watermark permanen)
       const compressedCropped = await compressImage(rawCroppedFile, {
         maxWidth: 1920,
         maxHeight: 1080,
@@ -620,12 +622,12 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
               {isCompressing ? "Sedang Mengompresi & Mengunggah Foto..." : "Klik atau seret file foto ke area ini"}
             </p>
             <p className="text-[10px] text-muted-foreground">
-              Format JPG, PNG, WEBP — Foto otomatis dikompresi & disimpan ke Supabase Storage
+              Format JPG, PNG, WEBP — Foto otomatis dikompresi & disimpan ke Supabase Storage (Watermark otomatis tampil di layar)
             </p>
           </div>
         </div>
 
-        {/* GRID DRAGGABLE PREVIEW FOTO */}
+        {/* GRID DRAGGABLE PREVIEW FOTO METODE WATERMARKED IMAGE */}
         {photos.length > 0 && (
           <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3 pt-2">
             {photos.map((photo, idx) => (
@@ -647,10 +649,13 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
                   <GripVertical className="w-3.5 h-3.5" />
                 </div>
 
-                <img
+                {/* KOMPONEN OVERLAY WATERMARK BERSIH */}
+                <WatermarkedImage
                   src={photo.preview}
                   alt={`Foto ${idx + 1}`}
-                  className="w-full h-full object-cover"
+                  className="w-full h-full"
+                  watermarkSize="w-1/3"
+                  watermarkOpacity={0.7}
                 />
 
                 <div className="absolute top-1.5 right-1.5 flex flex-col items-end gap-1 z-10">
@@ -719,10 +724,13 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
             <div className="space-y-4 py-2">
               <div className="relative w-full h-[50vh] sm:h-[65vh] md:h-[72vh] lg:h-[78vh] bg-black/90 rounded-xl overflow-hidden flex items-center justify-center border border-slate-800 shadow-inner">
                 {!isCropping ? (
-                  <img
+                  <WatermarkedImage
                     src={photos[previewIndex].preview}
                     alt="Preview Full"
-                    className="max-w-full max-h-full object-contain"
+                    className="w-full h-full flex items-center justify-center"
+                    imageClassName="max-w-full max-h-full object-contain"
+                    watermarkSize="w-1/3"
+                    watermarkOpacity={0.7}
                   />
                 ) : (
                   <div className="relative flex items-center justify-center w-full h-full overflow-hidden">

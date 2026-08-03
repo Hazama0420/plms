@@ -40,280 +40,350 @@ export interface AgentPerformance {
   commission: number;
 }
 
+// Helper untuk mengekstrak harga dari objek property_price
+function extractPriceValue(priceObjRaw: any): number {
+  if (!priceObjRaw) return 0;
+  const priceObj = Array.isArray(priceObjRaw) ? priceObjRaw[0] : priceObjRaw;
+  if (!priceObj) return 0;
+
+  const sellingPrice = Number(priceObj.selling_price || 0);
+  const rentalPrice = Number(priceObj.rental_price || 0);
+
+  return sellingPrice > 0 ? sellingPrice : rentalPrice;
+}
+
 export const reportService = {
-  // ===== GET MAIN STATS =====
+  // ===== 1. RINGKASAN STATISTIK UTAMA =====
   async getMainStats(): Promise<ReportStats> {
-    // Total property
-    const { count: totalProperties } = await supabase
-      .from("properties")
-      .select("*", { count: "exact", head: true });
+    try {
+      const { data: properties, error } = await supabase
+        .from("properties")
+        .select(`
+          id,
+          status,
+          property_price(selling_price, rental_price)
+        `);
 
-    // Total sold
-    const { count: totalSold } = await supabase
-      .from("properties")
-      .select("*", { count: "exact", head: true })
-      .eq("status", "sold");
+      if (error) throw error;
 
-    // Total rented
-    const { count: totalRented } = await supabase
-      .from("properties")
-      .select("*", { count: "exact", head: true })
-      .eq("status", "rented");
+      const totalProperties = properties?.length || 0;
+      let totalActive = 0;
+      let totalSold = 0;
+      let totalRented = 0;
+      let totalDraft = 0;
+      let totalArchived = 0;
+      let totalPriceSum = 0;
+      let totalRevenue = 0;
 
-    // Total active (published)
-    const { count: totalActive } = await supabase
-      .from("properties")
-      .select("*", { count: "exact", head: true })
-      .eq("status", "published");
+      properties?.forEach((p: any) => {
+        const st = (p.status || "").toLowerCase();
+        const priceVal = extractPriceValue(p.property_price);
 
-    // Total draft
-    const { count: totalDraft } = await supabase
-      .from("properties")
-      .select("*", { count: "exact", head: true })
-      .eq("status", "draft");
+        if (priceVal > 0) totalPriceSum += priceVal;
 
-    // Total archived
-    const { count: totalArchived } = await supabase
-      .from("properties")
-      .select("*", { count: "exact", head: true })
-      .eq("status", "archived");
+        if (st === "published" || st === "available" || st === "aktif") {
+          totalActive++;
+        } else if (st === "sold" || st === "terjual") {
+          totalSold++;
+          totalRevenue += priceVal;
+        } else if (st === "rented" || st === "disewa" || st === "sewa") {
+          totalRented++;
+          totalRevenue += priceVal;
+        } else if (st === "draft") {
+          totalDraft++;
+        } else if (st === "archived" || st === "diarsipkan") {
+          totalArchived++;
+        }
+      });
 
-    // Average price (dari property_price)
-    const { data: prices } = await supabase
-      .from("property_price")
-      .select("selling_price")
-      .not("selling_price", "is", null);
-
-    let averagePrice = 0;
-    if (prices && prices.length > 0) {
-      const total = prices.reduce((sum, p) => sum + (p.selling_price || 0), 0);
-      averagePrice = total / prices.length;
+      return {
+        totalProperties,
+        totalActive,
+        totalSold,
+        totalRented,
+        totalDraft,
+        totalArchived,
+        averagePrice: totalProperties > 0 ? Math.round(totalPriceSum / totalProperties) : 0,
+        totalRevenue,
+      };
+    } catch (err: any) {
+      console.error("Error getMainStats:", err?.message || err);
+      return {
+        totalProperties: 0,
+        totalActive: 0,
+        totalSold: 0,
+        totalRented: 0,
+        totalDraft: 0,
+        totalArchived: 0,
+        averagePrice: 0,
+        totalRevenue: 0,
+      };
     }
-
-    // Total revenue (sum of sold property prices)
-    const { data: soldProperties } = await supabase
-      .from("properties")
-      .select("id")
-      .eq("status", "sold");
-
-    let totalRevenue = 0;
-    if (soldProperties && soldProperties.length > 0) {
-      const ids = soldProperties.map((p) => p.id);
-      const { data: soldPrices } = await supabase
-        .from("property_price")
-        .select("selling_price")
-        .in("property_id", ids)
-        .not("selling_price", "is", null);
-
-      if (soldPrices) {
-        totalRevenue = soldPrices.reduce((sum, p) => sum + (p.selling_price || 0), 0);
-      }
-    }
-
-    return {
-      totalProperties: totalProperties || 0,
-      totalSold: totalSold || 0,
-      totalRented: totalRented || 0,
-      totalActive: totalActive || 0,
-      totalDraft: totalDraft || 0,
-      totalArchived: totalArchived || 0,
-      averagePrice,
-      totalRevenue,
-    };
   },
 
-  // ===== GET PROPERTY STATUS DISTRIBUTION =====
+  // ===== 2. DISTRIBUSI STATUS PROPERTI =====
   async getStatusDistribution(): Promise<PropertyStatusCount[]> {
-    const { data, error } = await supabase
-      .from("properties")
-      .select("status")
-      .not("status", "is", null);
+    try {
+      const { data, error } = await supabase
+        .from("properties")
+        .select("status")
+        .not("status", "is", null);
 
-    if (error) throw new Error(error.message);
+      if (error) throw error;
 
-    const counts: Record<string, number> = {};
-    data.forEach((item) => {
-      counts[item.status] = (counts[item.status] || 0) + 1;
-    });
+      const counts: Record<string, number> = {};
+      data?.forEach((item) => {
+        const st = item.status || "draft";
+        counts[st] = (counts[st] || 0) + 1;
+      });
 
-    return Object.entries(counts).map(([status, count]) => ({
-      status,
-      count,
-    }));
+      return Object.entries(counts).map(([status, count]) => ({ status, count }));
+    } catch (err: any) {
+      console.error("Error getStatusDistribution:", err?.message || err);
+      return [];
+    }
   },
 
-  // ===== GET PROPERTY TYPE DISTRIBUTION =====
+  // ===== 3. DISTRIBUSI TIPE & KATEGORI PROPERTI =====
   async getTypeDistribution(): Promise<PropertyTypeCount[]> {
-    const { data, error } = await supabase
-      .from("properties")
-      .select("property_type")
-      .not("property_type", "is", null);
+    try {
+      const { data, error } = await supabase
+        .from("properties")
+        .select("property_type, property_category");
 
-    if (error) throw new Error(error.message);
+      if (error) throw error;
 
-    const counts: Record<string, number> = {};
-    data.forEach((item) => {
-      counts[item.property_type] = (counts[item.property_type] || 0) + 1;
-    });
+      const counts: Record<string, number> = {};
+      data?.forEach((item: any) => {
+        let rawType = item.property_category || item.property_type || "Rumah";
+        rawType = rawType
+          .toLowerCase()
+          .split(" ")
+          .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1))
+          .join(" ");
 
-    return Object.entries(counts).map(([type, count]) => ({
-      type,
-      count,
-    }));
+        counts[rawType] = (counts[rawType] || 0) + 1;
+      });
+
+      return Object.entries(counts).map(([type, count]) => ({ type, count }));
+    } catch (err: any) {
+      console.error("Error getTypeDistribution:", err?.message || err);
+      return [];
+    }
   },
 
-  // ===== GET MONTHLY STATS =====
+  // ===== 4. STATISTIK PENJUALAN BULANAN =====
   async getMonthlyStats(year?: number): Promise<MonthlyStat[]> {
     const targetYear = year || new Date().getFullYear();
-    const result: MonthlyStat[] = [];
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agt", "Sep", "Okt", "Nov", "Des"];
+    
+    const result: MonthlyStat[] = monthNames.map((m) => ({
+      month: m,
+      year: targetYear,
+      created: 0,
+      sold: 0,
+      revenue: 0,
+    }));
 
-    for (let month = 0; month < 12; month++) {
-      const startDate = new Date(targetYear, month, 1);
-      const endDate = new Date(targetYear, month + 1, 1);
+    try {
+      const startDate = `${targetYear}-01-01T00:00:00.000Z`;
+      const endDate = `${targetYear}-12-31T23:59:59.999Z`;
 
-      // Total created
-      const { count: created } = await supabase
+      const { data: properties, error } = await supabase
         .from("properties")
-        .select("*", { count: "exact", head: true })
-        .gte("created_at", startDate.toISOString())
-        .lt("created_at", endDate.toISOString());
+        .select(`
+          id,
+          status,
+          created_at,
+          updated_at,
+          property_price(selling_price, rental_price)
+        `)
+        .gte("created_at", startDate)
+        .lte("created_at", endDate);
 
-      // Total sold
-      const { count: sold } = await supabase
-        .from("properties")
-        .select("*", { count: "exact", head: true })
-        .eq("status", "sold")
-        .gte("updated_at", startDate.toISOString())
-        .lt("updated_at", endDate.toISOString());
+      if (error) throw error;
 
-      // Revenue
-      const { data: soldProperties } = await supabase
-        .from("properties")
-        .select("id")
-        .eq("status", "sold")
-        .gte("updated_at", startDate.toISOString())
-        .lt("updated_at", endDate.toISOString());
+      properties?.forEach((p: any) => {
+        const createdAt = new Date(p.created_at);
+        const updatedAt = new Date(p.updated_at || p.created_at);
 
-      let revenue = 0;
-      if (soldProperties && soldProperties.length > 0) {
-        const ids = soldProperties.map((p) => p.id);
-        const { data: prices } = await supabase
-          .from("property_price")
-          .select("selling_price")
-          .in("property_id", ids)
-          .not("selling_price", "is", null);
-
-        if (prices) {
-          revenue = prices.reduce((sum, p) => sum + (p.selling_price || 0), 0);
+        if (createdAt.getFullYear() === targetYear) {
+          const monthIdx = createdAt.getMonth();
+          if (monthIdx >= 0 && monthIdx < 12) {
+            result[monthIdx].created += 1;
+          }
         }
-      }
 
-      const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-      result.push({
-        month: monthNames[month],
-        year: targetYear,
-        created: created || 0,
-        sold: sold || 0,
-        revenue,
+        const st = (p.status || "").toLowerCase();
+        const isClosed = st === "sold" || st === "terjual" || st === "rented" || st === "disewa";
+
+        if (isClosed && updatedAt.getFullYear() === targetYear) {
+          const monthIdx = updatedAt.getMonth();
+          if (monthIdx >= 0 && monthIdx < 12) {
+            const priceVal = extractPriceValue(p.property_price);
+
+            result[monthIdx].sold += 1;
+            result[monthIdx].revenue += priceVal;
+          }
+        }
       });
-    }
 
-    return result;
+      return result;
+    } catch (err: any) {
+      console.error("Error getMonthlyStats:", err?.message || err);
+      return result;
+    }
   },
 
-  // ===== GET AGENT PERFORMANCE =====
+  // ===== 5. PAPAN PERINGKAT & PERFORMA AGEN =====
   async getAgentPerformance(): Promise<AgentPerformance[]> {
-    // Ambil semua agent dari user_roles atau users
-    const { data: agents } = await supabase
-      .from("users")
-      .select("id, full_name")
-      .limit(100);
+    try {
+      const { data: usersData } = await supabase
+        .from("users")
+        .select("id, full_name");
 
-    if (!agents) return [];
-
-    const result: AgentPerformance[] = [];
-
-    for (const agent of agents) {
-      // Cari property yang di-manage oleh agent ini
-      const { data: properties } = await supabase
-        .from("property_agents")
-        .select("property_id")
-        .eq("user_id", agent.id);
-
-      if (!properties || properties.length === 0) continue;
-
-      const propertyIds = properties.map((p) => p.property_id);
-
-      // Total property
-      const { count: totalProperties } = await supabase
-        .from("properties")
-        .select("*", { count: "exact", head: true })
-        .in("id", propertyIds);
-
-      // Total sold
-      const { count: totalSold } = await supabase
-        .from("properties")
-        .select("*", { count: "exact", head: true })
-        .in("id", propertyIds)
-        .eq("status", "sold");
-
-      // Total revenue
-      const { data: soldProps } = await supabase
-        .from("properties")
-        .select("id")
-        .in("id", propertyIds)
-        .eq("status", "sold");
-
-      let totalRevenue = 0;
-      if (soldProps && soldProps.length > 0) {
-        const ids = soldProps.map((p) => p.id);
-        const { data: prices } = await supabase
-          .from("property_price")
-          .select("selling_price")
-          .in("property_id", ids)
-          .not("selling_price", "is", null);
-
-        if (prices) {
-          totalRevenue = prices.reduce((sum, p) => sum + (p.selling_price || 0), 0);
-        }
-      }
-
-      // Commission (2.5% dari revenue)
-      const commission = totalRevenue * 0.025;
-
-      result.push({
-        agent_id: agent.id,
-        agent_name: agent.full_name || "Unknown Agent",
-        total_properties: totalProperties || 0,
-        total_sold: totalSold || 0,
-        total_revenue: totalRevenue,
-        commission,
+      const userMap = new Map<string, string>();
+      usersData?.forEach((u: any) => {
+        userMap.set(u.id, u.full_name || "Agen Resmi");
       });
-    }
 
-    return result.sort((a, b) => b.total_revenue - a.total_revenue);
+      const { data: properties, error } = await supabase
+        .from("properties")
+        .select(`
+          id,
+          status,
+          created_by,
+          assigned_to,
+          property_price(selling_price, rental_price)
+        `);
+
+      if (error) throw error;
+
+      const agentStats: Record<string, AgentPerformance> = {};
+
+      usersData?.forEach((u: any) => {
+        agentStats[u.id] = {
+          agent_id: u.id,
+          agent_name: u.full_name || "Agen Resmi",
+          total_properties: 0,
+          total_sold: 0,
+          total_revenue: 0,
+          commission: 0,
+        };
+      });
+
+      properties?.forEach((p: any) => {
+        const agentIds = new Set<string>();
+
+        if (p.created_by) agentIds.add(p.created_by);
+        if (p.assigned_to) agentIds.add(p.assigned_to);
+
+        if (agentIds.size === 0) return;
+
+        const priceVal = extractPriceValue(p.property_price);
+        const st = (p.status || "").toLowerCase();
+        const isClosed = st === "sold" || st === "terjual" || st === "rented" || st === "disewa";
+
+        agentIds.forEach((agentId) => {
+          if (!agentStats[agentId]) {
+            agentStats[agentId] = {
+              agent_id: agentId,
+              agent_name: userMap.get(agentId) || "Agen Resmi",
+              total_properties: 0,
+              total_sold: 0,
+              total_revenue: 0,
+              commission: 0,
+            };
+          }
+
+          agentStats[agentId].total_properties += 1;
+
+          if (isClosed) {
+            agentStats[agentId].total_sold += 1;
+            agentStats[agentId].total_revenue += priceVal;
+            agentStats[agentId].commission += priceVal * 0.025; // 2.5% Komisi
+          }
+        });
+      });
+
+      return Object.values(agentStats)
+        .filter((a) => a.total_properties > 0)
+        .sort((a, b) => {
+          if (b.total_sold !== a.total_sold) {
+            return b.total_sold - a.total_sold;
+          }
+          return b.total_revenue - a.total_revenue;
+        });
+    } catch (err: any) {
+      console.error("Error getAgentPerformance:", err?.message || err);
+      return [];
+    }
   },
 
-  // ===== GET TOP LOCATIONS =====
+  // ===== 6. LOKASI TERATAS =====
   async getTopLocations(limit: number = 5) {
-    const { data, error } = await supabase
-      .from("property_address")
-      .select("city_id, cities(name)")
-      .not("city_id", "is", null);
+    try {
+      const { data, error } = await supabase
+        .from("property_address")
+        .select(`
+          city_id,
+          address,
+          cities(name),
+          districts(name)
+        `);
 
-    if (error) throw new Error(error.message);
+      if (error) throw error;
 
-    const counts: Record<string, { name: string; count: number }> = {};
-    data.forEach((item) => {
-      const cityName = item.cities?.[0]?.name || "Unknown";
-      if (!counts[item.city_id]) {
-        counts[item.city_id] = { name: cityName, count: 0 };
-      }
-      counts[item.city_id].count++;
-    });
+      const counts: Record<string, { name: string; count: number }> = {};
 
-    return Object.values(counts)
-      .sort((a, b) => b.count - a.count)
-      .slice(0, limit);
+      data?.forEach((item: any) => {
+        let locationName = "";
+
+        if (item.cities) {
+          if (Array.isArray(item.cities) && item.cities.length > 0) {
+            locationName = item.cities[0]?.name;
+          } else if (typeof item.cities === "object" && item.cities.name) {
+            locationName = item.cities.name;
+          }
+        }
+
+        if (!locationName && item.districts) {
+          if (Array.isArray(item.districts) && item.districts.length > 0) {
+            locationName = item.districts[0]?.name;
+          } else if (typeof item.districts === "object" && item.districts.name) {
+            locationName = item.districts.name;
+          }
+        }
+
+        if (!locationName && item.address) {
+          const addressParts = item.address.split(",");
+          locationName = addressParts[addressParts.length - 1]?.trim() || addressParts[0]?.trim() || "Lokasi Lainnya";
+        }
+
+        if (!locationName || typeof locationName !== "string" || locationName.trim() === "" || locationName.toLowerCase() === "unknown") {
+          locationName = "Lokasi Lainnya";
+        }
+
+        const formattedName = locationName
+          .toLowerCase()
+          .split(" ")
+          .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1))
+          .join(" ");
+
+        const key = item.city_id || formattedName;
+
+        if (!counts[key]) {
+          counts[key] = { name: formattedName, count: 0 };
+        }
+        counts[key].count++;
+      });
+
+      return Object.values(counts)
+        .sort((a, b) => b.count - a.count)
+        .slice(0, limit);
+    } catch (err: any) {
+      console.error("Error getTopLocations:", err?.message || err);
+      return [];
+    }
   },
 };

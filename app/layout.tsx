@@ -21,6 +21,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="id" suppressHydrationWarning>
+      {/* 🟢 Tambahkan suppressHydrationWarning pada <body> */}
       <body className={inter.className} suppressHydrationWarning>
         <ThemeProvider
           attribute="class"

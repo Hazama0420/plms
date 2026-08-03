@@ -1,5 +1,4 @@
 // app/(dashboard)/reports/page.tsx
-
 "use client";
 
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
@@ -13,10 +12,14 @@ import {
   Home,
   Building2,
   Users,
-  FileBarChart,
   Download,
   RefreshCw,
   MapPin,
+  Trophy,
+  PieChart as PieIcon,
+  Award,
+  BarChart3,
+  CheckCircle2,
 } from "lucide-react";
 import { reportService } from "@/services/report.service";
 import { Button } from "@/components/ui/button";
@@ -47,12 +50,11 @@ import {
   Legend,
 } from "recharts";
 
-const COLORS = ["#3b82f6", "#8b5cf6", "#10b981", "#f59e0b", "#ef4444", "#ec4899"];
+const COLORS = ["#10b981", "#3b82f6", "#8b5cf6", "#f59e0b", "#ec4899", "#06b6d4"];
 
 const CURRENT_YEAR = new Date().getFullYear();
 const YEAR_OPTIONS = Array.from({ length: 5 }, (_, i) => CURRENT_YEAR - 3 + i);
 
-// Formatter dibuat sekali di luar komponen, tidak dibuat ulang setiap render
 const currencyFormatter = new Intl.NumberFormat("id-ID", {
   style: "currency",
   currency: "IDR",
@@ -70,8 +72,6 @@ function formatNumber(value: number | undefined | null) {
   return numberFormatter.format(value || 0);
 }
 
-// Badge kecil untuk menampilkan tren naik/turun dibanding bulan sebelumnya.
-// Dihitung dari data yang sudah ada di memori, jadi tidak perlu request tambahan.
 function TrendBadge({ change }: { change: number | null }) {
   if (change === null || !isFinite(change)) return null;
   const isUp = change >= 0;
@@ -79,8 +79,8 @@ function TrendBadge({ change }: { change: number | null }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 text-xs font-medium mt-1",
-        isUp ? "text-emerald-600" : "text-red-500"
+        "inline-flex items-center gap-1 text-[11px] font-semibold mt-1 px-1.5 py-0.5 rounded-md",
+        isUp ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-600"
       )}
     >
       <Icon size={12} />
@@ -92,14 +92,11 @@ function TrendBadge({ change }: { change: number | null }) {
 export default function ReportsPage() {
   const router = useRouter();
 
-  // Loading dipecah jadi 3 supaya interaksi (ganti tahun / refresh) tidak
-  // memblokir seluruh halaman dengan skeleton besar seperti sebelumnya.
   const [initialLoading, setInitialLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [monthlyLoading, setMonthlyLoading] = useState(false);
 
   const [stats, setStats] = useState<any>(null);
-  const [statusData, setStatusData] = useState<any[]>([]);
   const [typeData, setTypeData] = useState<any[]>([]);
   const [monthlyData, setMonthlyData] = useState<any[]>([]);
   const [agentData, setAgentData] = useState<any[]>([]);
@@ -114,14 +111,10 @@ export default function ReportsPage() {
     };
   }, []);
 
-  // ===== DATA YANG TIDAK BERGANTUNG PADA TAHUN =====
-  // Dulu, SEMUA data (termasuk yang tidak terkait tahun) ditarik ulang
-  // setiap kali user ganti dropdown tahun. Itu penyebab utama halaman
-  // terasa berat. Sekarang data ini hanya diambil sekali saat halaman dibuka.
+  // Fetch Static Data (Main Stats, Agent Performance, Top Locations, Type Dist)
   const fetchStaticData = useCallback(async () => {
-    const [mainStats, statusDist, typeDist, agents, locations] = await Promise.all([
+    const [mainStats, typeDist, agents, locations] = await Promise.all([
       reportService.getMainStats(),
-      reportService.getStatusDistribution(),
       reportService.getTypeDistribution(),
       reportService.getAgentPerformance(),
       reportService.getTopLocations(6),
@@ -129,20 +122,18 @@ export default function ReportsPage() {
 
     if (!isMounted.current) return;
     setStats(mainStats);
-    setStatusData(statusDist);
     setTypeData(typeDist);
     setAgentData(agents);
     setLocationData(locations);
   }, []);
 
-  // ===== DATA BULANAN (satu-satunya yang bergantung pada tahun) =====
+  // Fetch Monthly Data
   const fetchMonthlyData = useCallback(async (year: number) => {
     const monthly = await reportService.getMonthlyStats(year);
     if (!isMounted.current) return;
     setMonthlyData(monthly);
   }, []);
 
-  // Load pertama kali saat halaman dibuka
   useEffect(() => {
     (async () => {
       try {
@@ -154,12 +145,10 @@ export default function ReportsPage() {
         if (isMounted.current) setInitialLoading(false);
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [fetchStaticData, fetchMonthlyData, selectedYear]);
 
-  // Ganti tahun -> hanya tarik ulang grafik bulanan, bukan seluruh halaman
   useEffect(() => {
-    if (initialLoading) return; // sudah ditangani di load pertama di atas
+    if (initialLoading) return;
     setMonthlyLoading(true);
     fetchMonthlyData(selectedYear)
       .catch((error: any) => {
@@ -169,10 +158,8 @@ export default function ReportsPage() {
       .finally(() => {
         if (isMounted.current) setMonthlyLoading(false);
       });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedYear]);
+  }, [selectedYear, initialLoading, fetchMonthlyData]);
 
-  // Refresh manual: tarik ulang semua data tanpa menutupi halaman dengan skeleton penuh
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
@@ -186,7 +173,6 @@ export default function ReportsPage() {
     }
   };
 
-  // ===== TREN BULANAN, dihitung dari data yang sudah ada (tanpa request baru) =====
   const createdTrend = useMemo(() => {
     if (monthlyData.length < 2) return null;
     const current = monthlyData[monthlyData.length - 1]?.created ?? 0;
@@ -203,27 +189,29 @@ export default function ReportsPage() {
     return ((current - previous) / previous) * 100;
   }, [monthlyData]);
 
-  // ===== EXPORT LAPORAN =====
+  // Total Nilai Properti di Lokasi Teratas
+  const totalLocationProperties = useMemo(() => {
+    return locationData.reduce((acc, curr) => acc + (curr.count || 0), 0);
+  }, [locationData]);
+
   const handleExport = () => {
     const csvData = [
-      ["Metrik", "Nilai"],
-      ["Total Properti", stats?.totalProperties || 0],
+      ["Metrik Laporan Eksekutif", "Nilai"],
+      ["Total Portofolio Properti", stats?.totalProperties || 0],
       ["Listing Aktif", stats?.totalActive || 0],
       ["Properti Terjual", stats?.totalSold || 0],
       ["Properti Disewa", stats?.totalRented || 0],
-      ["Properti Draf", stats?.totalDraft || 0],
-      ["Properti Diarsipkan", stats?.totalArchived || 0],
-      ["Harga Rata-rata", stats?.averagePrice || 0],
-      ["Total Pendapatan", stats?.totalRevenue || 0],
+      ["Harga Rata-rata Properti", stats?.averagePrice || 0],
+      ["Total Omset Transaksi", stats?.totalRevenue || 0],
+      ["Estimasi Komisi Kantor (2.5%)", (stats?.totalRevenue || 0) * 0.025],
     ];
 
     const csvContent = csvData.map((row) => row.join(",")).join("\n");
-    // Prefix BOM supaya karakter non-ASCII tampil benar saat dibuka di Excel
     const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `laporan-${new Date().toISOString().split("T")[0]}.csv`;
+    a.download = `laporan-kinerja-inland-${new Date().toISOString().split("T")[0]}.csv`;
     a.click();
     window.URL.revokeObjectURL(url);
     toast.success("Laporan berhasil diekspor!");
@@ -231,8 +219,8 @@ export default function ReportsPage() {
 
   if (initialLoading) {
     return (
-      <div className="space-y-6">
-        <Skeleton className="h-24 w-full rounded-2xl" />
+      <div className="space-y-6 max-w-7xl mx-auto px-4 sm:px-6 py-4">
+        <Skeleton className="h-28 w-full rounded-2xl" />
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[...Array(4)].map((_, i) => (
             <Skeleton key={i} className="h-28 rounded-xl" />
@@ -242,336 +230,377 @@ export default function ReportsPage() {
           <Skeleton className="h-80 rounded-xl" />
           <Skeleton className="h-80 rounded-xl" />
         </div>
-        <Skeleton className="h-80 rounded-xl" />
       </div>
     );
   }
 
   return (
-    <div className={cn("space-y-6 transition-opacity", refreshing && "opacity-60 pointer-events-none")}>
-      {/* HEADER */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-blue-600 via-purple-600 to-pink-500 p-6 text-white shadow-lg">
-        <div className="absolute -right-12 -top-12 h-48 w-48 rounded-full bg-white/10 blur-3xl" />
-        <div className="absolute -bottom-16 -left-16 h-48 w-48 rounded-full bg-white/10 blur-3xl" />
+    <div className={cn("space-y-6 max-w-7xl mx-auto px-4 sm:px-6 py-4 pb-16 transition-opacity", refreshing && "opacity-60 pointer-events-none")}>
+      
+      {/* 1. HEADER HALAMAN */}
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-emerald-700 via-teal-700 to-slate-900 p-6 text-white shadow-md border border-emerald-600/30">
+        <div className="absolute -right-12 -top-12 h-48 w-48 rounded-full bg-white/10 blur-3xl pointer-events-none" />
         <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             <Button
               variant="ghost"
               size="icon"
               onClick={() => router.back()}
-              className="h-10 w-10 text-white hover:bg-white/20"
+              className="h-9 w-9 text-white hover:bg-white/20 rounded-xl cursor-pointer"
             >
-              <ArrowLeft size={22} />
+              <ArrowLeft size={20} />
             </Button>
             <div>
-              <h1 className="text-2xl font-bold tracking-tight">📊 Laporan & Statistik</h1>
-              <p className="text-sm text-white/80">Analisis data properti secara lengkap</p>
+              <div className="flex items-center gap-2">
+                <h1 className="text-xl sm:text-2xl font-bold tracking-tight">📊 Analitik & Laporan Performa</h1>
+                <Badge className="bg-emerald-500/30 text-white border-0 text-[10px] font-semibold">
+                  Real-Time
+                </Badge>
+              </div>
+              <p className="text-xs text-emerald-100/80 mt-0.5">
+                Ringkasan performa penjualan, persebaran lokasi, dan efektivitas agen
+              </p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+
+          <div className="flex items-center gap-2 flex-wrap">
             <Select
               value={selectedYear.toString()}
               onValueChange={(val) => setSelectedYear(parseInt(val || "0"))}
             >
-              <SelectTrigger className="w-[120px] bg-white/20 text-white border-0">
+              <SelectTrigger className="w-[110px] bg-white/15 text-white border-white/20 h-9 text-xs rounded-xl focus:ring-0">
                 <SelectValue placeholder="Tahun" />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent className="rounded-xl">
                 {YEAR_OPTIONS.map((year) => (
-                  <SelectItem key={year} value={year.toString()}>
-                    {year}
+                  <SelectItem key={year} value={year.toString()} className="text-xs font-semibold">
+                    Tahun {year}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+
             <Button
               variant="secondary"
               size="sm"
               onClick={handleExport}
-              className="bg-white/20 text-white hover:bg-white/30"
+              className="bg-white/15 text-white hover:bg-white/25 h-9 text-xs font-semibold rounded-xl border border-white/20 gap-1.5 cursor-pointer"
             >
-              <Download size={16} className="mr-2" />
+              <Download size={14} />
               Ekspor CSV
             </Button>
+
             <Button
               variant="secondary"
               size="sm"
               onClick={handleRefresh}
               disabled={refreshing}
-              className="bg-white/20 text-white hover:bg-white/30"
+              className="bg-white/15 text-white hover:bg-white/25 h-9 text-xs font-semibold rounded-xl border border-white/20 gap-1.5 cursor-pointer"
             >
-              <RefreshCw size={16} className={cn("mr-2", refreshing && "animate-spin")} />
-              {refreshing ? "Memperbarui..." : "Segarkan"}
+              <RefreshCw size={14} className={cn(refreshing && "animate-spin")} />
+              {refreshing ? "Memuat..." : "Segarkan"}
             </Button>
           </div>
         </div>
       </div>
 
-      {/* KARTU STATISTIK UTAMA */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card className="border-0 shadow-sm ring-1 ring-slate-100">
-          <CardContent className="p-4">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-xs font-medium text-slate-500">Total Properti</p>
-                <p className="text-2xl font-bold text-slate-800">{formatNumber(stats?.totalProperties)}</p>
-                <TrendBadge change={createdTrend} />
-              </div>
-              <div className="rounded-full bg-blue-50 p-2.5 text-blue-500">
-                <Home size={18} />
+      {/* 2. RINGKASAN METRIK UTAMA (KPI CARDS) */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
+        <Card className="border border-[#F4EFE6] bg-white shadow-2xs rounded-2xl">
+          <CardContent className="p-4 space-y-1">
+            <div className="flex items-center justify-between text-slate-500">
+              <span className="text-xs font-semibold">Total Portofolio</span>
+              <div className="p-2 bg-emerald-50 rounded-xl text-emerald-600">
+                <Home size={16} />
               </div>
             </div>
+            <p className="text-xl sm:text-2xl font-bold text-slate-900">{formatNumber(stats?.totalProperties)} Unit</p>
+            <TrendBadge change={createdTrend} />
           </CardContent>
         </Card>
-        <Card className="border-0 shadow-sm ring-1 ring-slate-100">
-          <CardContent className="p-4">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-xs font-medium text-slate-500">Listing Aktif</p>
-                <p className="text-2xl font-bold text-emerald-600">{formatNumber(stats?.totalActive)}</p>
-              </div>
-              <div className="rounded-full bg-emerald-50 p-2.5 text-emerald-500">
-                <Building2 size={18} />
+
+        <Card className="border border-[#F4EFE6] bg-white shadow-2xs rounded-2xl">
+          <CardContent className="p-4 space-y-1">
+            <div className="flex items-center justify-between text-slate-500">
+              <span className="text-xs font-semibold">Listing Aktif</span>
+              <div className="p-2 bg-blue-50 rounded-xl text-blue-600">
+                <Building2 size={16} />
               </div>
             </div>
+            <p className="text-xl sm:text-2xl font-bold text-blue-600">{formatNumber(stats?.totalActive)} Unit</p>
+            <p className="text-[10px] text-slate-400 font-medium pt-1">Siap dipasarkan</p>
           </CardContent>
         </Card>
-        <Card className="border-0 shadow-sm ring-1 ring-slate-100">
-          <CardContent className="p-4">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-xs font-medium text-slate-500">Terjual / Disewa</p>
-                <p className="text-2xl font-bold text-amber-600">
-                  {formatNumber((stats?.totalSold || 0) + (stats?.totalRented || 0))}
-                </p>
-                <TrendBadge change={soldTrend} />
-              </div>
-              <div className="rounded-full bg-amber-50 p-2.5 text-amber-500">
-                <TrendingUp size={18} />
+
+        <Card className="border border-[#F4EFE6] bg-white shadow-2xs rounded-2xl">
+          <CardContent className="p-4 space-y-1">
+            <div className="flex items-center justify-between text-slate-500">
+              <span className="text-xs font-semibold">Terjual & Disewa</span>
+              <div className="p-2 bg-amber-50 rounded-xl text-amber-600">
+                <CheckCircle2 size={16} />
               </div>
             </div>
+            <p className="text-xl sm:text-2xl font-bold text-amber-600">
+              {formatNumber((stats?.totalSold || 0) + (stats?.totalRented || 0))} Unit
+            </p>
+            <TrendBadge change={soldTrend} />
           </CardContent>
         </Card>
-        <Card className="border-0 shadow-sm ring-1 ring-slate-100">
-          <CardContent className="p-4">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-xs font-medium text-slate-500">Total Pendapatan</p>
-                <p className="text-2xl font-bold text-purple-600">{formatCurrency(stats?.totalRevenue)}</p>
-              </div>
-              <div className="rounded-full bg-purple-50 p-2.5 text-purple-500">
-                <DollarSign size={18} />
+
+        <Card className="border border-[#F4EFE6] bg-white shadow-2xs rounded-2xl">
+          <CardContent className="p-4 space-y-1">
+            <div className="flex items-center justify-between text-slate-500">
+              <span className="text-xs font-semibold">Gross Sales Revenue</span>
+              <div className="p-2 bg-purple-50 rounded-xl text-purple-600">
+                <DollarSign size={16} />
               </div>
             </div>
+            <p className="text-lg sm:text-xl font-extrabold text-purple-700 truncate">
+              {formatCurrency(stats?.totalRevenue)}
+            </p>
+            <p className="text-[10px] text-emerald-600 font-bold">
+              Est. Komisi (2.5%): {formatCurrency((stats?.totalRevenue || 0) * 0.025)}
+            </p>
           </CardContent>
         </Card>
       </div>
 
-      {/* KARTU STATISTIK SEKUNDER */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-        <Card className="shadow-sm ring-1 ring-slate-100 border-0">
-          <CardContent className="p-4">
-            <p className="text-xs font-medium text-slate-500">Harga Rata-rata</p>
-            <p className="text-lg font-bold text-slate-800">{formatCurrency(stats?.averagePrice)}</p>
-          </CardContent>
-        </Card>
-        <Card className="shadow-sm ring-1 ring-slate-100 border-0">
-          <CardContent className="p-4">
-            <p className="text-xs font-medium text-slate-500">Draf</p>
-            <p className="text-lg font-bold text-slate-800">{formatNumber(stats?.totalDraft)}</p>
-          </CardContent>
-        </Card>
-        <Card className="shadow-sm ring-1 ring-slate-100 border-0">
-          <CardContent className="p-4">
-            <p className="text-xs font-medium text-slate-500">Diarsipkan</p>
-            <p className="text-lg font-bold text-slate-800">{formatNumber(stats?.totalArchived)}</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* GRAFIK DISTRIBUSI */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card className="border-0 shadow-md">
-          <CardHeader className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-t-xl">
-            <CardTitle className="text-base flex items-center gap-2 text-slate-700">
-              <FileBarChart size={18} className="text-blue-500" />
-              Distribusi Status
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-6">
-            {statusData.length === 0 ? (
-              <p className="text-center text-slate-400 py-16">Belum ada data status</p>
-            ) : (
-              <div className="h-[280px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={statusData}
-                      dataKey="count"
-                      nameKey="status"
-                      cx="50%"
-                      cy="50%"
-                      outerRadius={80}
-                      label={({ name, percent }) => `${name}: ${((percent ?? 0) * 100).toFixed(0)}%`}
-                    >
-                      {statusData.map((entry, index) => (
-                        <Cell key={entry.status} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip formatter={(value) => `${value} properti`} />
-                    <Legend />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="border-0 shadow-md">
-          <CardHeader className="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-t-xl">
-            <CardTitle className="text-base flex items-center gap-2 text-slate-700">
-              <Building2 size={18} className="text-emerald-500" />
-              Tipe Properti
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-6">
-            {typeData.length === 0 ? (
-              <p className="text-center text-slate-400 py-16">Belum ada data tipe</p>
-            ) : (
-              <div className="h-[280px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={typeData}
-                      dataKey="count"
-                      nameKey="type"
-                      cx="50%"
-                      cy="50%"
-                      outerRadius={80}
-                      label={({ name, percent }) => `${name}: ${((percent ?? 0) * 100).toFixed(0)}%`}
-                    >
-                      {typeData.map((entry, index) => (
-                        <Cell key={entry.type} fill={COLORS[(index + 2) % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip formatter={(value) => `${value} properti`} />
-                    <Legend />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* TREN BULANAN */}
-      <Card className="border-0 shadow-md">
-        <CardHeader className="bg-gradient-to-r from-amber-50 to-orange-50 rounded-t-xl">
-          <CardTitle className="text-base flex items-center gap-2 text-slate-700">
-            <TrendingUp size={18} className="text-amber-500" />
-            Tren Bulanan ({selectedYear})
+      {/* 3. TREN PENJUALAN BULANAN */}
+      <Card className="border border-[#F4EFE6] bg-white shadow-2xs rounded-2xl overflow-hidden">
+        <CardHeader className="p-4 border-b border-[#F4EFE6] bg-slate-50/50 flex flex-row items-center justify-between">
+          <CardTitle className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-2">
+            <BarChart3 size={16} className="text-emerald-600" />
+            Tren Aktivitas Penjualan vs Listing Baru ({selectedYear})
           </CardTitle>
+          <Badge variant="outline" className="text-[10px] bg-white border-[#F4EFE6] text-slate-600">
+            Bulanan
+          </Badge>
         </CardHeader>
-        <CardContent className="p-6">
+        <CardContent className="p-4 sm:p-6">
           {monthlyLoading ? (
-            <Skeleton className="h-[300px] w-full rounded-lg" />
+            <Skeleton className="h-[280px] w-full rounded-xl bg-[#F4EFE6]" />
           ) : (
-            <>
-              <div className="h-[300px]">
+            <div className="space-y-3">
+              <div className="h-[280px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <ComposedChart data={monthlyData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-                    <XAxis dataKey="month" tick={{ fill: "#94a3b8", fontSize: 12 }} />
-                    <YAxis tick={{ fill: "#94a3b8", fontSize: 12 }} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                    <XAxis dataKey="month" tick={{ fill: "#64748b", fontSize: 11 }} />
+                    <YAxis tick={{ fill: "#64748b", fontSize: 11 }} />
                     <Tooltip
                       contentStyle={{
                         borderRadius: "12px",
-                        border: "1px solid #e2e8f0",
-                        boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+                        border: "1px solid #f4efe6",
+                        boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
+                        fontSize: "12px",
                       }}
                     />
-                    <Bar dataKey="created" name="Properti Baru" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={28} />
+                    <Bar dataKey="created" name="Listing Baru" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={24} />
                     <Line
                       type="monotone"
                       dataKey="sold"
-                      name="Terjual"
+                      name="Terjual / Disewa"
                       stroke="#10b981"
-                      strokeWidth={2.5}
-                      dot={{ r: 3, fill: "#10b981" }}
+                      strokeWidth={3}
+                      dot={{ r: 4, fill: "#10b981" }}
                     />
                   </ComposedChart>
                 </ResponsiveContainer>
               </div>
-              <div className="text-center text-xs text-slate-400 mt-2">
-                🔵 Properti Baru &nbsp;|&nbsp; 🟢 Terjual
+              <div className="flex items-center justify-center gap-6 text-xs text-slate-500 font-medium pt-2">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-3 h-3 rounded-xs bg-blue-500 inline-block" /> Listing Baru Ditambahkan
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="w-3 h-3 rounded-full bg-emerald-500 inline-block" /> Unit Closing (Terjual/Sewa)
+                </span>
               </div>
-            </>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* PERFORMA AGEN */}
-      <Card className="border-0 shadow-md">
-        <CardHeader className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-t-xl">
-          <CardTitle className="text-base flex items-center gap-2 text-slate-700">
-            <Users size={18} className="text-purple-500" />
-            Performa Agen
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-6">
-          {agentData.length === 0 ? (
-            <p className="text-center text-slate-400 py-8">Belum ada data agen</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-slate-50">
-                  <tr>
-                    <th className="text-left p-2 font-semibold text-slate-600">Agen</th>
-                    <th className="text-center p-2 font-semibold text-slate-600">Total Properti</th>
-                    <th className="text-center p-2 font-semibold text-slate-600">Terjual</th>
-                    <th className="text-right p-2 font-semibold text-slate-600">Pendapatan</th>
-                    <th className="text-right p-2 font-semibold text-slate-600">Komisi (2.5%)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {agentData.map((agent, index) => (
-                    <tr key={agent.agent_id} className={index % 2 === 0 ? "bg-white" : "bg-slate-50/50"}>
-                      <td className="p-2 font-medium text-slate-700">{agent.agent_name}</td>
-                      <td className="text-center p-2 text-slate-600">{agent.total_properties}</td>
-                      <td className="text-center p-2 text-slate-600">{agent.total_sold}</td>
-                      <td className="text-right p-2 text-slate-600">{formatCurrency(agent.total_revenue)}</td>
-                      <td className="text-right p-2 font-medium text-emerald-600">{formatCurrency(agent.commission)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
             </div>
           )}
         </CardContent>
       </Card>
 
-      {/* LOKASI TERATAS */}
-      <Card className="border-0 shadow-md">
-        <CardHeader className="bg-gradient-to-r from-cyan-50 to-sky-50 rounded-t-xl">
-          <CardTitle className="text-base flex items-center gap-2 text-slate-700">
-            <MapPin size={18} className="text-cyan-500" />
-            Lokasi Teratas
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-6">
-          {locationData.length === 0 ? (
-            <p className="text-center text-slate-400 py-8">Belum ada data lokasi</p>
-          ) : (
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-              {locationData.map((loc, index) => (
-                <div
-                  key={index}
-                  className="flex items-center justify-between p-3 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors"
-                >
-                  <span className="font-medium text-slate-700">{loc.name}</span>
-                  <Badge variant="secondary">{loc.count} properti</Badge>
+      {/* 4. GRID DUA KOLOM: LOKASI TERATAS & TIPE PROPERTI */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        {/* 📍 LOKASI TERATAS (HOTSPOT WILAYAH) */}
+        <Card className="lg:col-span-7 border border-[#F4EFE6] bg-white shadow-2xs rounded-2xl flex flex-col justify-between">
+          <div>
+            <CardHeader className="p-4 border-b border-[#F4EFE6] bg-slate-50/50 flex flex-row items-center justify-between">
+              <CardTitle className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-2">
+                <MapPin size={16} className="text-emerald-600" />
+                Lokasi Teratas (Hotspot Wilayah)
+              </CardTitle>
+              <Badge variant="outline" className="text-[9px] bg-emerald-50 text-emerald-700 border-emerald-200">
+                Pusat Inventory
+              </Badge>
+            </CardHeader>
+            <CardContent className="p-4 sm:p-5 space-y-3.5">
+              {locationData.length === 0 ? (
+                <p className="text-center text-slate-400 py-10 text-xs">Belum ada data lokasi terdaftar.</p>
+              ) : (
+                locationData.map((loc, index) => {
+                  const percentage = totalLocationProperties > 0 
+                    ? Math.round((loc.count / totalLocationProperties) * 100) 
+                    : 0;
+
+                  return (
+                    <div key={index} className="space-y-1.5">
+                      <div className="flex items-center justify-between text-xs font-medium">
+                        <span className="text-slate-800 font-bold flex items-center gap-1.5">
+                          <span className="w-4 text-slate-400 text-[10px]">#{index + 1}</span>
+                          {loc.name || "Lokasi Lainnya"}
+                        </span>
+                        <div className="flex items-center gap-2 text-slate-600 text-[11px]">
+                          <span className="font-bold text-emerald-600">{loc.count} Unit</span>
+                          <span className="text-slate-400 text-[10px]">({percentage}%)</span>
+                        </div>
+                      </div>
+                      
+                      {/* Visual Progress Bar */}
+                      <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                        <div
+                          className="bg-emerald-600 h-full rounded-full transition-all duration-500"
+                          style={{ width: `${Math.max(percentage, 5)}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </CardContent>
+          </div>
+          <div className="p-3.5 bg-slate-50/80 border-t border-[#F4EFE6] rounded-b-2xl">
+            <p className="text-[10px] text-slate-500 font-medium text-center">
+              💡 Wilayah dengan persentase tertinggi merupakan prioritas pemasaran dan kampanye iklan.
+            </p>
+          </div>
+        </Card>
+
+        {/* 🏢 DISTRIBUSI TIPE PROPERTI */}
+        <Card className="lg:col-span-5 border border-[#F4EFE6] bg-white shadow-2xs rounded-2xl flex flex-col justify-between">
+          <div>
+            <CardHeader className="p-4 border-b border-[#F4EFE6] bg-slate-50/50 flex flex-row items-center justify-between">
+              <CardTitle className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-2">
+                <PieIcon size={16} className="text-emerald-600" />
+                Komposisi Tipe Properti
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-4 sm:p-5">
+              {typeData.length === 0 ? (
+                <p className="text-center text-slate-400 py-10 text-xs">Belum ada data tipe properti.</p>
+              ) : (
+                <div className="h-[240px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={typeData}
+                        dataKey="count"
+                        nameKey="type"
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={50}
+                        outerRadius={75}
+                        paddingAngle={3}
+                      >
+                        {typeData.map((entry, index) => (
+                          <Cell key={entry.type} fill={COLORS[index % COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip formatter={(val) => [`${val} Unit`, "Jumlah"]} />
+                      <Legend
+                        verticalAlign="bottom"
+                        height={36}
+                        formatter={(value) => <span className="text-[11px] font-semibold text-slate-700">{value}</span>}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
                 </div>
-              ))}
+              )}
+            </CardContent>
+          </div>
+        </Card>
+      </div>
+
+      {/* 5. LEADERBOARD & PERFORMA AGEN AKTIF */}
+      <Card className="border border-[#F4EFE6] bg-white shadow-2xs rounded-2xl overflow-hidden">
+        <CardHeader className="p-4 border-b border-[#F4EFE6] bg-slate-50/50 flex flex-row items-center justify-between">
+          <CardTitle className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-2">
+            <Trophy size={16} className="text-amber-500" />
+            Papan Peringkat & Performa Agen Aktif
+          </CardTitle>
+          <Badge className="bg-amber-500 text-white border-0 text-[9px] font-bold gap-1">
+            <Award size={12} /> Top Achievers
+          </Badge>
+        </CardHeader>
+        <CardContent className="p-0">
+          {agentData.length === 0 ? (
+            <p className="text-center text-slate-400 py-12 text-xs">Belum ada data pencapaian agen.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-left border-collapse">
+                <thead className="bg-slate-100/70 border-b border-[#F4EFE6] text-slate-600 font-bold uppercase text-[10px]">
+                  <tr>
+                    <th className="p-3 text-center w-12">Rank</th>
+                    <th className="p-3">Nama Agen</th>
+                    <th className="p-3 text-center">Total Listing</th>
+                    <th className="p-3 text-center">Terjual / Sewa</th>
+                    <th className="p-3 text-center">Closing Rate</th>
+                    <th className="p-3 text-right">Gross Revenue</th>
+                    <th className="p-3 text-right">Est. Komisi (2.5%)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#F4EFE6]">
+                  {agentData.map((agent, index) => {
+                    const totalProp = agent.total_properties || 0;
+                    const totalSold = agent.total_sold || 0;
+                    const closingRate = totalProp > 0 ? ((totalSold / totalProp) * 100).toFixed(1) : "0.0";
+
+                    return (
+                      <tr key={agent.agent_id || index} className="hover:bg-slate-50/60 transition-colors">
+                        <td className="p-3 text-center font-bold">
+                          {index === 0 ? (
+                            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-amber-100 text-amber-700 font-bold text-[11px]">
+                              🥇
+                            </span>
+                          ) : index === 1 ? (
+                            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-slate-200 text-slate-700 font-bold text-[11px]">
+                              🥈
+                            </span>
+                          ) : index === 2 ? (
+                            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-amber-800/20 text-amber-900 font-bold text-[11px]">
+                              🥉
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 font-semibold">#{index + 1}</span>
+                          )}
+                        </td>
+                        <td className="p-3 font-bold text-slate-900">
+                          <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-[10px]">
+                              {agent.agent_name?.slice(0, 2)?.toUpperCase() || "AG"}
+                            </div>
+                            <span>{agent.agent_name || "Agen Inland"}</span>
+                          </div>
+                        </td>
+                        <td className="p-3 text-center font-semibold text-slate-700">{totalProp} Unit</td>
+                        <td className="p-3 text-center font-extrabold text-emerald-600">{totalSold} Unit</td>
+                        <td className="p-3 text-center">
+                          <Badge variant="outline" className="text-[10px] font-bold bg-slate-50 text-slate-700 border-slate-200">
+                            {closingRate}%
+                          </Badge>
+                        </td>
+                        <td className="p-3 text-right font-extrabold text-slate-900">
+                          {formatCurrency(agent.total_revenue)}
+                        </td>
+                        <td className="p-3 text-right font-bold text-emerald-600">
+                          {formatCurrency(agent.commission || (agent.total_revenue || 0) * 0.025)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           )}
         </CardContent>

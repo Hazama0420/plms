@@ -3,63 +3,61 @@
 
 import { useState, useEffect, useMemo, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { toast } from "sonner";
-import { supabase } from "@/lib/supabase/client";
 
 import {
   Calculator,
-  Percent,
-  Calendar,
   MessageCircle,
-  FileText,
-  BadgeCheck,
-  TrendingUp,
   Wallet,
-  Building2,
-  RefreshCw,
   Loader2,
   ArrowLeft,
-  Share2,
+  BadgeCheck,
+  Sparkles,
+  Info,
+  ChevronDown,
+  ChevronUp,
+  SlidersHorizontal,
+  HelpCircle,
+  FileCheck2,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
-
-interface PropertyOption {
-  id: string;
-  title: string;
-  price: number;
-  listing_code?: string;
-  address?: any;
-}
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 function KprCalculatorContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const paramPropertyId = searchParams.get("property_id");
   const paramClientName = searchParams.get("client_name");
+  const paramPrice = searchParams.get("price");
 
-  const [propertyPrice, setPropertyPrice] = useState<number>(1000000000);
+  // State Utama KPR
+  const [propertyPrice, setPropertyPrice] = useState<number>(
+    paramPrice ? Number(paramPrice) || 1000000000 : 1000000000
+  );
   const [dpPercentage, setDpPercentage] = useState<number>(10);
+  const [dpNominalInput, setDpNominalInput] = useState<number>(100000000);
+  const [isCustomDpNominal, setIsCustomDpNominal] = useState<boolean>(false);
+  
   const [tenureYears, setTenureYears] = useState<number>(15);
   const [clientName, setClientName] = useState<string>("");
 
+  // State Bunga & Akad
   const [fixedRate, setFixedRate] = useState<number>(6.5);
   const [fixedYears, setFixedYears] = useState<number>(3);
   const [floatingRate, setFloatingRate] = useState<number>(11.5);
   const [includeBphtb, setIncludeBphtb] = useState<boolean>(true);
 
-  const [properties, setProperties] = useState<PropertyOption[]>([]);
-  const [selectedPropertyId, setSelectedPropertyId] = useState<string>("custom");
-  const [loadingProperties, setLoadingProperties] = useState(true);
+  // Toggle Opsi Lanjutan
+  const [showAdvanced, setShowAdvanced] = useState<boolean>(false);
 
   useEffect(() => {
     if (paramClientName) {
@@ -67,50 +65,36 @@ function KprCalculatorContent() {
     }
   }, [paramClientName]);
 
+  // Sync DP Nominal ketika Harga Properti / DP Persen Berubah
   useEffect(() => {
-    async function fetchProperties() {
-      setLoadingProperties(true);
-      try {
-        const { data, error } = await supabase
-          .from("properties")
-          .select("id, title, price, listing_code, address")
-          .order("created_at", { ascending: false });
-
-        if (!error && data) {
-          setProperties(data);
-          if (paramPropertyId) {
-            const targetProp = data.find((p) => p.id === paramPropertyId);
-            if (targetProp) {
-              setSelectedPropertyId(targetProp.id);
-              if (targetProp.price) {
-                setPropertyPrice(targetProp.price);
-              }
-            }
-          }
-        }
-      } catch (err) {
-        console.error("Gagal mengambil listing properti:", err);
-      } finally {
-        setLoadingProperties(false);
-      }
+    if (!isCustomDpNominal) {
+      setDpNominalInput(Math.round((propertyPrice * dpPercentage) / 100));
     }
-    fetchProperties();
-  }, [paramPropertyId]);
+  }, [propertyPrice, dpPercentage, isCustomDpNominal]);
 
-  // ✅ FIX: handler menerima string | null
-  const handleSelectProperty = (value: string | null) => {
-    const id = value || "custom";
-    setSelectedPropertyId(id);
-    if (id === "custom") return;
-    const prop = properties.find((p) => p.id === id);
-    if (prop && prop.price) {
-      setPropertyPrice(prop.price);
-      toast.success(`Harga disesuaikan dengan: ${prop.title}`);
+  // Handler Custom Input Nominal DP (Rp)
+  const handleDpNominalChange = (val: number) => {
+    setDpNominalInput(val);
+    setIsCustomDpNominal(true);
+    if (propertyPrice > 0) {
+      const pct = (val / propertyPrice) * 100;
+      setDpPercentage(Number(pct.toFixed(1)));
     }
   };
 
+  // Handler Custom Input Persen DP (%)
+  const handleDpPercentageChange = (pct: number) => {
+    setDpPercentage(pct);
+    setIsCustomDpNominal(false);
+    setDpNominalInput(Math.round((propertyPrice * pct) / 100));
+  };
+
+  // Kalkulasi Simulasi KPR
   const calculations = useMemo(() => {
-    const dpNominal = Math.round((propertyPrice * dpPercentage) / 100);
+    const dpNominal = isCustomDpNominal 
+      ? dpNominalInput 
+      : Math.round((propertyPrice * dpPercentage) / 100);
+
     const loanPrincipal = Math.max(0, propertyPrice - dpNominal);
 
     const monthlyRateFixed = fixedRate / 100 / 12;
@@ -145,11 +129,10 @@ function KprCalculatorContent() {
     }
 
     const requiredIncomeFixed = Math.round(installmentFixed / 0.35);
-    const requiredIncomeFloating = Math.round(installmentFloating / 0.35);
 
     const provisiFee = Math.round(loanPrincipal * 0.01);
     const adminFee = 1500000;
-    const appraisalFee = selectedPropertyId === "custom" ? 1250000 : 0;
+    const appraisalFee = 1250000;
     const notaryFee = Math.round(propertyPrice * 0.01);
     const insuranceFee = Math.round(loanPrincipal * 0.012);
 
@@ -193,7 +176,6 @@ function KprCalculatorContent() {
       installmentFixed,
       installmentFloating,
       requiredIncomeFixed,
-      requiredIncomeFloating,
       totalMonths,
       provisiFee,
       adminFee,
@@ -208,12 +190,13 @@ function KprCalculatorContent() {
   }, [
     propertyPrice,
     dpPercentage,
+    dpNominalInput,
+    isCustomDpNominal,
     fixedRate,
     fixedYears,
     floatingRate,
     tenureYears,
     includeBphtb,
-    selectedPropertyId,
   ]);
 
   const formatCurrency = (val: number) => {
@@ -225,425 +208,464 @@ function KprCalculatorContent() {
   };
 
   const handleShareWhatsApp = () => {
-    const selectedProp = properties.find((p) => p.id === selectedPropertyId);
-    const propTitle = selectedProp ? selectedProp.title : "Properti Pilihan";
-
     const text = encodeURIComponent(
-      `🏡 *SIMULASI ANGSURAN KPR - INLAND PROPERTY*\n` +
+      `🏡 *SIMULASI KPR INLAND PROPERTY*\n` +
       `-----------------------------------------\n` +
       (clientName ? `Yth. Bpk/Ibu *${clientName}*,\n\n` : "") +
-      `Berikut rincian simulasi KPR Perbankan untuk *${propTitle}*:\n\n` +
-      `💰 *Harga Properti*: ${formatCurrency(propertyPrice)}\n` +
-      `💵 *Uang Muka (DP ${dpPercentage}%)*: ${formatCurrency(calculations.dpNominal)}\n` +
-      `🏦 *Plafon KPR*: ${formatCurrency(calculations.loanPrincipal)}\n\n` +
-      `📊 *SKEMA ANGSURAN PERBANKAN*\n` +
-      `• *Bunga Fixed (${fixedYears} Thn Pertama - ${fixedRate}%)*: *${formatCurrency(calculations.installmentFixed)}/bln*\n` +
-      `• *Bunga Floating (Thn Ke-${fixedYears + 1} dst - ${floatingRate}%)*: *${formatCurrency(calculations.installmentFloating)}/bln*\n` +
-      `• Tenor KPR: ${tenureYears} Tahun (${calculations.totalMonths} Bulan)\n\n` +
-      `💡 *ESTIMASI GAJI MINIMUM (DSR 35%)*\n` +
-      `• Penghasilan Bulanan Diperlukan: *${formatCurrency(calculations.requiredIncomeFixed)}/bln*\n\n` +
-      `📑 *ESTIMASI DANA AWAL (DP + AKAD & PAJAK)*\n` +
-      `• DP Properti: ${formatCurrency(calculations.dpNominal)}\n` +
-      `• Biaya Akad Bank & Legalitas: ${formatCurrency(calculations.totalBiayaAkad - calculations.bphtbTax)}\n` +
-      (includeBphtb ? `• Est. Pajak BPHTB (5%): ${formatCurrency(calculations.bphtbTax)}\n` : "") +
-      `👉 *TOTAL DANA AWAL DISIAPKAN*: *${formatCurrency(calculations.totalUangAwal)}*\n\n` +
-      `Hubungi Tim Agen *Inland Property* untuk bantuan proses pengajuan KPR!`
+      `Rincian simulasi KPR Properti:\n\n` +
+      `💵 *Harga Properti*: ${formatCurrency(propertyPrice)}\n` +
+      `💳 *Uang Muka (DP ${dpPercentage}%)*: ${formatCurrency(calculations.dpNominal)}\n` +
+      `🏦 *Plafon Pinjaman KPR*: ${formatCurrency(calculations.loanPrincipal)}\n\n` +
+      `📌 *ESTIMASI ANGSURAN*\n` +
+      `• *Cicilan Promo (${fixedYears} Thn Pertama)*: *${formatCurrency(calculations.installmentFixed)}/bulan*\n` +
+      `• *Cicilan Setelah Promo (Est. Floating)*: *${formatCurrency(calculations.installmentFloating)}/bulan*\n` +
+      `• Jangka Waktu (Tenor): ${tenureYears} Tahun\n\n` +
+      `💡 *REKOMENDASI GAJI MINIMUM*: *${formatCurrency(calculations.requiredIncomeFixed)}/bulan*\n` +
+      `📑 *ESTIMASI DANA AWAL (DP + AKAD & PAJAK)*: *${formatCurrency(calculations.totalUangAwal)}*\n\n` +
+      `*Catatan:* Hasil dari perhitungan simulasi KPR ini hanya merupakan perkiraan saja. Untuk perhitungan tepatnya, pihak bank akan memberikan ilustrasi angsuran Anda.\n\n` +
+      `Hubungi Tim Agen *Inland Property* untuk pendampingan pengajuan KPR!`
     );
 
     window.open(`https://wa.me/?text=${text}`, "_blank");
   };
 
   return (
-    <div className="space-y-6 pb-16">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-200/80 dark:border-slate-800 pb-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
-            🧮 Kalkulator KPR Perbankan Indonesia
-          </h1>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Perhitungan akurat Bunga Fixed/Floating, DSR kelayakan gaji pembeli, dan rincian biaya akad
-          </p>
+    <TooltipProvider>
+      <div className="space-y-6 pb-20 max-w-6xl mx-auto">
+        {/* HEADER BAR */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-border/60 pb-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="p-2 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                <Calculator className="w-5 h-5" />
+              </span>
+              <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-foreground">
+                Kalkulator KPR
+              </h1>
+              <Badge className="bg-emerald-600/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20 text-[10px] font-semibold">
+                Simulasi Instan
+              </Badge>
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Hitung estimasi cicilan bulanan, syarat gaji, dan persediaan modal awal secara cepat & transparan.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2.5 shrink-0">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => router.back()}
+              className="text-xs h-9 rounded-xl border-border/80 cursor-pointer"
+            >
+              <ArrowLeft className="w-3.5 h-3.5 mr-1" /> Kembali
+            </Button>
+
+            <Button
+              onClick={handleShareWhatsApp}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-9 rounded-xl px-4 gap-1.5 shadow-md shadow-emerald-600/20 font-bold cursor-pointer"
+            >
+              <MessageCircle className="w-4 h-4 fill-white text-emerald-600" /> Share via WA
+            </Button>
+          </div>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => router.back()}
-            className="text-xs h-9 gap-1"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" /> Kembali
-          </Button>
+        {/* UTAMA GRID 2 KOLOM */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          
+          {/* KOLOM KIRI: INPUT PARAMETER */}
+          <div className="lg:col-span-5 space-y-4">
+            <Card className="border border-border/70 shadow-xs rounded-2xl bg-card overflow-hidden">
+              <CardHeader className="p-4 pb-3 border-b border-border/50 bg-gradient-to-r from-emerald-500/5 to-transparent">
+                <CardTitle className="text-xs font-extrabold text-foreground flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <SlidersHorizontal className="w-4 h-4 text-emerald-600" /> Input Data KPR
+                  </span>
+                  <span className="text-[10px] font-normal text-muted-foreground">Parameter Kredit</span>
+                </CardTitle>
+              </CardHeader>
 
-          <Button
-            onClick={handleShareWhatsApp}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-9 gap-1.5 shadow-md shadow-emerald-600/20"
-          >
-            <MessageCircle className="w-4 h-4" /> Kirim Simulasi WA
-          </Button>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* FORM PARAMETER */}
-        <Card className="lg:col-span-5 border shadow-xs bg-card">
-          <CardHeader className="p-4 pb-3 border-b">
-            <CardTitle className="text-sm font-bold flex items-center gap-2">
-              <Calculator className="w-4 h-4 text-emerald-600" /> Parameter Kredit Properti
-            </CardTitle>
-            <CardDescription className="text-xs">
-              Ubah harga, skema bunga fixed & floating, serta jangka waktu KPR
-            </CardDescription>
-          </CardHeader>
-
-          <CardContent className="p-4 space-y-4 text-xs">
-            <div className="space-y-1">
-              <Label className="text-xs font-semibold">Nama Calon Pembeli (Opsional)</Label>
-              <Input
-                placeholder="Contoh: Bpk. Handy Kurniawan"
-                value={clientName}
-                onChange={(e) => setClientName(e.target.value)}
-                className="h-9 text-xs focus-visible:ring-emerald-500"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <div className="flex justify-between items-center">
-                <Label className="text-xs font-semibold">Listing Properti</Label>
-                {loadingProperties && <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-600" />}
-              </div>
-              {/* ✅ FIX: onValueChange langsung ke handler */}
-              <Select value={selectedPropertyId} onValueChange={handleSelectProperty}>
-                <SelectTrigger className="h-9 text-xs">
-                  <SelectValue placeholder="Pilih dari database..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="custom" className="text-xs font-medium">
-                    -- Input Harga Manual --
-                  </SelectItem>
-                  {properties.map((p) => (
-                    <SelectItem key={p.id} value={p.id} className="text-xs">
-                      {p.title} ({formatCurrency(p.price)})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-1">
-              <div className="flex justify-between items-center">
-                <Label className="text-xs font-semibold">Harga Properti (Rp)</Label>
-                <span className="font-mono font-bold text-emerald-600 text-xs">
-                  {formatCurrency(propertyPrice)}
-                </span>
-              </div>
-              <Input
-                type="number"
-                value={propertyPrice}
-                onChange={(e) => setPropertyPrice(Number(e.target.value))}
-                className="h-9 text-xs font-mono"
-                step={25000000}
-              />
-            </div>
-
-            <div className="space-y-1">
-              <div className="flex justify-between items-center">
-                <Label className="text-xs font-semibold">Uang Muka / DP ({dpPercentage}%)</Label>
-                <span className="font-mono text-muted-foreground text-xs">
-                  {formatCurrency(calculations.dpNominal)}
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <input
-                  type="range"
-                  min={0}
-                  max={50}
-                  step={5}
-                  value={dpPercentage}
-                  onChange={(e) => setDpPercentage(Number(e.target.value))}
-                  className="w-full accent-emerald-600 h-2 bg-slate-200 dark:bg-slate-800 rounded-lg cursor-pointer"
-                />
-                <span className="font-mono font-bold w-10 text-right text-xs">{dpPercentage}%</span>
-              </div>
-            </div>
-
-            <div className="p-3 bg-muted/50 rounded-xl space-y-3 border border-border/50">
-              <div className="flex items-center justify-between border-b pb-1.5">
-                <span className="font-bold text-[11px] text-foreground flex items-center gap-1">
-                  <TrendingUp className="w-3.5 h-3.5 text-emerald-600" /> Skema Suku Bunga Bank
-                </span>
-                <Badge variant="outline" className="text-[9px] bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
-                  Fixed & Floating
-                </Badge>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
+              <CardContent className="p-4 space-y-4 text-xs">
+                {/* Nama Pembeli */}
                 <div className="space-y-1">
-                  <Label className="text-[10px]">Bunga Fixed Promo (% p.a)</Label>
+                  <Label className="text-xs font-semibold">Nama Calon Pembeli (Opsional)</Label>
                   <Input
-                    type="number"
-                    step={0.1}
-                    value={fixedRate}
-                    onChange={(e) => setFixedRate(Number(e.target.value))}
-                    className="h-8 text-xs font-mono"
+                    placeholder="Contoh: Bpk. Handy"
+                    value={clientName}
+                    onChange={(e) => setClientName(e.target.value)}
+                    className="h-9 text-xs rounded-xl focus-visible:ring-emerald-500"
                   />
                 </div>
 
-                <div className="space-y-1">
-                  <Label className="text-[10px]">Masa Fixed (Tahun)</Label>
-                  <Select
-                    value={String(fixedYears)}
-                    onValueChange={(v) => setFixedYears(Number(v || 3))}
-                  >
-                    <SelectTrigger className="h-8 text-xs">
-                      <SelectValue placeholder="Masa Fixed" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {[1, 2, 3, 5, 8, 10].map((y) => (
-                        <SelectItem key={y} value={String(y)} className="text-xs">
-                          {y} Tahun
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 pt-1 border-t border-border/30">
-                <div className="space-y-1">
-                  <Label className="text-[10px]">Bunga Floating Est. (% p.a)</Label>
+                {/* Harga Properti */}
+                <div className="space-y-1.5">
+                  <div className="flex justify-between items-center">
+                    <Label className="text-xs font-semibold">Harga Rumah / Properti (Rp)</Label>
+                    <span className="font-mono font-extrabold text-emerald-600 dark:text-emerald-400 text-xs">
+                      {formatCurrency(propertyPrice)}
+                    </span>
+                  </div>
                   <Input
                     type="number"
-                    step={0.1}
-                    value={floatingRate}
-                    onChange={(e) => setFloatingRate(Number(e.target.value))}
-                    className="h-8 text-xs font-mono"
+                    value={propertyPrice}
+                    onChange={(e) => setPropertyPrice(Number(e.target.value))}
+                    className="h-9 text-xs font-mono rounded-xl"
+                    step={10000000}
                   />
+                  {/* Preset Tombol Cepat */}
+                  <div className="flex gap-1.5 pt-1 overflow-x-auto scrollbar-none">
+                    {[500000000, 800000000, 1200000000, 2000000000].map((preset) => (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => {
+                          setPropertyPrice(preset);
+                          setIsCustomDpNominal(false);
+                        }}
+                        className={`text-[10px] px-2 py-0.5 rounded-lg border font-mono transition-all cursor-pointer ${
+                          propertyPrice === preset
+                            ? "bg-emerald-600 text-white border-emerald-600 font-bold"
+                            : "bg-muted/50 hover:bg-muted text-muted-foreground border-border/60"
+                        }`}
+                      >
+                        {preset >= 1000000000 ? `${preset / 1000000000} M` : `${preset / 1000000} Jt`}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
-                <div className="space-y-1">
-                  <Label className="text-[10px]">Tenor KPR (Tahun)</Label>
-                  <Select
-                    value={String(tenureYears)}
-                    onValueChange={(v) => setTenureYears(Number(v || 15))}
-                  >
-                    <SelectTrigger className="h-8 text-xs">
-                      <SelectValue placeholder="Tenor" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {[5, 10, 15, 20, 25, 30].map((yr) => (
-                        <SelectItem key={yr} value={String(yr)} className="text-xs">
-                          {yr} Tahun
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                {/* UANG MUKA (DP) CUSTOMISABLE */}
+                <div className="space-y-2 bg-amber-500/5 dark:bg-amber-500/10 p-3 rounded-xl border border-amber-500/20">
+                  <div className="flex justify-between items-center">
+                    <Label className="text-xs font-semibold flex items-center gap-1">
+                      Uang Muka / DP
+                      <Tooltip>
+                        <TooltipTrigger className="inline-flex items-center cursor-pointer">
+                          <HelpCircle className="w-3 h-3 text-muted-foreground" />
+                        </TooltipTrigger>
+                        <TooltipContent className="text-[11px] max-w-xs">
+                          Pembayaran awal dari total harga rumah yang dibayarkan langsung ke penjual/developer.
+                        </TooltipContent>
+                      </Tooltip>
+                    </Label>
+                    <Badge variant="outline" className="text-[9px] font-mono border-amber-500/30 text-amber-700 dark:text-amber-400 bg-amber-500/10">
+                      {dpPercentage}% dari Harga
+                    </Badge>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-0.5">
+                      <span className="text-[10px] text-muted-foreground">Persen DP (%)</span>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={90}
+                        step={0.5}
+                        value={dpPercentage}
+                        onChange={(e) => handleDpPercentageChange(Number(e.target.value))}
+                        className="h-8 text-xs font-mono rounded-lg"
+                      />
+                    </div>
+                    <div className="space-y-0.5">
+                      <span className="text-[10px] text-muted-foreground">Nominal DP (Rp)</span>
+                      <Input
+                        type="number"
+                        step={5000000}
+                        value={calculations.dpNominal}
+                        onChange={(e) => handleDpNominalChange(Number(e.target.value))}
+                        className="h-8 text-xs font-mono rounded-lg"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="pt-1">
+                    <input
+                      type="range"
+                      min={0}
+                      max={50}
+                      step={1}
+                      value={dpPercentage}
+                      onChange={(e) => handleDpPercentageChange(Number(e.target.value))}
+                      className="w-full accent-emerald-600 h-2 bg-muted rounded-lg cursor-pointer"
+                    />
+                  </div>
                 </div>
-              </div>
-            </div>
 
-            <div className="flex items-center justify-between p-2.5 bg-muted/40 rounded-lg border">
-              <div className="space-y-0.5">
-                <Label className="text-xs font-semibold cursor-pointer">Sertakan Pajak BPHTB (5%)</Label>
-                <p className="text-[10px] text-muted-foreground">Pajak resmi negara saat serah terima properti</p>
-              </div>
-              <Switch checked={includeBphtb} onCheckedChange={setIncludeBphtb} />
-            </div>
-          </CardContent>
-        </Card>
+                {/* TENOR / JANGKA WAKTU KREDIT */}
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <Label className="text-xs font-semibold">Lama Pinjaman (Tenor)</Label>
+                    <div className="flex items-center gap-1">
+                      <Input
+                        type="number"
+                        min={1}
+                        max={35}
+                        value={tenureYears}
+                        onChange={(e) => setTenureYears(Math.max(1, Number(e.target.value)))}
+                        className="h-7 w-16 text-center text-xs font-mono rounded-lg p-1"
+                      />
+                      <span className="text-xs font-semibold text-muted-foreground">Tahun</span>
+                    </div>
+                  </div>
 
-        {/* HASIL SIMULASI */}
-        <div className="lg:col-span-7 space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Card className="border-2 border-emerald-500/40 bg-card p-4 space-y-1 relative overflow-hidden">
-              <Badge className="bg-emerald-600 text-white text-[10px] absolute right-3 top-3">
-                {fixedYears} Tahun Pertama
-              </Badge>
-              <span className="text-[11px] text-muted-foreground block font-medium">
-                Angsuran Bunga Fixed ({fixedRate}%):
-              </span>
-              <h3 className="text-xl sm:text-2xl font-extrabold font-mono text-emerald-600 dark:text-emerald-400">
-                {formatCurrency(calculations.installmentFixed)}
-                <span className="text-xs font-normal text-muted-foreground"> /bln</span>
-              </h3>
-              <p className="text-[10px] text-muted-foreground pt-1">
-                Cicilan pasti & stabil selama {fixedYears} tahun promo
-              </p>
-            </Card>
+                  <div className="grid grid-cols-5 gap-1.5">
+                    {[5, 10, 15, 20, 25].map((yr) => (
+                      <button
+                        key={yr}
+                        type="button"
+                        onClick={() => setTenureYears(yr)}
+                        className={`py-1.5 text-xs font-semibold rounded-xl border transition-all cursor-pointer ${
+                          tenureYears === yr
+                            ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
+                            : "bg-background hover:bg-muted text-foreground border-border/70"
+                        }`}
+                      >
+                        {yr} Thn
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
-            <Card className="border border-slate-200 dark:border-slate-800 bg-card p-4 space-y-1 relative overflow-hidden">
-              <Badge variant="outline" className="text-[10px] absolute right-3 top-3 border-amber-500 text-amber-600">
-                Tahun Ke-{fixedYears + 1} dst
-              </Badge>
-              <span className="text-[11px] text-muted-foreground block font-medium">
-                Angsuran Floating Est. ({floatingRate}%):
-              </span>
-              <h3 className="text-xl sm:text-2xl font-extrabold font-mono text-amber-600 dark:text-amber-400">
-                {formatCurrency(calculations.installmentFloating)}
-                <span className="text-xs font-normal text-muted-foreground"> /bln</span>
-              </h3>
-              <p className="text-[10px] text-muted-foreground pt-1">
-                Mengikuti suku bunga pasar perbankan
-              </p>
+                {/* PANELS OPTIONAL / ADVANCED BANKING SETTINGS */}
+                <Collapsible open={showAdvanced} onOpenChange={setShowAdvanced} className="...">
+  <CollapsibleTrigger>
+    <Button variant="ghost" size="sm" className="w-full text-xs text-muted-foreground ...">
+      <span className="flex items-center gap-1 font-medium">
+        ⚙️ Pengaturan Suku Bunga & Akad Bank
+      </span>
+    </Button>
+  </CollapsibleTrigger>
+                  <CollapsibleContent className="space-y-3 pt-3">
+                    <div className="p-3 bg-muted/40 rounded-xl space-y-3 border border-border/50">
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <Label className="text-[10px]">Bunga Fixed Promo (% p.a)</Label>
+                          <Input
+                            type="number"
+                            step={0.1}
+                            value={fixedRate}
+                            onChange={(e) => setFixedRate(Number(e.target.value))}
+                            className="h-8 text-xs font-mono rounded-lg"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-[10px]">Masa Promo (Tahun)</Label>
+                          <Select value={String(fixedYears)} onValueChange={(v) => setFixedYears(Number(v || 3))}>
+                            <SelectTrigger className="h-8 text-xs rounded-lg">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent className="rounded-xl">
+                              {[1, 2, 3, 5, 8, 10].map((y) => (
+                                <SelectItem key={y} value={String(y)} className="text-xs">
+                                  {y} Tahun
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 pt-1 border-t border-border/30">
+                        <div className="space-y-1">
+                          <Label className="text-[10px]">Bunga Floating Est. (% p.a)</Label>
+                          <Input
+                            type="number"
+                            step={0.1}
+                            value={floatingRate}
+                            onChange={(e) => setFloatingRate(Number(e.target.value))}
+                            className="h-8 text-xs font-mono rounded-lg"
+                          />
+                        </div>
+                        <div className="space-y-1 flex items-end">
+                          <div className="flex items-center justify-between w-full h-8 bg-background px-2.5 rounded-lg border text-[10px]">
+                            <span>Pajak BPHTB (5%)</span>
+                            <Switch checked={includeBphtb} onCheckedChange={setIncludeBphtb} className="scale-75" />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>
+              </CardContent>
             </Card>
           </div>
 
-          <Card className="border bg-slate-50 dark:bg-slate-900/50 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="space-y-0.5">
-              <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                <BadgeCheck className="w-4 h-4 text-emerald-600" /> Analisis Kelayakan Gaji Pembeli (DSR 35%)
-              </span>
-              <p className="text-[11px] text-muted-foreground">
-                Sesuai standar Bank Indonesia, cicilan maksimal 35% penghasilan bulanan.
-              </p>
-            </div>
+          {/* KOLOM KANAN: HASIL RINGKASAN BESAR */}
+          <div className="lg:col-span-7 space-y-4">
+            
+            {/* HERO CARD CICILAN BULANAN */}
+            <Card className="border-2 border-emerald-500/40 bg-gradient-to-br from-emerald-500/10 via-amber-500/5 to-background shadow-md rounded-2xl overflow-hidden relative">
+              <div className="p-5 sm:p-6 space-y-4">
+                
+                {/* BADGE STATS */}
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <Badge className="bg-emerald-600 text-white font-bold text-[10px] px-3 py-1 rounded-full shadow-xs">
+                    💡 Masa Promo {fixedYears} Tahun Pertama
+                  </Badge>
+                  <span className="text-[11px] text-muted-foreground font-mono">
+                    Plafon KPR: <strong className="text-foreground">{formatCurrency(calculations.loanPrincipal)}</strong>
+                  </span>
+                </div>
 
-            <div className="bg-background p-2.5 rounded-xl border text-right shrink-0">
-              <span className="text-[10px] text-muted-foreground block">Minimum Penghasilan Pembeli:</span>
-              <span className="text-base font-bold font-mono text-emerald-600 dark:text-emerald-400">
-                {formatCurrency(calculations.requiredIncomeFixed)}
-                <span className="text-[10px] font-normal text-muted-foreground"> /bln</span>
-              </span>
-            </div>
-          </Card>
+                {/* ANGKA CICILAN UTAMA */}
+                <div className="space-y-1">
+                  <span className="text-xs font-semibold text-muted-foreground block">
+                    Estimasi Angsuran Per Bulan:
+                  </span>
+                  <div className="flex items-baseline gap-2">
+                    <h2 className="text-3xl sm:text-4xl font-extrabold font-mono text-emerald-600 dark:text-emerald-400 tracking-tight">
+                      {formatCurrency(calculations.installmentFixed)}
+                    </h2>
+                    <span className="text-sm font-semibold text-muted-foreground">/ bulan</span>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground pt-1 flex items-center gap-1">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                    Bunga promo <strong>{fixedRate}%</strong> ({fixedYears} thn). Suku bunga floating selanjutnya est. {formatCurrency(calculations.installmentFloating)}/bln.
+                  </p>
+                </div>
 
-          <Tabs defaultValue="fees" className="w-full">
-            <TabsList className="grid grid-cols-2 h-9 text-xs">
-              <TabsTrigger value="fees" className="text-xs">Rincian Total Uang Awal (Akad + BPHTB)</TabsTrigger>
-              <TabsTrigger value="amortization" className="text-xs">Tabel Amortisasi Tahunan</TabsTrigger>
-            </TabsList>
+                {/* KETERANGAN KELAYAKAN GAJI & MODAL AWAL */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                  {/* CARD GAJI MINIMAL */}
+                  <div className="bg-card/80 backdrop-blur-sm p-3.5 rounded-xl border border-emerald-500/20 space-y-1">
+                    <span className="text-[10px] text-muted-foreground font-medium flex items-center gap-1">
+                      <BadgeCheck className="w-3.5 h-3.5 text-emerald-600" /> Syarat Minimal Gaji
+                    </span>
+                    <p className="text-sm font-extrabold font-mono text-foreground">
+                      {formatCurrency(calculations.requiredIncomeFixed)} <span className="text-[10px] font-normal text-muted-foreground">/bln</span>
+                    </p>
+                    <p className="text-[9px] text-muted-foreground leading-tight">
+                      Aturan Bank: Cicilan maks. 35% dari gaji bersih gabungan.
+                    </p>
+                  </div>
 
-            <TabsContent value="fees" className="space-y-3 pt-2">
-              <Card className="border shadow-xs">
-                <CardHeader className="p-3.5 pb-2">
-                  <CardTitle className="text-xs font-bold flex items-center gap-1.5">
-                    <Wallet className="w-3.5 h-3.5 text-emerald-600" /> Rincian Pengeluaran Uang Muka & Biaya Legalitas
-                  </CardTitle>
-                </CardHeader>
+                  {/* CARD DANA AWAL */}
+                  <div className="bg-card/80 backdrop-blur-sm p-3.5 rounded-xl border border-amber-500/20 space-y-1">
+                    <span className="text-[10px] text-muted-foreground font-medium flex items-center gap-1">
+                      <Wallet className="w-3.5 h-3.5 text-amber-600" /> Total Modal Awal
+                    </span>
+                    <p className="text-sm font-extrabold font-mono text-amber-700 dark:text-amber-400">
+                      {formatCurrency(calculations.totalUangAwal)}
+                    </p>
+                    <p className="text-[9px] text-muted-foreground leading-tight">
+                      Termasuk DP ({dpPercentage}%) + Estimasi Biaya Akad & Legalitas.
+                    </p>
+                  </div>
+                </div>
 
-                <CardContent className="p-3.5 pt-0 text-xs">
-                  <div className="divide-y divide-border/40">
-                    <div className="py-2 flex justify-between font-medium">
-                      <span className="text-muted-foreground">Uang Muka / DP ({dpPercentage}%):</span>
-                      <span className="font-mono text-foreground font-bold">
-                        {formatCurrency(calculations.dpNominal)}
-                      </span>
-                    </div>
+              </div>
+            </Card>
 
-                    <div className="py-2 flex justify-between">
-                      <span className="text-muted-foreground">Provisi Bank (1% Plafon):</span>
-                      <span className="font-mono text-foreground">
-                        {formatCurrency(calculations.provisiFee)}
-                      </span>
-                    </div>
+            {/* TAB RINCIAN LENGKAP */}
+            <Tabs defaultValue="fees" className="w-full">
+              <TabsList className="grid grid-cols-2 h-9 text-xs rounded-xl bg-muted p-1">
+                <TabsTrigger value="fees" className="text-xs rounded-lg font-semibold cursor-pointer">Rincian Biaya Akad & Legalitas</TabsTrigger>
+                <TabsTrigger value="amortization" className="text-xs rounded-lg font-semibold cursor-pointer">Tabel Sisa Pinjaman Tahunan</TabsTrigger>
+              </TabsList>
 
-                    <div className="py-2 flex justify-between">
-                      <span className="text-muted-foreground">Biaya Administrasi Bank:</span>
-                      <span className="font-mono text-foreground">
-                        {formatCurrency(calculations.adminFee)}
-                      </span>
-                    </div>
-
-                    {calculations.appraisalFee > 0 && (
+              {/* RINCIAN BIAYA AKAD */}
+              <TabsContent value="fees" className="pt-2">
+                <Card className="border border-border/70 shadow-2xs rounded-2xl">
+                  <CardHeader className="p-4 pb-2">
+                    <CardTitle className="text-xs font-bold flex items-center gap-1.5">
+                      <FileCheck2 className="w-3.5 h-3.5 text-emerald-600" /> Estimasi Pengeluaran Awal (DP + Legalitas)
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-4 pt-1 text-xs space-y-2">
+                    <div className="divide-y divide-border/40">
                       <div className="py-2 flex justify-between">
-                        <span className="text-muted-foreground">Biaya Appraisal (Penilaian):</span>
-                        <span className="font-mono text-foreground">
-                          {formatCurrency(calculations.appraisalFee)}
-                        </span>
+                        <span className="text-muted-foreground">Uang Muka (DP {dpPercentage}%):</span>
+                        <span className="font-mono text-foreground font-bold">{formatCurrency(calculations.dpNominal)}</span>
                       </div>
-                    )}
-
-                    <div className="py-2 flex justify-between">
-                      <span className="text-muted-foreground">Estimasi Notaris & APHT (1%):</span>
-                      <span className="font-mono text-foreground">
-                        {formatCurrency(calculations.notaryFee)}
-                      </span>
-                    </div>
-
-                    <div className="py-2 flex justify-between">
-                      <span className="text-muted-foreground">Estimasi Asuransi Jiwa & Kebakaran (~1.2%):</span>
-                      <span className="font-mono text-foreground">
-                        {formatCurrency(calculations.insuranceFee)}
-                      </span>
-                    </div>
-
-                    {includeBphtb && (
-                      <div className="py-2 flex justify-between text-amber-700 dark:text-amber-400">
-                        <span className="font-medium">Estimasi Pajak Pembeli BPHTB (5%):</span>
-                        <span className="font-mono font-bold">
-                          {formatCurrency(calculations.bphtbTax)}
-                        </span>
+                      <div className="py-2 flex justify-between">
+                        <span className="text-muted-foreground">Provisi & Administrasi Bank:</span>
+                        <span className="font-mono text-foreground">{formatCurrency(calculations.provisiFee + calculations.adminFee)}</span>
                       </div>
-                    )}
-
-                    <div className="py-2.5 flex justify-between font-bold bg-emerald-50 dark:bg-emerald-950/40 px-3 rounded-lg mt-2 text-emerald-800 dark:text-emerald-300">
-                      <span>TOTAL DANA AWAL DISIAPKAN (DP + AKAD + PAJAK):</span>
-                      <span className="font-mono font-bold text-sm">
-                        {formatCurrency(calculations.totalUangAwal)}
-                      </span>
+                      <div className="py-2 flex justify-between">
+                        <span className="text-muted-foreground">Notaris, Sertifikat & APHT (Est.):</span>
+                        <span className="font-mono text-foreground">{formatCurrency(calculations.notaryFee)}</span>
+                      </div>
+                      <div className="py-2 flex justify-between">
+                        <span className="text-muted-foreground">Asuransi Jiwa & Kebakaran (Est.):</span>
+                        <span className="font-mono text-foreground">{formatCurrency(calculations.insuranceFee)}</span>
+                      </div>
+                      {includeBphtb && (
+                        <div className="py-2 flex justify-between text-amber-700 dark:text-amber-400">
+                          <span>Pajak Pembeli / BPHTB (5%):</span>
+                          <span className="font-mono font-bold">{formatCurrency(calculations.bphtbTax)}</span>
+                        </div>
+                      )}
+                      <div className="py-3 flex justify-between font-bold bg-emerald-500/10 px-3 rounded-xl mt-2 text-emerald-950 dark:text-emerald-200">
+                        <span>TOTAL MODAL AWAL DISIAPKAN:</span>
+                        <span className="font-mono text-sm">{formatCurrency(calculations.totalUangAwal)}</span>
+                      </div>
                     </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </TabsContent>
+                  </CardContent>
+                </Card>
+              </TabsContent>
 
-            <TabsContent value="amortization" className="space-y-3 pt-2">
-              <Card className="border shadow-xs">
-                <CardHeader className="p-3.5 pb-2">
-                  <CardTitle className="text-xs font-bold flex items-center gap-1.5">
-                    <Calendar className="w-3.5 h-3.5 text-emerald-600" /> Ringkasan Pokok & Bunga Tahunan
-                  </CardTitle>
-                </CardHeader>
-
-                <CardContent className="p-0">
-                  <div className="max-h-[280px] overflow-y-auto">
-                    <Table>
-                      <TableHeader className="bg-muted/50 sticky top-0">
-                        <TableRow>
-                          <TableHead className="text-[11px] font-bold">Tahun</TableHead>
-                          <TableHead className="text-[11px] font-bold">Skema</TableHead>
-                          <TableHead className="text-[11px] font-bold">Pokok</TableHead>
-                          <TableHead className="text-[11px] font-bold">Bunga</TableHead>
-                          <TableHead className="text-[11px] font-bold text-right">Sisa Plafon</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {calculations.amortizationSchedule.map((row) => (
-                          <TableRow key={row.year} className="text-xs hover:bg-muted/30">
-                            <TableCell className="py-2 font-mono font-bold">Ke-{row.year}</TableCell>
-                            <TableCell className="py-2">
-                              <Badge
-                                variant="outline"
-                                className={
-                                  row.isFixed
-                                    ? "text-[9px] bg-emerald-50 text-emerald-700 border-emerald-200"
-                                    : "text-[9px] bg-amber-50 text-amber-700 border-amber-200"
-                                }
-                              >
-                                {row.isFixed ? "Fixed" : "Floating"}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="py-2 font-mono text-emerald-600 dark:text-emerald-400">
-                              {formatCurrency(row.yearlyPrincipal)}
-                            </TableCell>
-                            <TableCell className="py-2 font-mono text-amber-600">
-                              {formatCurrency(row.yearlyInterest)}
-                            </TableCell>
-                            <TableCell className="py-2 font-mono text-right text-muted-foreground">
-                              {formatCurrency(row.remainingBalance)}
-                            </TableCell>
+              {/* TABEL AMORTISASI TAHUNAN */}
+              <TabsContent value="amortization" className="pt-2">
+                <Card className="border border-border/70 shadow-2xs rounded-2xl overflow-hidden">
+                  <CardContent className="p-0">
+                    <div className="max-h-[260px] overflow-y-auto scrollbar-thin">
+                      <Table>
+                        <TableHeader className="bg-muted/60 sticky top-0 backdrop-blur-md">
+                          <TableRow>
+                            <TableHead className="text-[10px] font-bold">Tahun</TableHead>
+                            <TableHead className="text-[10px] font-bold">Skema Bunga</TableHead>
+                            <TableHead className="text-[10px] font-bold">Angsuran Pokok</TableHead>
+                            <TableHead className="text-[10px] font-bold text-right">Sisa Pinjaman</TableHead>
                           </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                </CardContent>
-              </Card>
-            </TabsContent>
-          </Tabs>
+                        </TableHeader>
+                        <TableBody>
+                          {calculations.amortizationSchedule.map((row) => (
+                            <TableRow key={row.year} className="text-xs hover:bg-muted/30">
+                              <TableCell className="py-2 font-mono font-bold">Thn Ke-{row.year}</TableCell>
+                              <TableCell className="py-2">
+                                <Badge
+                                  variant="outline"
+                                  className={
+                                    row.isFixed
+                                      ? "text-[9px] bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30"
+                                      : "text-[9px] bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30"
+                                  }
+                                >
+                                  {row.isFixed ? "Fixed Promo" : "Floating"}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="py-2 font-mono text-emerald-600 dark:text-emerald-400">
+                                {formatCurrency(row.yearlyPrincipal)}
+                              </TableCell>
+                              <TableCell className="py-2 font-mono text-right text-muted-foreground">
+                                {formatCurrency(row.remainingBalance)}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+            </Tabs>
+
+            {/* KETERANGAN WAJIB (DISCLAIMER) PERHITUNGAN BANK */}
+            <div className="p-4 bg-amber-500/10 border border-amber-500/25 rounded-2xl flex items-start gap-3 text-amber-900 dark:text-amber-200">
+              <Info className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+              <div className="text-xs leading-relaxed space-y-0.5">
+                <p className="font-bold text-amber-800 dark:text-amber-300">Catatan Penting / Penafian:</p>
+                <p className="italic text-[11px] font-medium">
+                  "Hasil dari perhitungan simulasi KPR ini hanya merupakan perkiraan saja. Untuk perhitungan tepatnya, pihak bank akan memberikan ilustrasi angsuran Anda."
+                </p>
+              </div>
+            </div>
+
+          </div>
+
         </div>
       </div>
-    </div>
+    </TooltipProvider>
   );
 }
 

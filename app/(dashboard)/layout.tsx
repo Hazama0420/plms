@@ -1,7 +1,7 @@
 // app/(dashboard)/layout.tsx
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect } from "react";
 import { Menu } from "lucide-react";
 import { AppSidebar } from "@/components/dashboard/app-sidebar";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -9,7 +9,6 @@ import { NotificationBell } from "@/components/notification-bell";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { BottomNav } from "@/components/layout/BottomNav";
-import { PageLoader } from "@/components/ui/page-loader";
 import { cn } from "@/lib/utils";
 
 export default function DashboardLayout({
@@ -18,7 +17,6 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [isCollapsed, setIsCollapsed] = useState(false);
   const [timeStr, setTimeStr] = useState("");
   const [dateStr, setDateStr] = useState("");
 
@@ -46,36 +44,28 @@ export default function DashboardLayout({
     return () => clearInterval(interval);
   }, []);
 
+  // Tombol menu sekarang memicu sheet drawer untuk membuka sidebar dari kiri secara mulus di semua ukuran layar
   const handleMenuToggle = () => {
-    if (window.innerWidth < 768) {
-      setSidebarOpen(true);
-    } else {
-      setIsCollapsed((prev) => !prev);
-    }
+    setSidebarOpen(true);
   };
 
   return (
-    // 🟢 Pakai min-h-[100dvh] agar menyesuaikan tinggi browser mobile
     <div className="flex h-[100dvh] w-full bg-background overflow-hidden">
-      <Suspense fallback={null}>
-        <PageLoader />
-      </Suspense>
 
-      {/* Desktop Sidebar */}
-      <div className="hidden md:flex shrink-0 transition-all duration-300">
-        <AppSidebar isCollapsed={isCollapsed} />
-      </div>
-
-      {/* Mobile Drawer */}
+      {/* 🟢 SHEET DRAWER TANPA TOMBOL X BAWAAN & TANPA SPACE PUTIH KOSONG */}
       <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
-        <SheetContent side="left" className="p-0 w-64 border-r-0">
-          <SheetTitle className="sr-only">Navigasi Sidebar</SheetTitle>
-          <AppSidebar onClose={() => setSidebarOpen(false)} isCollapsed={false} />
-        </SheetContent>
-      </Sheet>
+  <SheetContent
+    side="left"
+    className="p-0 w-64 max-w-64 border-r-0 shadow-2xl bg-card [&>button]:hidden"
+  >
+    <SheetTitle className="sr-only">Navigasi Sidebar</SheetTitle>
+    <AppSidebar onClose={() => setSidebarOpen(false)} />
+  </SheetContent>
+</Sheet>
 
-      {/* Area Utama */}
+      {/* Area Utama (Layar Penuh / Clean View) */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        
         {/* Header Bar */}
         <header className="h-16 border-b px-4 md:px-6 flex items-center justify-between bg-background shrink-0 z-20">
           <div className="flex items-center gap-2.5">
@@ -84,6 +74,7 @@ export default function DashboardLayout({
               size="icon"
               className="text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl cursor-pointer"
               onClick={handleMenuToggle}
+              title="Buka Menu Sidebar"
             >
               <Menu size={22} />
             </Button>
@@ -105,13 +96,11 @@ export default function DashboardLayout({
           </div>
         </header>
 
-        {/* 🟢 MAIN AREA PERBAIKAN:
-            Ditambahkan pb-28 pada mobile agar konten paling bawah
-            tidak tertutup BottomNav / AIChatWidget */}
+        {/* Content Area (Lebar penuh optimal tanpa terpotong sidebar permanen) */}
         <main
           className={cn(
             "flex-1 overflow-y-auto p-4 md:p-6 bg-slate-50/50 dark:bg-slate-900/50",
-            "pb-28 sm:pb-24 md:pb-6" 
+            "pb-28 sm:pb-24 md:pb-6"
           )}
         >
           {children}

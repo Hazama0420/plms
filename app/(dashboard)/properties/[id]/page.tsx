@@ -20,7 +20,6 @@ import {
   ShieldAlert,
   MessageCircle,
   Maximize2,
-  Lock,
   ChevronLeft,
   ChevronRight,
   Bed,
@@ -37,6 +36,7 @@ import { id } from "date-fns/locale";
 
 import { supabase } from "@/lib/supabase/client";
 import propertyService from "@/services/property.service";
+import { WatermarkedImage } from "@/components/ui/WatermarkedImage";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -365,7 +365,7 @@ export default function PropertyDetailPage() {
     return Array.isArray(property.address) ? property.address[0] : property.address;
   }, [property?.address]);
 
-  // 📍 PENGGABUNGAN ALAMAT LENGKAP (Provinsi, Kota/Kabupaten, Kecamatan)
+  // 📍 PENGGABUNGAN ALAMAT LENGKAP
   const formattedFullLocation = useMemo(() => {
     if (!addressObj && !property?.address) return "Alamat lokasi belum dikonfigurasi";
 
@@ -796,21 +796,24 @@ export default function PropertyDetailPage() {
         </div>
       )}
 
-      {/* 2. HERO BANNER FOTO */}
+      {/* 2. HERO BANNER FOTO (DENGAN WATERMARK MELAYANG) */}
       <div className="space-y-2.5">
-        <div className="relative group w-full aspect-[4/3] sm:aspect-[21/9] max-h-[440px] rounded-2xl sm:rounded-3xl overflow-hidden border border-border/70 bg-slate-950 shadow-md">
-          <img
+        <div 
+          onClick={() => openLightbox(activeImage || DEFAULT_FALLBACK_IMAGE)}
+          className="relative group w-full aspect-[4/3] sm:aspect-[21/9] max-h-[440px] rounded-2xl sm:rounded-3xl overflow-hidden border border-border/70 bg-slate-950 shadow-md cursor-pointer"
+        >
+          <WatermarkedImage
             src={activeImage || DEFAULT_FALLBACK_IMAGE}
             alt={property.title}
-            className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105 cursor-pointer"
-            onClick={() => openLightbox(activeImage || DEFAULT_FALLBACK_IMAGE)}
-            onError={(e) => {
-              (e.target as HTMLImageElement).src = DEFAULT_FALLBACK_IMAGE;
-            }}
+            className="w-full h-full"
+            imageClassName="transition-transform duration-700 group-hover:scale-105"
+            watermarkSize="w-1/3"
+            watermarkOpacity={0.7}
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-slate-950/85 via-slate-950/20 to-transparent opacity-90" />
+          
+          <div className="absolute inset-0 bg-gradient-to-t from-slate-950/85 via-slate-950/20 to-transparent opacity-90 pointer-events-none" />
 
-          <div className="absolute top-3 left-3 flex gap-1.5 flex-wrap">
+          <div className="absolute top-3 left-3 flex gap-1.5 flex-wrap z-10 pointer-events-none">
             <Badge className={cn("text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 shadow-xs border-0 text-white", property.listing_type === "sewa" ? "bg-amber-600" : "bg-emerald-600")}>
               {property.listing_type === "jual" ? "DIJUAL" : "DISEWAKAN"}
             </Badge>
@@ -821,14 +824,17 @@ export default function PropertyDetailPage() {
 
           <Button
             size="sm"
-            onClick={() => openLightbox(activeImage || DEFAULT_FALLBACK_IMAGE)}
-            className="absolute top-3 right-3 bg-slate-950/70 hover:bg-slate-950/90 backdrop-blur-md text-white text-[11px] font-medium gap-1 border border-white/15 rounded-xl cursor-pointer h-8 px-2.5"
+            onClick={(e) => {
+              e.stopPropagation();
+              openLightbox(activeImage || DEFAULT_FALLBACK_IMAGE);
+            }}
+            className="absolute top-3 right-3 bg-slate-950/70 hover:bg-slate-950/90 backdrop-blur-md text-white text-[11px] font-medium gap-1 border border-white/15 rounded-xl cursor-pointer h-8 px-2.5 z-10"
           >
             <Maximize2 className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Perbesar Foto</span>
           </Button>
 
-          <div className="absolute bottom-3 left-3 right-3 flex items-end justify-between gap-2">
+          <div className="absolute bottom-3 left-3 right-3 flex items-end justify-between gap-2 z-10 pointer-events-none">
             <div className="text-white font-mono font-black text-base sm:text-2xl bg-slate-950/80 px-3.5 py-1.5 rounded-xl backdrop-blur-md border border-white/15 shadow-md">
               {formatCurrency(calculatedPrice)}
             </div>
@@ -839,6 +845,7 @@ export default function PropertyDetailPage() {
           </div>
         </div>
 
+        {/* THUMBNAILS FOTO DENGAN WATERMARK */}
         {allImages.length > 1 && (
           <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
             {allImages.map((imgUrl, idx) => (
@@ -853,13 +860,12 @@ export default function PropertyDetailPage() {
                     : "border-border/60 opacity-60 hover:opacity-100"
                 )}
               >
-                <img
+                <WatermarkedImage
                   src={imgUrl}
                   alt={`Pratinjau ${idx + 1}`}
-                  className="w-full h-full object-cover"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).src = DEFAULT_FALLBACK_IMAGE;
-                  }}
+                  className="w-full h-full"
+                  watermarkSize="w-1/2"
+                  watermarkOpacity={0.6}
                 />
               </button>
             ))}
@@ -1008,19 +1014,19 @@ export default function PropertyDetailPage() {
           </Card>
         </div>
 
-        {/* KOLOM KANAN: CARD AGEN REDESAIN (FOKUS FOTO KECIL-BESAR & NAMA) */}
+        {/* KOLOM KANAN: CARD AGEN REDESAIN (BERSIH & ELEGAN: HANYA LABEL "AGENT") */}
         <div className="lg:col-span-1 space-y-5">
           <Card className="border border-border/70 shadow-2xs rounded-2xl bg-card overflow-hidden">
             <CardHeader className="p-4 pb-3 border-b border-border/60">
               <CardTitle className="text-xs font-bold text-foreground flex items-center gap-1.5">
                 <Users className="h-3.5 w-3.5 text-emerald-600" /> 
-                Agen Penanggung Jawab
+                Agent
               </CardTitle>
             </CardHeader>
             <CardContent className="p-5 space-y-4 text-xs">
               {isSuperAdmin && (
                 <div className="space-y-1">
-                  <Label className="text-[10px] text-muted-foreground font-medium">Atur Agen Penanggung Jawab:</Label>
+                  <Label className="text-[10px] text-muted-foreground font-medium">Atur Agent Penanggung Jawab:</Label>
                   <Select
                     value={property?.assigned_to || ""}
                     onValueChange={(val) => handleAssignAgent(val || null)}
@@ -1034,7 +1040,7 @@ export default function PropertyDetailPage() {
                       </span>
                     </SelectTrigger>
                     <SelectContent className="rounded-xl">
-                      <SelectItem value="" className="text-xs text-rose-600 font-medium">❌ Tanpa Agen</SelectItem>
+                      <SelectItem value="" className="text-xs text-rose-600 font-medium">❌ Tanpa Agent</SelectItem>
                       {agents.map((agent) => (
                         <SelectItem key={agent.id} value={agent.id} className="text-xs">
                           {agent.full_name || agent.email}
@@ -1046,7 +1052,7 @@ export default function PropertyDetailPage() {
               )}
 
               {assignedAgent ? (
-                /* 🎯 CARD AGEN REDESAIN PROSENSI UTAMA (FOKUS FOTO BOLA BESAR & NAMA SAJA) */
+                /* 🎯 CARD AGEN REDESAIN BERSIH (TANPA JUDUL GANDA) */
                 <div className="flex flex-col items-center text-center p-5 bg-gradient-to-b from-emerald-500/10 via-emerald-500/5 to-transparent rounded-2xl border border-emerald-500/20 space-y-3">
                   <Avatar className="h-20 w-20 border-2 border-emerald-500/40 shadow-md">
                     <AvatarImage src={assignedAgent.avatar_url || undefined} className="object-cover" />
@@ -1057,11 +1063,8 @@ export default function PropertyDetailPage() {
 
                   <div className="space-y-0.5">
                     <p className="font-extrabold text-foreground text-sm sm:text-base leading-snug">
-                      {assignedAgent.full_name || "Agen Resmi Inland Property"}
+                      {assignedAgent.full_name || "Agent Inland Property"}
                     </p>
-                    <Badge variant="outline" className="text-[9px] font-semibold border-emerald-500/30 text-emerald-700 dark:text-emerald-400 bg-emerald-500/10">
-                      Agen Penanggung Jawab
-                    </Badge>
                   </div>
 
                   {/* 🟢 TOMBOL UTAMA */}
@@ -1070,13 +1073,13 @@ export default function PropertyDetailPage() {
                     className="flex items-center justify-center gap-2 w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs shadow-md cursor-pointer h-12 transition-all active:scale-[0.98] mt-2"
                   >
                     <MessageCircle className="w-5 h-5 fill-white text-emerald-600" />
-                    <span>Hubungi Agen via WhatsApp</span>
+                    <span>Hubungi Agent via WhatsApp</span>
                   </Button>
                 </div>
               ) : (
                 <div className="p-4 bg-muted/30 rounded-xl text-center space-y-2">
                   <p className="text-[11px] text-muted-foreground italic">
-                    Belum ada agen spesifik yang ditugaskan.
+                    Belum ada agent spesifik yang ditugaskan.
                   </p>
                   <Button
                     onClick={() => setShowLeadModal(true)}
@@ -1133,7 +1136,7 @@ export default function PropertyDetailPage() {
         </Button>
       </div>
 
-      {/* 5. LIGHTBOX PREVIEW */}
+      {/* 5. LIGHTBOX PREVIEW (DENGAN WATERMARK) */}
       <Dialog open={previewIndex !== null} onOpenChange={(open) => !open && setPreviewIndex(null)}>
         <DialogContent className="w-full max-w-full sm:max-w-4xl p-3 bg-slate-950 border-slate-800 text-white rounded-2xl overflow-hidden flex flex-col justify-between">
           <DialogHeader className="pb-2 border-b border-slate-800 flex flex-row items-center justify-between">
@@ -1145,13 +1148,13 @@ export default function PropertyDetailPage() {
           {previewIndex !== null && (
             <div className="py-2 flex-1 flex flex-col justify-center">
               <div className="relative w-full h-[55vh] sm:h-[70vh] bg-black/90 rounded-xl overflow-hidden flex items-center justify-center border border-slate-800">
-                <img
+                <WatermarkedImage
                   src={allImages[previewIndex] || DEFAULT_FALLBACK_IMAGE}
                   alt={`Pratinjau ${previewIndex + 1}`}
-                  className="max-w-full max-h-full object-contain"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).src = DEFAULT_FALLBACK_IMAGE;
-                  }}
+                  className="w-full h-full flex items-center justify-center"
+                  imageClassName="max-w-full max-h-full object-contain"
+                  watermarkSize="w-1/3"
+                  watermarkOpacity={0.7}
                 />
 
                 {allImages.length > 1 && (
@@ -1159,14 +1162,14 @@ export default function PropertyDetailPage() {
                     <button
                       type="button"
                       onClick={() => setPreviewIndex((prev) => (prev !== null ? (prev === 0 ? allImages.length - 1 : prev - 1) : 0))}
-                      className="absolute left-2 top-1/2 -translate-y-1/2 p-2 rounded-full bg-slate-950/70 hover:bg-emerald-600 text-white transition backdrop-blur-md cursor-pointer"
+                      className="absolute left-2 top-1/2 -translate-y-1/2 p-2 rounded-full bg-slate-950/70 hover:bg-emerald-600 text-white transition backdrop-blur-md cursor-pointer z-10"
                     >
                       <ChevronLeft className="w-5 h-5" />
                     </button>
                     <button
                       type="button"
                       onClick={() => setPreviewIndex((prev) => (prev !== null ? (prev === allImages.length - 1 ? 0 : prev + 1) : 0))}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-full bg-slate-950/70 hover:bg-emerald-600 text-white transition backdrop-blur-md cursor-pointer"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-full bg-slate-950/70 hover:bg-emerald-600 text-white transition backdrop-blur-md cursor-pointer z-10"
                     >
                       <ChevronRight className="w-5 h-5" />
                     </button>
@@ -1187,7 +1190,7 @@ export default function PropertyDetailPage() {
               Konsultasi & Tanya Properti
             </DialogTitle>
             <DialogDescription className="text-xs text-muted-foreground">
-              Lengkapi data Anda agar agen penanggung jawab kami dapat segera merespons ketertarikan Anda pada <span className="font-semibold text-emerald-600">{property?.title}</span>.
+              Lengkapi data Anda agar agent kami dapat segera merespons ketertarikan Anda pada <span className="font-semibold text-emerald-600">{property?.title}</span>.
             </DialogDescription>
           </DialogHeader>
 

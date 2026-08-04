@@ -27,6 +27,9 @@
   --radius-sm: calc(var(--radius) - 4px);
 }
 
+/* ============================================================ */
+/* 1. TEMA BASE (ROOT & DARK)                                   */
+/* ============================================================ */
 :root {
   --radius: 0.5rem;
   --background: #ffffff;
@@ -35,7 +38,7 @@
   --card-foreground: #0f172a;
   --popover: #ffffff;
   --popover-foreground: #0f172a;
-  --primary: #2563eb;
+  --primary: #059669; /* Default: Emerald */
   --primary-foreground: #ffffff;
   --secondary: #f1f5f9;
   --secondary-foreground: #0f172a;
@@ -47,7 +50,7 @@
   --destructive-foreground: #ffffff;
   --border: #e2e8f0;
   --input: #e2e8f0;
-  --ring: #2563eb;
+  --ring: #059669;
 }
 
 .dark {
@@ -57,7 +60,7 @@
   --card-foreground: #f1f5f9;
   --popover: #1e293b;
   --popover-foreground: #f1f5f9;
-  --primary: #3b82f6;
+  --primary: #10b981; /* Default Dark: Emerald */
   --primary-foreground: #ffffff;
   --secondary: #334155;
   --secondary-foreground: #f1f5f9;
@@ -69,20 +72,80 @@
   --destructive-foreground: #ffffff;
   --border: #334155;
   --input: #334155;
-  --ring: #3b82f6;
+  --ring: #10b981;
 }
 
+/* ============================================================ */
+/* 2. DYNAMIC ACCENT COLORS (EMERALD, BLUE, PURPLE)             */
+/* ============================================================ */
+/* --- 1. PALET EMERALD (DEFAULT) --- */
+[data-accent="emerald"] {
+  --primary: #059669 !important;
+  --ring: #059669 !important;
+}
+.dark[data-accent="emerald"],
+.dark [data-accent="emerald"] {
+  --primary: #10b981 !important;
+  --ring: #10b981 !important;
+}
+
+/* --- 2. PALET SAPPHIRE BLUE --- */
+[data-accent="blue"] {
+  --primary: #2563eb !important;
+  --ring: #2563eb !important;
+}
+.dark[data-accent="blue"],
+.dark [data-accent="blue"] {
+  --primary: #3b82f6 !important;
+  --ring: #3b82f6 !important;
+}
+
+/* --- 3. PALET ROYAL PURPLE --- */
+[data-accent="purple"] {
+  --primary: #9333ea !important;
+  --ring: #9333ea !important;
+}
+.dark[data-accent="purple"],
+.dark [data-accent="purple"] {
+  --primary: #a855f7 !important;
+  --ring: #a855f7 !important;
+}
+
+/* ============================================================ */
+/* 3. REGULASI SKALA UKURAN TEKS (FONT SIZE SCALE)             */
+/* ============================================================ */
+html[data-font-size="compact"] {
+  font-size: 87.5%; /* Kecil (14px base) */
+}
+
+html[data-font-size="normal"] {
+  font-size: 100%; /* Normal (16px base) */
+}
+
+html[data-font-size="large"] {
+  font-size: 112.5%; /* Besar (18px base) */
+}
+
+/* ============================================================ */
+/* 4. BASE STYLES & SELECTION                                   */
+/* ============================================================ */
 @layer base {
   * {
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground transition-colors duration-200;
   }
 }
 
+/* Selection color otomatis mengikuti warna aksen aktif */
+::selection {
+  background: var(--primary);
+  color: #ffffff;
+}
+
 /* ============================================================ */
-/* ATURAN COMPACT MODE (TAMPILAN PADAT DATA)                   */
+/* 5. ATURAN COMPACT MODE (TAMPILAN PADAT DATA)                */
 /* ============================================================ */
 html.compact-mode table th,
 html.compact-mode table td {
@@ -117,10 +180,4 @@ html.compact-mode .card-content {
 }
 ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
-}
-
-/* Selection color */
-::selection {
-  background: #3b82f6;
-  color: white;
 }

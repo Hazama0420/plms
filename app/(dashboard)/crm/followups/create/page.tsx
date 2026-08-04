@@ -1,4 +1,3 @@
-// app/(dashboard)/crm/followups/create/page.tsx
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
@@ -21,7 +20,7 @@ import { crmService } from "@/services/crm.service";
 import { supabase } from "@/lib/supabase/client";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -79,18 +78,20 @@ export default function CreateFollowupPage() {
     notes: "",
   });
 
-  const isAdmin =
-    currentUserRole === "admin" ||
-    currentUserRole === "super_admin" ||
-    currentUserRole === "superadmin";
+  const isAdmin = useMemo(() => {
+    return (
+      currentUserRole === "admin" ||
+      currentUserRole === "super_admin" ||
+      currentUserRole === "superadmin"
+    );
+  }, [currentUserRole]);
 
-  // 🔒 HELPER SENSOR NOMOR HP UNTUK AGENT
+  // 🔒 SENSOR NOMOR HP TERSTANDAR UNTUK AGENT
   const formatPhoneForUser = useCallback(
     (phone?: string | null) => {
-      if (!phone) return "";
+      if (!phone) return "-";
       if (isAdmin) return phone;
-      if (phone.length <= 4) return "xxxxxx";
-      return phone.slice(0, 4) + "xxxxxx";
+      return "08xx-xxxx-xxxx";
     },
     [isAdmin]
   );
@@ -258,13 +259,14 @@ export default function CreateFollowupPage() {
       if (currentUserId && form.lead_id) {
         const targetLead = leads.find((l) => l.id === form.lead_id);
         const leadName = targetLead?.lead_name || "Klien";
-        
+        const formattedDate = form.followup_date ? form.followup_date.replace("T", " pkl ") : "-";
+
         await supabase.from("crm_activities").insert([
           {
             lead_id: form.lead_id,
             user_id: currentUserId,
             activity_type: "Schedule Follow-up",
-            notes: `Agenda follow-up baru dijadwalkan untuk ${leadName} pada ${form.followup_date.replace("T", " ")}`,
+            notes: `Agenda follow-up baru dijadwalkan dengan ${leadName} untuk tanggal ${formattedDate}`,
             created_at: new Date().toISOString(),
           },
         ]);
@@ -286,25 +288,25 @@ export default function CreateFollowupPage() {
   if (loading) {
     return (
       <div className="space-y-4 max-w-xl mx-auto pb-12 px-3">
-        <Skeleton className="h-8 w-40 rounded-lg" />
-        <Card className="p-4 space-y-3">
-          <Skeleton className="h-10 w-full rounded-lg" />
-          <Skeleton className="h-10 w-full rounded-lg" />
-          <Skeleton className="h-28 w-full rounded-lg" />
+        <Skeleton className="h-8 w-40 rounded-lg bg-muted" />
+        <Card className="p-4 space-y-3 bg-card border-border">
+          <Skeleton className="h-10 w-full rounded-lg bg-muted" />
+          <Skeleton className="h-10 w-full rounded-lg bg-muted" />
+          <Skeleton className="h-28 w-full rounded-lg bg-muted" />
         </Card>
       </div>
     );
   }
 
   return (
-    <div className="max-w-xl mx-auto space-y-4 pb-12 px-3 sm:px-4">
+    <div className="max-w-xl mx-auto space-y-4 pb-12 px-3 sm:px-4 bg-background min-h-screen text-foreground">
       {/* HEADER */}
-      <div className="flex items-center gap-2.5 border-b pb-3">
+      <div className="flex items-center gap-2.5 border-b border-border pb-3 pt-3">
         <Button
           variant="outline"
           size="icon"
           onClick={() => router.back()}
-          className="h-8 w-8 rounded-lg shrink-0"
+          className="h-8 w-8 rounded-lg shrink-0 border-border bg-background hover:bg-muted text-foreground cursor-pointer"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
         </Button>
@@ -320,10 +322,10 @@ export default function CreateFollowupPage() {
 
       {/* FORM CARD */}
       <form onSubmit={handleSubmit}>
-        <Card className="border shadow-2xs bg-card overflow-hidden">
-          <CardHeader className="bg-muted/30 border-b p-3 pb-2.5">
+        <Card className="border border-border shadow-2xs bg-card overflow-hidden text-card-foreground">
+          <CardHeader className="bg-muted/30 border-b border-border p-3 pb-2.5">
             <CardTitle className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-              <Clock className="w-3.5 h-3.5 text-emerald-600" /> Rincian Agenda Follow-up
+              <Clock className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" /> Rincian Agenda Follow-up
             </CardTitle>
           </CardHeader>
 
@@ -339,11 +341,11 @@ export default function CreateFollowupPage() {
                 tabIndex={0}
                 onClick={() => setIsLeadOpen(!isLeadOpen)}
                 onKeyDown={(e) => e.key === "Enter" && setIsLeadOpen(!isLeadOpen)}
-                className="w-full flex items-center justify-between h-9 px-3 rounded-md border border-input bg-background text-xs cursor-pointer hover:border-emerald-500 transition focus:outline-hidden"
+                className="w-full flex items-center justify-between h-9 px-3 rounded-md border border-border bg-background text-xs cursor-pointer hover:border-emerald-500 transition focus:outline-none"
               >
                 {selectedLead ? (
                   <span className="font-semibold text-foreground flex items-center gap-2 truncate">
-                    <User className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    <User className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
                     {selectedLead.lead_name}
                     {selectedLead.phone && (
                       <span className="text-muted-foreground font-normal font-mono text-[11px]">
@@ -361,14 +363,14 @@ export default function CreateFollowupPage() {
 
               {/* Floating Lead Dropdown */}
               {isLeadOpen && (
-                <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-popover border border-border rounded-xl shadow-xl p-2 space-y-1">
+                <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-card border border-border rounded-xl shadow-xl p-2 space-y-1 text-card-foreground">
                   <div className="relative mb-2">
                     <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                     <Input
                       placeholder="Ketik nama atau no HP..."
                       value={leadSearch}
                       onChange={(e) => setLeadSearch(e.target.value)}
-                      className="pl-8 h-8 text-xs"
+                      className="pl-8 h-8 text-xs bg-background border-border text-foreground"
                       autoFocus
                     />
                   </div>
@@ -389,17 +391,17 @@ export default function CreateFollowupPage() {
                           className={cn(
                             "flex items-center justify-between p-2 rounded-lg cursor-pointer text-xs hover:bg-muted transition",
                             form.lead_id === item.id &&
-                              "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 font-bold"
+                              "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold"
                           )}
                         >
                           <div>
                             <p className="font-medium text-foreground">{item.lead_name}</p>
                             <p className="text-[10px] text-muted-foreground font-mono">
-                              {formatPhoneForUser(item.phone) || "Tidak ada telepon"}
+                              {formatPhoneForUser(item.phone)}
                             </p>
                           </div>
                           {form.lead_id === item.id && (
-                            <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                            <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
                           )}
                         </div>
                       ))
@@ -417,12 +419,12 @@ export default function CreateFollowupPage() {
 
               {!isAdmin ? (
                 <div className="space-y-1">
-                  <div className="w-full flex items-center justify-between h-9 px-3 rounded-md border border-input bg-muted/50 text-xs cursor-not-allowed select-none">
+                  <div className="w-full flex items-center justify-between h-9 px-3 rounded-md border border-border bg-muted/50 text-xs cursor-not-allowed select-none">
                     <span className="font-semibold text-foreground flex items-center gap-2 truncate">
-                      <UserCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                      <UserCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
                       {selectedAgent ? (selectedAgent.full_name || selectedAgent.email) : (currentUserName || "Agent In-Charge")}
                     </span>
-                    <Badge variant="outline" className="text-[10px] bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 flex items-center gap-1">
+                    <Badge variant="outline" className="text-[10px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 flex items-center gap-1">
                       <Lock className="w-2.5 h-2.5" /> Akun Agent
                     </Badge>
                   </div>
@@ -434,11 +436,11 @@ export default function CreateFollowupPage() {
                     tabIndex={0}
                     onClick={() => setIsAgentOpen(!isAgentOpen)}
                     onKeyDown={(e) => e.key === "Enter" && setIsAgentOpen(!isAgentOpen)}
-                    className="w-full flex items-center justify-between h-9 px-3 rounded-md border border-input bg-background text-xs cursor-pointer hover:border-emerald-500 transition focus:outline-hidden"
+                    className="w-full flex items-center justify-between h-9 px-3 rounded-md border border-border bg-background text-xs cursor-pointer hover:border-emerald-500 transition focus:outline-none"
                   >
                     {selectedAgent ? (
                       <span className="font-semibold text-foreground flex items-center gap-2 truncate">
-                        <UserCheck className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                        <UserCheck className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
                         {selectedAgent.full_name || selectedAgent.email}
                       </span>
                     ) : (
@@ -450,14 +452,14 @@ export default function CreateFollowupPage() {
                   </div>
 
                   {isAgentOpen && (
-                    <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-popover border border-border rounded-xl shadow-xl p-2 space-y-1">
+                    <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-card border border-border rounded-xl shadow-xl p-2 space-y-1 text-card-foreground">
                       <div className="relative mb-2">
                         <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                         <Input
                           placeholder="Cari nama agent..."
                           value={agentSearch}
                           onChange={(e) => setAgentSearch(e.target.value)}
-                          className="pl-8 h-8 text-xs"
+                          className="pl-8 h-8 text-xs bg-background border-border text-foreground"
                           autoFocus
                         />
                       </div>
@@ -473,14 +475,14 @@ export default function CreateFollowupPage() {
                             className={cn(
                               "flex items-center justify-between p-2 rounded-lg cursor-pointer text-xs hover:bg-muted transition",
                               form.assigned_to === agent.id &&
-                                "bg-blue-50 dark:bg-blue-950/40 text-blue-700 font-bold"
+                                "bg-blue-500/10 text-blue-600 dark:text-blue-400 font-bold"
                             )}
                           >
                             <span className="font-medium text-foreground">
                               {agent.full_name || agent.email}
                             </span>
                             {form.assigned_to === agent.id && (
-                              <Check className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                              <Check className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
                             )}
                           </div>
                         ))}
@@ -501,21 +503,21 @@ export default function CreateFollowupPage() {
                   <button
                     type="button"
                     onClick={() => setPresetDate(1)}
-                    className="text-[10px] font-medium bg-muted hover:bg-emerald-50 hover:text-emerald-700 dark:hover:bg-emerald-950/50 dark:hover:text-emerald-300 px-1.5 py-0.5 rounded-md transition"
+                    className="text-[10px] font-medium bg-muted hover:bg-emerald-500/10 hover:text-emerald-600 dark:hover:text-emerald-400 px-1.5 py-0.5 rounded-md transition cursor-pointer"
                   >
                     Besok
                   </button>
                   <button
                     type="button"
                     onClick={() => setPresetDate(3)}
-                    className="text-[10px] font-medium bg-muted hover:bg-emerald-50 hover:text-emerald-700 dark:hover:bg-emerald-950/50 dark:hover:text-emerald-300 px-1.5 py-0.5 rounded-md transition"
+                    className="text-[10px] font-medium bg-muted hover:bg-emerald-500/10 hover:text-emerald-600 dark:hover:text-emerald-400 px-1.5 py-0.5 rounded-md transition cursor-pointer"
                   >
                     +3 Hari
                   </button>
                   <button
                     type="button"
                     onClick={() => setPresetDate(7)}
-                    className="text-[10px] font-medium bg-muted hover:bg-emerald-50 hover:text-emerald-700 dark:hover:bg-emerald-950/50 dark:hover:text-emerald-300 px-1.5 py-0.5 rounded-md transition"
+                    className="text-[10px] font-medium bg-muted hover:bg-emerald-500/10 hover:text-emerald-600 dark:hover:text-emerald-400 px-1.5 py-0.5 rounded-md transition cursor-pointer"
                   >
                     +1 Minggu
                   </button>
@@ -527,7 +529,7 @@ export default function CreateFollowupPage() {
                 type="datetime-local"
                 value={form.followup_date}
                 onChange={(e) => handleChange("followup_date", e.target.value)}
-                className="h-9 text-xs font-mono"
+                className="h-9 text-xs font-mono bg-background border-border text-foreground"
                 required
               />
             </div>
@@ -543,16 +545,16 @@ export default function CreateFollowupPage() {
                 value={form.notes}
                 onChange={(e) => handleChange("notes", e.target.value)}
                 rows={3}
-                className="text-xs leading-relaxed"
+                className="text-xs leading-relaxed bg-background border-border text-foreground placeholder:text-muted-foreground"
               />
             </div>
 
             {/* SUBMIT BUTTONS */}
-            <div className="flex items-center gap-2 pt-2 border-t">
+            <div className="flex items-center gap-2 pt-2 border-t border-border">
               <Button
                 type="submit"
                 disabled={saving}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs gap-1.5 px-4 h-8 shadow-xs"
+                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs gap-1.5 px-4 h-8 shadow-xs cursor-pointer"
               >
                 {saving ? (
                   <>
@@ -569,7 +571,7 @@ export default function CreateFollowupPage() {
                 type="button"
                 variant="outline"
                 onClick={() => router.back()}
-                className="text-xs h-8 px-3"
+                className="text-xs h-8 px-3 border-border bg-background hover:bg-muted text-foreground cursor-pointer"
               >
                 Batal
               </Button>

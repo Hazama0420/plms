@@ -75,7 +75,6 @@ export interface PropertyItem {
 const DEFAULT_FALLBACK_IMAGE =
   "https://images.unsplash.com/photo-1564013799919-ab600027ffc6?auto=format&fit=crop&w=800&q=80";
 
-// 🔤 Helper untuk Kapitalisasi Setiap Kata
 const capitalizeWords = (str: string) => {
   if (!str) return "";
   return str
@@ -219,34 +218,15 @@ function PropertiesCatalogContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // 1. BACA PARAMETER DARI URL
-  const qParam =
-    searchParams.get("q") ||
-    searchParams.get("search") ||
-    searchParams.get("location") ||
-    "";
-
-  const listingTypeParam =
-    searchParams.get("listing_type") ||
-    searchParams.get("transaction_type") ||
-    "all";
-
-  const propertyTypeParam =
-    searchParams.get("property_type") ||
-    searchParams.get("type") ||
-    searchParams.get("category") ||
-    "all";
-
+  // PARAMETER URL
+  const qParam = searchParams.get("q") || searchParams.get("search") || searchParams.get("location") || "";
+  const listingTypeParam = searchParams.get("listing_type") || searchParams.get("transaction_type") || "all";
+  const propertyTypeParam = searchParams.get("property_type") || searchParams.get("type") || searchParams.get("category") || "all";
   const viewParam = searchParams.get("view");
   const scopeParam = searchParams.get("scope");
-  const isFeaturedParam =
-    searchParams.get("featured") === "true" ||
-    searchParams.get("is_featured") === "true";
-  const forYouParam =
-    searchParams.get("for_you") === "true" ||
-    searchParams.get("forYou") === "true";
+  const isFeaturedParam = searchParams.get("featured") === "true" || searchParams.get("is_featured") === "true";
+  const forYouParam = searchParams.get("for_you") === "true" || searchParams.get("forYou") === "true";
 
-  // Min & Max Filters
   const minPrice = searchParams.get("priceMin") || searchParams.get("minPrice") || "";
   const maxPrice = searchParams.get("priceMax") || searchParams.get("maxPrice") || "";
   const minBuildingArea = searchParams.get("buildingAreaMin") || "";
@@ -255,18 +235,28 @@ function PropertiesCatalogContent() {
   const maxLandArea = searchParams.get("landAreaMax") || "";
   const sortParam = searchParams.get("sort") || "";
 
-  // 2. STATE UTAMA
+  // STATE UTAMA & PREFERENSI VIEW MODE TERINTEGRASI
   const [viewMode, setViewMode] = useState<"grid" | "table">("grid");
   const [currentUser, setCurrentUser] = useState<{ id: string; role: string } | null>(null);
   const [profilesMap, setProfilesMap] = useState<Record<string, { full_name: string; avatar_url: string }>>({});
 
-  // 🔒 3. DEKLARASI STATUS USER & HAK AKSES (WAJIB DI ATAS USEMEMO)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (viewParam === "grid" || viewParam === "table") {
+      setViewMode(viewParam);
+      return;
+    }
+    const savedDefaultView = localStorage.getItem("default_catalog_view") as "grid" | "table";
+    if (savedDefaultView === "grid" || savedDefaultView === "table") {
+      setViewMode(savedDefaultView);
+    }
+  }, [viewParam]);
+
   const userRole = currentUser?.role?.toLowerCase() || "guest";
   const isGuestOrViewer = !currentUser || userRole === "guest" || userRole === "viewer";
   const isSuperAdmin = userRole === "super_admin" || userRole === "superadmin";
   const canCreateProperty = currentUser && !isGuestOrViewer;
 
-  // 4. DETEKSI MODE TAMPILAN (MY PROPERTIES / GLOBAL)
   const defaultScope = useMemo(() => {
     if (
       viewParam === "global" ||
@@ -290,7 +280,6 @@ function PropertiesCatalogContent() {
     }
   }, [viewParam, scopeParam, isFeaturedParam, forYouParam, qParam]);
 
-  // 5. FETCH USER AUTH
   useEffect(() => {
     async function fetchUser() {
       try {
@@ -321,14 +310,8 @@ function PropertiesCatalogContent() {
     fetchUser();
   }, []);
 
-  // 6. AMBIL DATA PROPERTI DARI SUPABASE
-  const {
-    data: rawProperties = [],
-    loading,
-    refetch,
-  } = useProperties();
+  const { data: rawProperties = [], loading, refetch } = useProperties();
 
-  // 7. FETCH PROFIL UPLOADER
   useEffect(() => {
     async function fetchProfiles() {
       if (!rawProperties || rawProperties.length === 0) return;
@@ -367,12 +350,10 @@ function PropertiesCatalogContent() {
     fetchProfiles();
   }, [rawProperties]);
 
-  // 8. MAPPING DATA PROPERTI
   const properties: PropertyItem[] = useMemo(() => {
     return (rawProperties || []).map((p) => mapPropertyItem(p, profilesMap));
   }, [rawProperties, profilesMap]);
 
-  // 9. HANDLER PEMBANTU
   const handleToggleFeatured = async (property: PropertyItem, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     if (!isSuperAdmin) return;
@@ -460,19 +441,15 @@ function PropertiesCatalogContent() {
     window.open(`https://wa.me/?text=${text}`, "_blank");
   };
 
-  // 10. FILTER & SORTING CLIENT-SIDE (MENANGANINI SEARCH DENGAN FLEKSIBEL)
   const filteredProperties = useMemo(() => {
     const list = properties.filter((item) => {
-      // Tamu / Viewer: hanya tampilkan status 'published' / 'available'
       if (isGuestOrViewer && item.status !== "published" && item.status !== "available") return false;
 
-      // Agen: mode "my_properties" saring milik sendiri
       if (!isGuestOrViewer && scopeMode === "my_properties" && currentUser?.id && !isSuperAdmin) {
         const isOwner = item.created_by === currentUser.id || item.assigned_to === currentUser.id;
         if (!isOwner) return false;
       }
 
-      // Filter Query Pencarian
       const query = qParam.trim().toLowerCase();
       const matchSearch =
         !query ||
@@ -480,7 +457,6 @@ function PropertiesCatalogContent() {
         item.location.toLowerCase().includes(query) ||
         item.listing_code.toLowerCase().includes(query);
 
-      // Filter Tipe Listing (Jual / Sewa)
       let matchListingType = true;
       if (listingTypeParam && listingTypeParam !== "all") {
         const typeNorm = item.listing_type.toLowerCase();
@@ -491,23 +467,19 @@ function PropertiesCatalogContent() {
         }
       }
 
-      // Filter Kategori Properti
       let matchPropertyType = true;
       if (propertyTypeParam && propertyTypeParam !== "all") {
         matchPropertyType = item.property_type.toLowerCase() === propertyTypeParam.toLowerCase();
       }
 
-      // Rentang Harga
       const itemPrice = item.price || 0;
       const matchMinPrice = !minPrice || itemPrice >= Number(minPrice);
       const matchMaxPrice = !maxPrice || itemPrice <= Number(maxPrice);
 
-      // Luas Bangunan
       const itemLB = item.building_area || 0;
       const matchMinLB = !minBuildingArea || itemLB >= Number(minBuildingArea);
       const matchMaxLB = !maxBuildingArea || itemLB <= Number(maxBuildingArea);
 
-      // Luas Tanah
       const itemLT = item.land_area || 0;
       const matchMinLT = !minLandArea || itemLT >= Number(minLandArea);
       const matchMaxLT = !maxLandArea || itemLT <= Number(maxLandArea);
@@ -525,7 +497,6 @@ function PropertiesCatalogContent() {
       );
     });
 
-    // Pengurutan Harga
     if (sortParam === "price_asc") {
       list.sort((a, b) => (a.price || 0) - (b.price || 0));
     } else if (sortParam === "price_desc") {
@@ -542,8 +513,6 @@ function PropertiesCatalogContent() {
     isSuperAdmin,
     listingTypeParam,
     propertyTypeParam,
-    isFeaturedParam,
-    forYouParam,
     minPrice,
     maxPrice,
     minBuildingArea,
@@ -554,19 +523,19 @@ function PropertiesCatalogContent() {
   ]);
 
   return (
-    <div className="space-y-4 sm:space-y-6 pb-20 max-w-7xl mx-auto px-2.5 sm:px-6 bg-background/50 min-h-screen scroll-smooth">
+    <div className="space-y-4 sm:space-y-6 pb-24 max-w-[1550px] w-full mx-auto px-3 sm:px-8 bg-background/50 min-h-screen overflow-x-hidden">
       {/* 1. HEADER PAGE */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 border-b border-border/60 pb-4 pt-2">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-border/60 pb-4 pt-2">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-lg sm:text-2xl font-black tracking-tight text-foreground">
+            <h1 className="text-lg sm:text-2xl font-bold tracking-tight text-foreground">
               {isGuestOrViewer
                 ? "Katalog Properti"
                 : scopeMode === "my_properties"
                 ? "Portofolio Saya"
                 : "Katalog Perusahaan"}
             </h1>
-            <Badge variant="outline" className="text-[10px] font-bold bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30">
+            <Badge variant="outline" className="text-[10px] sm:text-xs font-semibold bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30 px-2 py-0.5">
               {isGuestOrViewer ? "Klien" : scopeMode === "my_properties" ? "Pribadi" : "Perusahaan"}
             </Badge>
           </div>
@@ -575,22 +544,22 @@ function PropertiesCatalogContent() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2 justify-between sm:justify-end">
+        <div className="flex items-center gap-2 justify-between sm:justify-end flex-wrap sm:flex-nowrap">
           {/* Toggle View Mode */}
           <div className="flex items-center border border-border/80 rounded-xl p-0.5 bg-card shadow-2xs">
             <Button
               variant={viewMode === "grid" ? "default" : "ghost"}
               size="sm"
               onClick={() => setViewMode("grid")}
-              className={cn("h-8 px-2.5 text-xs gap-1.5 rounded-lg cursor-pointer", viewMode === "grid" ? "bg-emerald-600 text-white hover:bg-emerald-700" : "text-muted-foreground")}
+              className={cn("h-8 px-2.5 text-xs font-semibold gap-1.5 rounded-lg cursor-pointer", viewMode === "grid" ? "bg-emerald-600 text-white hover:bg-emerald-700" : "text-muted-foreground")}
             >
-              <LayoutGrid className="w-3.5 h-3.5" /> Grid
+              <LayoutGrid className="w-3.5 h-3.5" /> Kartu
             </Button>
             <Button
               variant={viewMode === "table" ? "default" : "ghost"}
               size="sm"
               onClick={() => setViewMode("table")}
-              className={cn("h-8 px-2.5 text-xs gap-1.5 rounded-lg cursor-pointer", viewMode === "table" ? "bg-emerald-600 text-white hover:bg-emerald-700" : "text-muted-foreground")}
+              className={cn("h-8 px-2.5 text-xs font-semibold gap-1.5 rounded-lg cursor-pointer", viewMode === "table" ? "bg-emerald-600 text-white hover:bg-emerald-700" : "text-muted-foreground")}
             >
               <List className="w-3.5 h-3.5" /> Tabel
             </Button>
@@ -601,13 +570,12 @@ function PropertiesCatalogContent() {
               <RefreshCw className="w-3.5 h-3.5 text-muted-foreground" />
             </Button>
 
-            {/* 🔒 TOMBOL TAMBAH UNTUK AGEN / ADMIN */}
             {canCreateProperty && (
               <Button
                 onClick={() => router.push("/properties/create")}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold gap-1.5 h-8 sm:h-9 px-3 sm:px-4 rounded-xl cursor-pointer shadow-xs"
+                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold gap-1.5 h-8 sm:h-9 px-3 sm:px-4 rounded-xl cursor-pointer shadow-xs"
               >
-                <Plus className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> Tambah
+                <Plus className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> <span className="hidden xs:inline">Tambah Properti</span><span className="xs:hidden">Tambah</span>
               </Button>
             )}
           </div>
@@ -616,14 +584,14 @@ function PropertiesCatalogContent() {
 
       {/* 2. TOGGLE SCOPE (AGEN/ADMIN) */}
       {!isGuestOrViewer && (
-        <div className="flex items-center justify-between bg-muted/40 p-1 rounded-xl border border-border/60">
-          <div className="flex items-center gap-1 w-full sm:w-auto">
+        <div className="flex items-center justify-between bg-muted/40 p-1 sm:p-1.5 rounded-xl border border-border/60">
+          <div className="flex items-center gap-1 sm:gap-2 w-full sm:w-auto">
             <Button
               variant={scopeMode === "my_properties" ? "default" : "ghost"}
               size="sm"
               onClick={() => setScopeMode("my_properties")}
               className={cn(
-                "text-xs h-7 sm:h-8 flex-1 sm:flex-initial rounded-lg gap-1.5 cursor-pointer font-semibold",
+                "text-xs h-7 sm:h-8 flex-1 sm:flex-initial rounded-lg gap-1.5 cursor-pointer font-bold px-2.5 sm:px-4",
                 scopeMode === "my_properties" ? "bg-emerald-600 text-white" : "text-muted-foreground hover:bg-background/60"
               )}
             >
@@ -634,7 +602,7 @@ function PropertiesCatalogContent() {
               size="sm"
               onClick={() => setScopeMode("global")}
               className={cn(
-                "text-xs h-7 sm:h-8 flex-1 sm:flex-initial rounded-lg gap-1.5 cursor-pointer font-semibold",
+                "text-xs h-7 sm:h-8 flex-1 sm:flex-initial rounded-lg gap-1.5 cursor-pointer font-bold px-2.5 sm:px-4",
                 scopeMode === "global" ? "bg-emerald-600 text-white" : "text-muted-foreground hover:bg-background/60"
               )}
             >
@@ -644,83 +612,82 @@ function PropertiesCatalogContent() {
         </div>
       )}
 
-      {/* 3. HERO SEARCH BANNER DENGAN BACKGROUND /bg-header.webp & DASHBOARD PROPERTY SEARCH */}
-      <div className="relative rounded-2xl sm:rounded-3xl overflow-hidden bg-slate-950 text-white border border-border/40 shadow-xl">
+      {/* 3. HERO SEARCH BANNER */}
+      <div className="relative rounded-2xl sm:rounded-3xl overflow-hidden bg-slate-950 text-white border border-border/40 shadow-lg">
         <div
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-40 transition-transform duration-700 hover:scale-105 pointer-events-none"
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-35 transition-transform duration-700 hover:scale-105 pointer-events-none"
           style={{ backgroundImage: "url('/bg-header.webp')" }}
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/60 to-transparent pointer-events-none" />
+        <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/70 to-transparent pointer-events-none" />
 
-        <div className="relative z-10 p-4 sm:p-6 md:p-8 space-y-3 sm:space-y-4">
-          <div className="max-w-xl">
-            <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30 text-[10px] font-bold uppercase tracking-wider mb-1.5">
+        <div className="relative z-10 p-4 sm:p-7 md:p-8 space-y-3 sm:space-y-4">
+          <div className="max-w-2xl">
+            <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30 text-[10px] sm:text-xs font-bold uppercase tracking-wider mb-1.5">
               Pencarian Properti
             </Badge>
-            <h2 className="text-xl sm:text-2xl md:text-3xl font-black tracking-tight text-white leading-tight">
+            <h2 className="text-lg sm:text-2xl md:text-3xl font-extrabold tracking-tight text-white leading-tight">
               Temukan Properti Impian Anda
             </h2>
-            <p className="text-xs sm:text-sm text-slate-300 mt-1">
+            <p className="text-xs sm:text-sm text-slate-300 mt-1 leading-relaxed">
               Gunakan filter presisi untuk menemukan hunian, tanah, atau ruang usaha terbaik.
             </p>
           </div>
 
-          {/* INTEGRASI DASHBOARD PROPERTY SEARCH */}
-          <div className="pt-2">
+          <div className="pt-1">
             <DashboardPropertySearch />
           </div>
         </div>
       </div>
 
-     {/* 4. MAIN LIST PROPERTI */}
-{loading ? (
-  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
-    {[...Array(8)].map((_, i) => (
-      <Skeleton key={i} className="h-64 sm:h-72 w-full rounded-2xl bg-muted/60" />
-    ))}
-  </div>
-) : filteredProperties.length === 0 ? (
-        <Card className="border border-border/80 p-8 sm:p-10 text-center space-y-3 rounded-2xl bg-card shadow-2xs">
-          <Building2 className="w-8 h-8 sm:w-10 sm:h-10 text-muted-foreground mx-auto" />
-          <h3 className="text-xs sm:text-sm font-bold text-foreground">Tidak ada properti ditemukan</h3>
-          <p className="text-[11px] sm:text-xs text-muted-foreground max-w-xs mx-auto">
+      {/* 4. MAIN LIST PROPERTI */}
+      {loading ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5 sm:gap-5">
+          {[...Array(8)].map((_, i) => (
+            <Skeleton key={i} className="h-72 sm:h-80 w-full rounded-2xl bg-muted/60" />
+          ))}
+        </div>
+      ) : filteredProperties.length === 0 ? (
+        <Card className="border border-border/80 p-8 sm:p-14 text-center space-y-3 rounded-2xl bg-card shadow-xs">
+          <Building2 className="w-10 h-10 sm:w-12 sm:h-12 text-muted-foreground/60 mx-auto" />
+          <h3 className="text-xs sm:text-base font-bold text-foreground">Tidak ada properti ditemukan</h3>
+          <p className="text-xs text-muted-foreground max-w-sm mx-auto leading-relaxed">
             Coba atur ulang kata kunci atau filter pencarian Anda.
           </p>
         </Card>
       ) : viewMode === "grid" ? (
-  /* ================= 🔲 GRID VIEW ================= */
-  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
-    {filteredProperties.map((prop) => {
-      const isRent = prop.listing_type === "sewa" || prop.listing_type === "disewa" || prop.listing_type === "rent";
+        /* ================= 🔲 GRID VIEW (RESPONSIF HP BERSINAR) ================= */
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5 sm:gap-5">
+          {filteredProperties.map((prop) => {
+            const isRent = prop.listing_type === "sewa" || prop.listing_type === "disewa" || prop.listing_type === "rent";
 
-      return (
-        <Card
-          key={prop.id}
-          onClick={() => goToDetail(prop.id)}
-          className="group border border-border/70 shadow-2xs hover:shadow-md hover:border-emerald-500/40 transition-all rounded-2xl overflow-hidden cursor-pointer flex flex-col justify-between bg-card"
-        >
+            return (
+              <Card
+                key={prop.id}
+                onClick={() => goToDetail(prop.id)}
+                className="group border border-border/80 shadow-2xs hover:shadow-lg hover:border-emerald-500/50 transition-all rounded-2xl overflow-hidden cursor-pointer flex flex-col justify-between bg-card"
+              >
                 <div>
                   {/* Foto Properti */}
-                  <div className="relative aspect-[4/3] sm:aspect-[16/10] bg-muted overflow-hidden">
+                  <div className="relative aspect-[16/10] bg-muted overflow-hidden">
                     <WatermarkedImage
                       src={prop.thumbnail}
                       alt={prop.title}
                       className="absolute inset-0 w-full h-full"
                       imageClassName="group-hover:scale-105 transition-transform duration-500 object-cover w-full h-full"
                       watermarkSize="w-1/3"
-                      watermarkOpacity={0.7}
+                      watermarkOpacity={0.6}
                     />
 
-                    {/* Super Admin Star */}
+                    {/* Star Super Admin */}
                     {isSuperAdmin && (
                       <button
                         type="button"
                         onClick={(e) => handleToggleFeatured(prop, e)}
-                        className="absolute top-1.5 right-1.5 p-1 rounded-full bg-slate-950/70 backdrop-blur-md transition shadow-xs z-10 cursor-pointer"
+                        className="absolute top-2 right-2 p-1.5 rounded-full bg-slate-950/70 backdrop-blur-md transition shadow-xs z-10 cursor-pointer"
                       >
                         <Star
                           className={cn(
-                            "w-3 h-3 sm:w-3.5 sm:h-3.5",
+                            "w-3.5 h-3.5",
                             prop.is_featured ? "fill-amber-400 text-amber-400" : "text-white/70"
                           )}
                         />
@@ -728,94 +695,91 @@ function PropertiesCatalogContent() {
                     )}
 
                     {/* Badge Tipe Listing */}
-                    <div className="absolute top-1.5 left-1.5 z-10">
-                      <Badge className={cn("text-[8px] sm:text-[9px] font-bold px-1.5 sm:px-2 py-0.5 uppercase tracking-wide text-white border-0 rounded-md", isRent ? "bg-amber-600" : "bg-emerald-600")}>
+                    <div className="absolute top-2 left-2 z-10">
+                      <Badge className={cn("text-[9px] sm:text-[10px] font-bold px-2 py-0.5 uppercase tracking-wide text-white border-0 rounded-md shadow-2xs", isRent ? "bg-amber-600" : "bg-emerald-600")}>
                         {isRent ? "SEWA" : "JUAL"}
                       </Badge>
                     </div>
 
                     {/* Kode Listing */}
-                    <div className="absolute bottom-1.5 right-1.5 z-10">
-                      <span className="text-[8px] sm:text-[9px] font-mono font-medium text-white bg-slate-950/80 px-1.5 py-0.5 rounded-md backdrop-blur-xs border border-white/10">
+                    <div className="absolute bottom-2 right-2 z-10">
+                      <span className="text-[9px] sm:text-[10px] font-mono font-bold text-white bg-slate-950/80 px-1.5 py-0.5 rounded-md backdrop-blur-xs border border-white/10 shadow-2xs">
                         {prop.listing_code}
                       </span>
                     </div>
                   </div>
 
                   {/* Informasi Ringkas Properti */}
-                  <CardContent className="p-2.5 sm:p-3.5 space-y-1.5 sm:space-y-2">
-                    <div className="text-xs sm:text-base font-extrabold text-emerald-600 dark:text-emerald-400 font-mono truncate">
+                  <CardContent className="p-3 sm:p-4 space-y-2">
+                    <div className="text-sm sm:text-lg font-extrabold text-emerald-600 dark:text-emerald-400 font-mono tracking-tight">
                       {formatCurrency(prop.price)}
                     </div>
 
-                    <div className="flex items-center justify-between gap-1.5 pt-0.5">
+                    <div className="flex items-start justify-between gap-2">
                       <h3
-                        className="font-bold text-[11px] sm:text-xs text-foreground truncate flex-1 group-hover:text-emerald-600 transition-colors"
+                        className="font-bold text-xs sm:text-sm text-foreground line-clamp-2 leading-snug group-hover:text-emerald-600 transition-colors flex-1"
                         title={prop.title}
                       >
                         {prop.title}
                       </h3>
 
-                      <Badge variant="outline" className="text-[8px] sm:text-[9px] font-bold px-1.5 py-0.2 shrink-0 bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800 flex items-center gap-0.5 rounded-md">
-                        <Building2 className="w-2.5 h-2.5 text-emerald-600 shrink-0" />
-                        <span>{prop.property_type}</span>
+                      <Badge variant="outline" className="text-[9px] sm:text-[10px] font-bold px-1.5 sm:px-2 py-0.5 shrink-0 bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-400 dark:border-emerald-800 rounded-md">
+                        {prop.property_type}
                       </Badge>
                     </div>
 
-                    <p className="text-[10px] sm:text-[11px] text-muted-foreground flex items-center gap-0.5 sm:gap-1 truncate">
-                      <MapPin className="w-3 h-3 text-emerald-600 shrink-0" /> {prop.location}
+                    <p className="text-[11px] sm:text-xs text-muted-foreground flex items-center gap-1 truncate">
+                      <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                      <span className="truncate">{prop.location}</span>
                     </p>
 
-                    <div className="flex items-center justify-between pt-1.5 sm:pt-2 text-[9px] sm:text-[11px] text-muted-foreground font-semibold border-t border-border/60 flex-wrap gap-y-1">
-                      <div className="flex items-center gap-1.5 sm:gap-2">
-                        <span className="flex items-center gap-0.5" title="Kamar Tidur">
-                          <Bed className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-600 shrink-0" />
-                          {prop.bedrooms || 0}
+                    {/* Spesifikasi GRID 2 Kolom di Mobile agar Rapi */}
+                    <div className="grid grid-cols-2 gap-1.5 pt-2 text-[11px] sm:text-xs text-muted-foreground font-semibold border-t border-border/60">
+                      <div className="flex items-center gap-2">
+                        <span className="flex items-center gap-1" title="Kamar Tidur">
+                          <Bed className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                          {prop.bedrooms || 0} KT
                         </span>
-                        <span className="flex items-center gap-0.5" title="Kamar Mandi">
-                          <Bath className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-600 shrink-0" />
-                          {prop.bathrooms || 0}
+                        <span className="flex items-center gap-1" title="Kamar Mandi">
+                          <Bath className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                          {prop.bathrooms || 0} KM
                         </span>
                       </div>
-                      <div className="flex items-center gap-1.5 sm:gap-2">
-                        <span className="flex items-center gap-0.5" title="Luas Bangunan">
-                          <Building2 className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-600 shrink-0" />
+                      <div className="flex items-center gap-2 justify-end">
+                        <span className="flex items-center gap-1 truncate" title="Luas Bangunan">
+                          <Building2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                           LB {prop.building_area || 0}m²
-                        </span>
-                        <span className="flex items-center gap-0.5" title="Luas Tanah">
-                          <Ruler className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-600 shrink-0" />
-                          LT {prop.land_area || 0}m²
                         </span>
                       </div>
                     </div>
                   </CardContent>
                 </div>
 
-                {/* Footer Kartu */}
-                <CardFooter className="p-2 sm:p-2.5 border-t border-border/60 bg-muted/30 flex items-center justify-between gap-1" onClick={(e) => e.stopPropagation()}>
+                {/* Footer Kartu (Responsif Mobile) */}
+                <CardFooter className="p-2.5 sm:p-3 border-t border-border/60 bg-muted/20 flex items-center justify-between gap-1.5" onClick={(e) => e.stopPropagation()}>
                   <div className="flex items-center gap-1">
                     <button
                       type="button"
                       onClick={(e) => handleWhatsAppClick(prop, e)}
-                      className="h-6 sm:h-7 px-2 text-[10px] sm:text-[11px] font-bold rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white flex items-center gap-1 shadow-2xs transition-all cursor-pointer"
-                      title="Hubungi WhatsApp (Catat ke CRM)"
+                      className="h-7 sm:h-8 px-2.5 text-[11px] sm:text-xs font-bold rounded-lg sm:rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1 shadow-2xs transition-all cursor-pointer"
+                      title="Hubungi WhatsApp"
                     >
-                      <svg className="w-3 h-3 fill-current" viewBox="0 0 24 24">
+                      <svg className="w-3 h-3 sm:w-3.5 sm:h-3.5 fill-current" viewBox="0 0 24 24">
                         <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.285-.143-1.687-.833-1.947-.928-.26-.095-.45-.143-.639.143-.19.286-.736.928-.903 1.118-.167.19-.333.214-.618.071-.285-.143-1.207-.445-2.299-1.419-.85-.759-1.424-1.697-1.591-1.983-.167-.286-.018-.44.125-.582.129-.128.285-.333.428-.5.143-.167.19-.286.285-.476.095-.19.048-.357-.024-.5-.071-.143-.639-1.537-.876-2.106-.23-.554-.464-.479-.639-.488-.165-.008-.356-.01-.547-.01-.19 0-.5.071-.761.357-.26.286-1 .976-1 2.381 0 1.405 1.023 2.762 1.166 2.952.143.19 2.013 3.074 4.877 4.311.681.294 1.213.47 1.627.601.684.217 1.307.186 1.8.113.55-.082 1.687-.69 1.925-1.357.238-.667.238-1.238.167-1.357-.07-.119-.26-.19-.545-.333z"/>
                       </svg>
-                      <span>WhatsApp</span>
+                      <span>WA</span>
                     </button>
 
-                    <Button variant="ghost" size="icon" onClick={(e) => handleSendWABrochure(prop, e)} className="h-6 w-6 sm:h-7 sm:w-7 text-emerald-600 hover:bg-emerald-500/10 rounded-lg cursor-pointer" title="Kirim Brosur WA">
-                      <Share2 className="w-3 h-3" />
+                    <Button variant="ghost" size="icon" onClick={(e) => handleSendWABrochure(prop, e)} className="h-7 w-7 sm:h-8 sm:w-8 text-emerald-600 hover:bg-emerald-500/10 rounded-lg sm:rounded-xl cursor-pointer" title="Kirim Brosur WA">
+                      <Share2 className="w-3.5 h-3.5" />
                     </Button>
                   </div>
 
-                  <div className="flex items-center gap-1 min-w-0 shrink-0" title={`Agen: ${prop.uploader_name}`}>
-                    <span className="text-[9px] sm:text-[10px] text-muted-foreground font-semibold truncate max-w-[45px] sm:max-w-[75px] text-right">
+                  <div className="flex items-center gap-1.5 min-w-0 shrink-0" title={`Agen: ${prop.uploader_name}`}>
+                    <span className="text-[11px] sm:text-xs text-muted-foreground font-semibold truncate max-w-[70px] sm:max-w-[85px] text-right">
                       {prop.uploader_name}
                     </span>
-                    <div className="relative w-5 h-5 sm:w-6 sm:h-6 rounded-full overflow-hidden border border-border bg-emerald-100 text-emerald-800 font-bold text-[8px] sm:text-[9px] flex items-center justify-center shrink-0 shadow-2xs">
+                    <div className="relative w-5 h-5 sm:w-6 sm:h-6 rounded-full overflow-hidden border border-border bg-emerald-100 text-emerald-800 font-bold text-[10px] flex items-center justify-center shrink-0 shadow-2xs">
                       {prop.uploader_name ? prop.uploader_name.slice(0, 2).toUpperCase() : "IP"}
                       {prop.uploader_avatar && (
                         <img
@@ -835,113 +799,115 @@ function PropertiesCatalogContent() {
           })}
         </div>
       ) : (
-        /* ================= 📋 TABLE VIEW ================= */
-        <Card className="rounded-2xl border border-border/70 overflow-hidden shadow-2xs bg-card">
-          <Table>
-            <TableHeader className="bg-muted/40">
-              <TableRow className="border-border/60">
-                <TableHead className="text-xs font-bold text-foreground">Properti</TableHead>
-                <TableHead className="text-xs font-bold text-foreground">Tipe</TableHead>
-                <TableHead className="text-xs font-bold text-foreground">Harga</TableHead>
-                <TableHead className="text-xs font-bold text-foreground">Spesifikasi</TableHead>
-                <TableHead className="text-xs font-bold text-foreground">Lokasi</TableHead>
-                <TableHead className="text-xs font-bold text-foreground">Agen</TableHead>
-                <TableHead className="text-right text-xs font-bold text-foreground">Aksi</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredProperties.map((prop) => {
-                const isRent = prop.listing_type === "sewa" || prop.listing_type === "disewa" || prop.listing_type === "rent";
+        /* ================= 📋 TABLE VIEW (DENGAN SCROLL CONTAINER BONGKAR HP) ================= */
+        <Card className="rounded-2xl border border-border/80 overflow-hidden shadow-xs bg-card">
+          <div className="w-full overflow-x-auto">
+            <Table className="min-w-[700px] sm:min-w-full">
+              <TableHeader className="bg-muted/50">
+                <TableRow className="border-border/60">
+                  <TableHead className="text-xs font-bold text-foreground py-3 px-3.5">Properti</TableHead>
+                  <TableHead className="text-xs font-bold text-foreground py-3 px-3.5">Tipe</TableHead>
+                  <TableHead className="text-xs font-bold text-foreground py-3 px-3.5">Harga</TableHead>
+                  <TableHead className="text-xs font-bold text-foreground py-3 px-3.5">Spesifikasi</TableHead>
+                  <TableHead className="text-xs font-bold text-foreground py-3 px-3.5">Lokasi</TableHead>
+                  <TableHead className="text-xs font-bold text-foreground py-3 px-3.5">Agen</TableHead>
+                  <TableHead className="text-right text-xs font-bold text-foreground py-3 px-3.5">Aksi</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredProperties.map((prop) => {
+                  const isRent = prop.listing_type === "sewa" || prop.listing_type === "disewa" || prop.listing_type === "rent";
 
-                return (
-                  <TableRow key={prop.id} className="hover:bg-muted/30 border-border/60 cursor-pointer" onClick={() => goToDetail(prop.id)}>
-                    <TableCell className="font-medium">
-                      <div className="flex items-center gap-2.5">
-                        <WatermarkedImage
-                          src={prop.thumbnail}
-                          alt={prop.title}
-                          className="w-10 h-10 rounded-xl border border-border/60 shrink-0 bg-muted overflow-hidden relative"
-                          imageClassName="absolute inset-0 w-full h-full object-cover"
-                          watermarkSize="w-1/2"
-                          watermarkOpacity={0.6}
-                        />
-                        <div>
-                          <div className="font-bold text-xs text-foreground line-clamp-1">{prop.title}</div>
-                          <div className="text-[10px] text-muted-foreground font-mono">{prop.listing_code}</div>
+                  return (
+                    <TableRow key={prop.id} className="hover:bg-muted/40 border-border/60 cursor-pointer" onClick={() => goToDetail(prop.id)}>
+                      <TableCell className="font-medium py-3 px-3.5">
+                        <div className="flex items-center gap-2.5">
+                          <WatermarkedImage
+                            src={prop.thumbnail}
+                            alt={prop.title}
+                            className="w-10 h-10 rounded-xl border border-border/60 shrink-0 bg-muted overflow-hidden relative"
+                            imageClassName="absolute inset-0 w-full h-full object-cover"
+                            watermarkSize="w-1/2"
+                            watermarkOpacity={0.6}
+                          />
+                          <div>
+                            <div className="font-bold text-xs text-foreground line-clamp-1">{prop.title}</div>
+                            <div className="text-[10px] text-muted-foreground font-mono mt-0.5">{prop.listing_code}</div>
+                          </div>
                         </div>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge className={cn("text-[9px] font-bold px-1.5 py-0.5 rounded", isRent ? "bg-amber-600 text-white" : "bg-emerald-600 text-white")}>
-                        {isRent ? "SEWA" : "JUAL"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="font-extrabold text-emerald-600 dark:text-emerald-400 text-xs whitespace-nowrap font-mono">
-                      {formatCurrency(prop.price)}
-                    </TableCell>
-                    <TableCell>
-                      <div className="text-[11px] text-muted-foreground font-medium flex items-center gap-1.5 flex-wrap">
-                        <span>{prop.bedrooms || 0} KT</span> • <span>{prop.bathrooms || 0} KM</span> •
-                        <span className="inline-flex items-center gap-0.5"><Building2 className="w-3 h-3 text-emerald-600" /> LB {prop.building_area || 0}m²</span> •
-                        <span className="inline-flex items-center gap-0.5"><Ruler className="w-3 h-3 text-emerald-600" /> LT {prop.land_area || 0}m²</span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground max-w-[160px] truncate">
-                      {prop.location}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-1.5">
-                        <div className="w-5 h-5 rounded-full overflow-hidden bg-emerald-100 text-emerald-800 font-bold text-[8px] flex items-center justify-center shrink-0">
-                          {prop.uploader_name ? prop.uploader_name.slice(0, 2).toUpperCase() : "IP"}
+                      </TableCell>
+                      <TableCell className="py-3 px-3.5">
+                        <Badge className={cn("text-[10px] font-bold px-2 py-0.5 rounded-md", isRent ? "bg-amber-600 text-white" : "bg-emerald-600 text-white")}>
+                          {isRent ? "SEWA" : "JUAL"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="font-extrabold text-emerald-600 dark:text-emerald-400 text-xs whitespace-nowrap font-mono py-3 px-3.5">
+                        {formatCurrency(prop.price)}
+                      </TableCell>
+                      <TableCell className="py-3 px-3.5">
+                        <div className="text-xs text-muted-foreground font-medium flex items-center gap-1.5 flex-wrap">
+                          <span>{prop.bedrooms || 0} KT</span> • <span>{prop.bathrooms || 0} KM</span> •
+                          <span className="inline-flex items-center gap-0.5"><Building2 className="w-3.5 h-3.5 text-emerald-600" /> LB {prop.building_area || 0}m²</span> •
+                          <span className="inline-flex items-center gap-0.5"><Ruler className="w-3.5 h-3.5 text-emerald-600" /> LT {prop.land_area || 0}m²</span>
                         </div>
-                        <span className="text-xs text-muted-foreground font-semibold truncate max-w-[80px]">
-                          {prop.uploader_name}
-                        </span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                      <div className="flex items-center justify-end gap-1">
-                        <button
-                          type="button"
-                          onClick={(e) => handleWhatsAppClick(prop, e)}
-                          className="h-7 px-2 text-xs font-bold rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white flex items-center gap-1 cursor-pointer"
-                        >
-                          <svg className="w-3 h-3 fill-current" viewBox="0 0 24 24">
-                            <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.285-.143-1.687-.833-1.947-.928-.26-.095-.45-.143-.639.143-.19.286-.736.928-.903 1.118-.167.19-.333.214-.618.071-.285-.143-1.207-.445-2.299-1.419-.85-.759-1.424-1.697-1.591-1.983-.167-.286-.018-.44.125-.582.129-.128.285-.333.428-.5.143-.167.19-.286.285-.476.095-.19.048-.357-.024-.5-.071-.143-.639-1.537-.876-2.106-.23-.554-.464-.479-.639-.488-.165-.008-.356-.01-.547-.01-.19 0-.5.071-.761.357-.26.286-1 .976-1 2.381 0 1.405 1.023 2.762 1.166 2.952.143.19 2.013 3.074 4.877 4.311.681.294 1.213.47 1.627.601.684.217 1.307.186 1.8.113.55-.082 1.687-.69 1.925-1.357.238-.667.238-1.238.167-1.357-.07-.119-.26-.19-.545-.333z"/>
-                          </svg>
-                          <span>WA</span>
-                        </button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-emerald-600 hover:bg-emerald-500/10 rounded-lg"
-                          onClick={(e) => handleSendWABrochure(prop, e)}
-                        >
-                          <Share2 className="w-3 h-3" />
-                        </Button>
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground max-w-[150px] truncate py-3 px-3.5">
+                        {prop.location}
+                      </TableCell>
+                      <TableCell className="py-3 px-3.5">
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-5 h-5 rounded-full overflow-hidden bg-emerald-100 text-emerald-800 font-bold text-[9px] flex items-center justify-center shrink-0">
+                            {prop.uploader_name ? prop.uploader_name.slice(0, 2).toUpperCase() : "IP"}
+                          </div>
+                          <span className="text-xs text-muted-foreground font-semibold truncate max-w-[90px]">
+                            {prop.uploader_name}
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right py-3 px-3.5" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            type="button"
+                            onClick={(e) => handleWhatsAppClick(prop, e)}
+                            className="h-7 px-2 text-xs font-bold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1 cursor-pointer"
+                          >
+                            <svg className="w-3 h-3 fill-current" viewBox="0 0 24 24">
+                              <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.285-.143-1.687-.833-1.947-.928-.26-.095-.45-.143-.639.143-.19.286-.736.928-.903 1.118-.167.19-.333.214-.618.071-.285-.143-1.207-.445-2.299-1.419-.85-.759-1.424-1.697-1.591-1.983-.167-.286-.018-.44.125-.582.129-.128.285-.333.428-.5.143-.167.19-.286.285-.476.095-.19.048-.357-.024-.5-.071-.143-.639-1.537-.876-2.106-.23-.554-.464-.479-.639-.488-.165-.008-.356-.01-.547-.01-.19 0-.5.071-.761.357-.26.286-1 .976-1 2.381 0 1.405 1.023 2.762 1.166 2.952.143.19 2.013 3.074 4.877 4.311.681.294 1.213.47 1.627.601.684.217 1.307.186 1.8.113.55-.082 1.687-.69 1.925-1.357.238-.667.238-1.238.167-1.357-.07-.119-.26-.19-.545-.333z"/>
+                            </svg>
+                            <span>WA</span>
+                          </button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-emerald-600 hover:bg-emerald-500/10 rounded-lg"
+                            onClick={(e) => handleSendWABrochure(prop, e)}
+                          >
+                            <Share2 className="w-3.5 h-3.5" />
+                          </Button>
 
-                        {!isGuestOrViewer && (
-                          <DropdownMenu>
-                            <DropdownMenuTrigger className="h-7 w-7 rounded-lg hover:bg-accent flex items-center justify-center border border-border/80">
-                              <MoreVertical className="h-4 w-4 text-muted-foreground" />
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="rounded-xl">
-                              <DropdownMenuItem onClick={() => router.push(`/properties/edit/${prop.id}`)}>
-                                <Edit className="w-3.5 h-3.5 mr-2" /> Edit
-                              </DropdownMenuItem>
-                              <DropdownMenuItem className="text-rose-600" onClick={(e) => handleDelete(prop.id, e)}>
-                                <Trash2 className="w-3.5 h-3.5 mr-2" /> Hapus
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        )}
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
+                          {!isGuestOrViewer && (
+                            <DropdownMenu>
+                              <DropdownMenuTrigger className="h-7 w-7 rounded-lg hover:bg-accent flex items-center justify-center border border-border/80">
+                                <MoreVertical className="h-3.5 w-3.5 text-muted-foreground" />
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="rounded-xl">
+                                <DropdownMenuItem onClick={() => router.push(`/properties/edit/${prop.id}`)}>
+                                  <Edit className="w-3.5 h-3.5 mr-2" /> Edit
+                                </DropdownMenuItem>
+                                <DropdownMenuItem className="text-rose-600" onClick={(e) => handleDelete(prop.id, e)}>
+                                  <Trash2 className="w-3.5 h-3.5 mr-2" /> Hapus
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
         </Card>
       )}
     </div>

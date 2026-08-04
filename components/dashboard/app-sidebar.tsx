@@ -1,4 +1,3 @@
-// components/dashboard/app-sidebar.tsx
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
@@ -30,6 +29,7 @@ import {
   ActivitySquare,
   Plus,
   UserCheck2,
+  LayoutGrid,
 } from "lucide-react";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -77,6 +77,7 @@ const NAV_ITEMS: NavItem[] = [
     href: "/crm",
     roles: ["super_admin", "admin", "agent", "marketing"],
     children: [
+      { label: "Pipeline Kanban", icon: LayoutGrid, href: "/crm", exact: true, roles: ["super_admin", "admin", "agent", "marketing"] },
       { label: "Leads", icon: UserCheck2, href: "/crm/leads", roles: ["super_admin", "admin", "agent", "marketing"] },
       { label: "Follow-ups", icon: CalendarDays, href: "/crm/followups", roles: ["super_admin", "admin", "agent", "marketing"] },
     ],
@@ -215,7 +216,9 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
 
   const hasActiveChild = (item: NavItem) => {
     if (!item.children) return false;
-    return item.children.some((child) => pathname?.startsWith(child.href));
+    return item.children.some((child) =>
+      child.exact ? pathname === child.href : pathname?.startsWith(child.href)
+    );
   };
 
   const canSeeItem = (item: NavItem) => {
@@ -259,24 +262,43 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
           onOpenChange={() => toggleExpand(key)}
           className="space-y-1"
         >
-          <CollapsibleTrigger
+          {/* PARENT CONTAINER: Diberikan fleksibilitas terpisah antara teks & panah */}
+          <div
             className={cn(
-              "flex items-center justify-between w-full px-3 py-2 rounded-xl transition-all duration-200 text-xs font-semibold cursor-pointer",
+              "flex items-center justify-between w-full px-3 py-2 rounded-xl transition-all duration-200 text-xs font-semibold group",
               active || hasChildActive
                 ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 font-bold"
                 : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
             )}
           >
-            <span className="flex items-center gap-2.5">
+            {/* 1. Klik area teks/ikon langsung navigasi ke item.href */}
+            <button
+              onClick={() => {
+                navigateAndClose(item.href);
+                if (!isExpanded) {
+                  setExpandedItems((prev) => ({ ...prev, [key]: true }));
+                }
+              }}
+              className="flex items-center gap-2.5 flex-1 text-left cursor-pointer"
+            >
               <item.icon size={17} className={cn((active || hasChildActive) && "text-emerald-600 dark:text-emerald-400")} />
               <span>{item.label}</span>
-            </span>
-            {isExpanded ? (
-              <ChevronUp size={14} className="text-muted-foreground" />
-            ) : (
-              <ChevronDown size={14} className="text-muted-foreground" />
-            )}
-          </CollapsibleTrigger>
+            </button>
+
+            {/* 2. Tombol Chevron khusus toggle accordion */}
+<CollapsibleTrigger
+  className="p-1 hover:bg-accent/80 rounded-lg text-muted-foreground transition-colors cursor-pointer"
+  title={isExpanded ? "Tutup sub-menu" : "Buka sub-menu"}
+>
+  {isExpanded ? (
+    <ChevronUp size={14} />
+  ) : (
+    <ChevronDown size={14} />
+  )}
+</CollapsibleTrigger>
+          </div>
+
+          {/* SUB-MENU CONTENT */}
           <CollapsibleContent className="space-y-0.5 ml-3.5 pl-2.5 border-l-2 border-emerald-500/20 dark:border-emerald-500/10 my-0.5">
             {visibleChildren.map((child) => (
               <button
@@ -336,16 +358,16 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
   };
 
   if (isLoading) {
-  return (
-    <aside className="flex flex-col bg-card text-card-foreground h-full w-full p-3 space-y-3">
-      <Skeleton className="h-12 w-full rounded-xl" />
-      <Skeleton className="h-full w-full rounded-xl" />
-    </aside>
-  );
-}
+    return (
+      <aside className="flex flex-col bg-card text-card-foreground h-full w-full p-3 space-y-3">
+        <Skeleton className="h-12 w-full rounded-xl" />
+        <Skeleton className="h-full w-full rounded-xl" />
+      </aside>
+    );
+  }
 
-return (
-  <aside className="flex flex-col bg-card/95 backdrop-blur-md text-card-foreground h-full w-full overflow-hidden select-none border-0">
+  return (
+    <aside className="flex flex-col bg-card/95 backdrop-blur-md text-card-foreground h-full w-full overflow-hidden select-none border-0">
       {/* 1. HEADER BRAND */}
       <div className="flex items-center h-16 px-4 border-b border-border/40 shrink-0 bg-card/50 justify-between">
         <button

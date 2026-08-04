@@ -1,4 +1,3 @@
-// app/(dashboard)/properties/page.tsx
 "use client";
 
 import { useState, useEffect, useMemo, Suspense } from "react";
@@ -9,17 +8,9 @@ import { supabase } from "@/lib/supabase/client";
 import { useProperties } from "@/hooks/use-properties";
 import { WatermarkedImage } from "@/components/ui/WatermarkedImage";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -36,31 +27,26 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
+// 🔍 IMPORT KOMPONEN PENCARIAN DASHBOARD
+import { DashboardPropertySearch } from "@/components/dashboard/DashboardPropertySearch";
+
 import {
   Plus,
-  Search,
   Building2,
   MapPin,
-  Eye,
   Share2,
   User,
   RefreshCw,
   LayoutGrid,
   List,
-  Filter as FilterIcon,
   Globe,
   Star,
   Bed,
   Bath,
-  SlidersHorizontal,
-  RotateCcw,
-  Tag,
   Edit,
   Trash2,
   MoreVertical,
   Ruler,
-  ChevronDown,
-  ChevronUp,
 } from "lucide-react";
 
 export interface PropertyItem {
@@ -89,7 +75,7 @@ export interface PropertyItem {
 const DEFAULT_FALLBACK_IMAGE =
   "https://images.unsplash.com/photo-1564013799919-ab600027ffc6?auto=format&fit=crop&w=800&q=80";
 
-// 🔤 Helper untuk Kapitalisasi Setiap Kata (misal: "rumah susun" -> "Rumah Susun")
+// 🔤 Helper untuk Kapitalisasi Setiap Kata
 const capitalizeWords = (str: string) => {
   if (!str) return "";
   return str
@@ -202,7 +188,6 @@ const mapPropertyItem = (
     p.uploader_avatar ||
     "";
 
-  // Kategori Properti terformat Huruf Kapital di Awal
   const rawType = p.property_type || p.category || p.type || "Rumah";
   const formattedPropertyType = capitalizeWords(rawType);
 
@@ -234,37 +219,78 @@ function PropertiesCatalogContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // URL Params
-  const qParam = searchParams.get("q") || searchParams.get("search") || "";
-  const initialListingType = searchParams.get("listing_type") || "all";
-  const initialPropertyType = searchParams.get("property_type") || "all";
+  // 1. BACA PARAMETER DARI URL
+  const qParam =
+    searchParams.get("q") ||
+    searchParams.get("search") ||
+    searchParams.get("location") ||
+    "";
 
-  // Filter States
-  const [searchInput, setSearchInput] = useState(qParam);
-  const [listingTypeFilter, setListingTypeFilter] = useState<string>(initialListingType);
-  const [propertyTypeFilter, setPropertyTypeFilter] = useState<string>(initialPropertyType);
+  const listingTypeParam =
+    searchParams.get("listing_type") ||
+    searchParams.get("transaction_type") ||
+    "all";
 
-  // Toggle Dropdown Filter
-  const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const propertyTypeParam =
+    searchParams.get("property_type") ||
+    searchParams.get("type") ||
+    searchParams.get("category") ||
+    "all";
 
-  // Advanced Filter States
-  const [minPrice, setMinPrice] = useState(searchParams.get("priceMin") || "");
-  const [maxPrice, setMaxPrice] = useState(searchParams.get("priceMax") || "");
-  const [minBuildingArea, setMinBuildingArea] = useState(searchParams.get("buildingAreaMin") || "");
-  const [maxBuildingArea, setMaxBuildingArea] = useState(searchParams.get("buildingAreaMax") || "");
-  const [minLandArea, setMinLandArea] = useState(searchParams.get("landAreaMin") || "");
-  const [maxLandArea, setMaxLandArea] = useState(searchParams.get("landAreaMax") || "");
+  const viewParam = searchParams.get("view");
+  const scopeParam = searchParams.get("scope");
+  const isFeaturedParam =
+    searchParams.get("featured") === "true" ||
+    searchParams.get("is_featured") === "true";
+  const forYouParam =
+    searchParams.get("for_you") === "true" ||
+    searchParams.get("forYou") === "true";
 
-  // View mode & user states
+  // Min & Max Filters
+  const minPrice = searchParams.get("priceMin") || searchParams.get("minPrice") || "";
+  const maxPrice = searchParams.get("priceMax") || searchParams.get("maxPrice") || "";
+  const minBuildingArea = searchParams.get("buildingAreaMin") || "";
+  const maxBuildingArea = searchParams.get("buildingAreaMax") || "";
+  const minLandArea = searchParams.get("landAreaMin") || "";
+  const maxLandArea = searchParams.get("landAreaMax") || "";
+  const sortParam = searchParams.get("sort") || "";
+
+  // 2. STATE UTAMA
   const [viewMode, setViewMode] = useState<"grid" | "table">("grid");
   const [currentUser, setCurrentUser] = useState<{ id: string; role: string } | null>(null);
   const [profilesMap, setProfilesMap] = useState<Record<string, { full_name: string; avatar_url: string }>>({});
 
-  const viewParam = searchParams.get("view");
-  const [scopeMode, setScopeMode] = useState<"my_properties" | "global">(
-    viewParam === "global" ? "global" : "my_properties"
-  );
+  // 🔒 3. DEKLARASI STATUS USER & HAK AKSES (WAJIB DI ATAS USEMEMO)
+  const userRole = currentUser?.role?.toLowerCase() || "guest";
+  const isGuestOrViewer = !currentUser || userRole === "guest" || userRole === "viewer";
+  const isSuperAdmin = userRole === "super_admin" || userRole === "superadmin";
+  const canCreateProperty = currentUser && !isGuestOrViewer;
 
+  // 4. DETEKSI MODE TAMPILAN (MY PROPERTIES / GLOBAL)
+  const defaultScope = useMemo(() => {
+    if (
+      viewParam === "global" ||
+      scopeParam === "global" ||
+      isFeaturedParam ||
+      forYouParam ||
+      Boolean(qParam) ||
+      listingTypeParam !== "all" ||
+      propertyTypeParam !== "all"
+    ) {
+      return "global";
+    }
+    return "my_properties";
+  }, [viewParam, scopeParam, isFeaturedParam, forYouParam, qParam, listingTypeParam, propertyTypeParam]);
+
+  const [scopeMode, setScopeMode] = useState<"my_properties" | "global">(defaultScope);
+
+  useEffect(() => {
+    if (viewParam === "global" || scopeParam === "global" || isFeaturedParam || forYouParam || Boolean(qParam)) {
+      setScopeMode("global");
+    }
+  }, [viewParam, scopeParam, isFeaturedParam, forYouParam, qParam]);
+
+  // 5. FETCH USER AUTH
   useEffect(() => {
     async function fetchUser() {
       try {
@@ -295,22 +321,14 @@ function PropertiesCatalogContent() {
     fetchUser();
   }, []);
 
-  // 🔒 PENGECEKAN HAK AKSES KETAT
-  const userRole = currentUser?.role?.toLowerCase() || "guest";
-  const isGuestOrViewer = !currentUser || userRole === "guest" || userRole === "viewer";
-  const isSuperAdmin = userRole === "super_admin" || userRole === "superadmin";
-  const canCreateProperty = currentUser && !isGuestOrViewer;
-
+  // 6. AMBIL DATA PROPERTI DARI SUPABASE
   const {
     data: rawProperties = [],
     loading,
     refetch,
-  } = useProperties({
-    search: searchInput,
-    listing_type: listingTypeFilter as any,
-    property_type: propertyTypeFilter as any,
-  });
+  } = useProperties();
 
+  // 7. FETCH PROFIL UPLOADER
   useEffect(() => {
     async function fetchProfiles() {
       if (!rawProperties || rawProperties.length === 0) return;
@@ -349,10 +367,12 @@ function PropertiesCatalogContent() {
     fetchProfiles();
   }, [rawProperties]);
 
+  // 8. MAPPING DATA PROPERTI
   const properties: PropertyItem[] = useMemo(() => {
     return (rawProperties || []).map((p) => mapPropertyItem(p, profilesMap));
   }, [rawProperties, profilesMap]);
 
+  // 9. HANDLER PEMBANTU
   const handleToggleFeatured = async (property: PropertyItem, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     if (!isSuperAdmin) return;
@@ -368,7 +388,7 @@ function PropertiesCatalogContent() {
 
       toast.success(nextVal ? "Diatur sebagai Unggulan" : "Status Unggulan dicabut");
       refetch?.();
-    } catch (err: any) {
+    } catch {
       toast.error("Gagal update unggulan");
     }
   };
@@ -381,7 +401,7 @@ function PropertiesCatalogContent() {
       if (error) throw error;
       toast.success("Properti berhasil dihapus");
       refetch?.();
-    } catch (err: any) {
+    } catch {
       toast.error("Gagal menghapus properti");
     }
   };
@@ -399,7 +419,6 @@ function PropertiesCatalogContent() {
     router.push(`/properties/${id}`);
   };
 
-  // 💬 HANDLER TOMBOL WHATSAPP + CATAT LOG AKTIVITAS CRM
   const handleWhatsAppClick = async (property: PropertyItem, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
 
@@ -441,68 +460,54 @@ function PropertiesCatalogContent() {
     window.open(`https://wa.me/?text=${text}`, "_blank");
   };
 
-  const handleResetFilters = () => {
-    setSearchInput("");
-    setListingTypeFilter("all");
-    setPropertyTypeFilter("all");
-    setMinPrice("");
-    setMaxPrice("");
-    setMinBuildingArea("");
-    setMaxBuildingArea("");
-    setMinLandArea("");
-    setMaxLandArea("");
-    router.push("/properties");
-  };
-
-  // Menghitung jumlah filter aktif
-  const activeFilterCount = [
-    propertyTypeFilter !== "all",
-    Boolean(minPrice || maxPrice),
-    Boolean(minBuildingArea || maxBuildingArea),
-    Boolean(minLandArea || maxLandArea),
-  ].filter(Boolean).length;
-
+  // 10. FILTER & SORTING CLIENT-SIDE (MENANGANINI SEARCH DENGAN FLEKSIBEL)
   const filteredProperties = useMemo(() => {
-    return properties.filter((item) => {
-      // Untuk Tamu / Viewer: hanya tampilkan properti status 'published' / 'available'
+    const list = properties.filter((item) => {
+      // Tamu / Viewer: hanya tampilkan status 'published' / 'available'
       if (isGuestOrViewer && item.status !== "published" && item.status !== "available") return false;
 
-      // Untuk Agen: jika dalam mode "my_properties", saring hanya milik sendiri
+      // Agen: mode "my_properties" saring milik sendiri
       if (!isGuestOrViewer && scopeMode === "my_properties" && currentUser?.id && !isSuperAdmin) {
         const isOwner = item.created_by === currentUser.id || item.assigned_to === currentUser.id;
         if (!isOwner) return false;
       }
 
-      const query = searchInput.trim().toLowerCase();
+      // Filter Query Pencarian
+      const query = qParam.trim().toLowerCase();
       const matchSearch =
         !query ||
         item.title.toLowerCase().includes(query) ||
         item.location.toLowerCase().includes(query) ||
         item.listing_code.toLowerCase().includes(query);
 
+      // Filter Tipe Listing (Jual / Sewa)
       let matchListingType = true;
-      if (listingTypeFilter && listingTypeFilter !== "all") {
+      if (listingTypeParam && listingTypeParam !== "all") {
         const typeNorm = item.listing_type.toLowerCase();
-        if (listingTypeFilter === "dijual") {
+        if (listingTypeParam === "dijual" || listingTypeParam === "jual" || listingTypeParam === "sale") {
           matchListingType = typeNorm === "jual" || typeNorm === "dijual" || typeNorm === "sale";
-        } else if (listingTypeFilter === "disewa") {
+        } else if (listingTypeParam === "disewa" || listingTypeParam === "sewa" || listingTypeParam === "rent") {
           matchListingType = typeNorm === "sewa" || typeNorm === "disewa" || typeNorm === "rent";
         }
       }
 
+      // Filter Kategori Properti
       let matchPropertyType = true;
-      if (propertyTypeFilter && propertyTypeFilter !== "all") {
-        matchPropertyType = item.property_type.toLowerCase() === propertyTypeFilter.toLowerCase();
+      if (propertyTypeParam && propertyTypeParam !== "all") {
+        matchPropertyType = item.property_type.toLowerCase() === propertyTypeParam.toLowerCase();
       }
 
+      // Rentang Harga
       const itemPrice = item.price || 0;
       const matchMinPrice = !minPrice || itemPrice >= Number(minPrice);
       const matchMaxPrice = !maxPrice || itemPrice <= Number(maxPrice);
 
+      // Luas Bangunan
       const itemLB = item.building_area || 0;
       const matchMinLB = !minBuildingArea || itemLB >= Number(minBuildingArea);
       const matchMaxLB = !maxBuildingArea || itemLB <= Number(maxBuildingArea);
 
+      // Luas Tanah
       const itemLT = item.land_area || 0;
       const matchMinLT = !minLandArea || itemLT >= Number(minLandArea);
       const matchMaxLT = !maxLandArea || itemLT <= Number(maxLandArea);
@@ -519,21 +524,33 @@ function PropertiesCatalogContent() {
         matchMaxLT
       );
     });
+
+    // Pengurutan Harga
+    if (sortParam === "price_asc") {
+      list.sort((a, b) => (a.price || 0) - (b.price || 0));
+    } else if (sortParam === "price_desc") {
+      list.sort((a, b) => (b.price || 0) - (a.price || 0));
+    }
+
+    return list;
   }, [
     properties,
-    searchInput,
+    qParam,
     scopeMode,
     currentUser,
     isGuestOrViewer,
     isSuperAdmin,
-    listingTypeFilter,
-    propertyTypeFilter,
+    listingTypeParam,
+    propertyTypeParam,
+    isFeaturedParam,
+    forYouParam,
     minPrice,
     maxPrice,
     minBuildingArea,
     maxBuildingArea,
     minLandArea,
     maxLandArea,
+    sortParam,
   ]);
 
   return (
@@ -584,7 +601,7 @@ function PropertiesCatalogContent() {
               <RefreshCw className="w-3.5 h-3.5 text-muted-foreground" />
             </Button>
 
-            {/* 🔒 TOMBOL TAMBAH HANYA UNTUK AGEN / ADMIN */}
+            {/* 🔒 TOMBOL TAMBAH UNTUK AGEN / ADMIN */}
             {canCreateProperty && (
               <Button
                 onClick={() => router.push("/properties/create")}
@@ -627,193 +644,42 @@ function PropertiesCatalogContent() {
         </div>
       )}
 
-      {/* 3. SEARCH BAR UTAMA */}
-      <div className="relative rounded-xl border-2 border-emerald-500/30 bg-card p-0.5 shadow-xs focus-within:border-emerald-600 focus-within:ring-2 focus-within:ring-emerald-500/20 transition-all">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-emerald-600" />
-        <Input
-          placeholder="Cari nama properti, lokasi, atau kode listing..."
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-          className="pl-9 h-9 sm:h-10 text-xs border-0 bg-transparent shadow-none focus-visible:ring-0 focus-visible:outline-none placeholder:text-muted-foreground"
+      {/* 3. HERO SEARCH BANNER DENGAN BACKGROUND /bg-header.webp & DASHBOARD PROPERTY SEARCH */}
+      <div className="relative rounded-2xl sm:rounded-3xl overflow-hidden bg-slate-950 text-white border border-border/40 shadow-xl">
+        <div
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-40 transition-transform duration-700 hover:scale-105 pointer-events-none"
+          style={{ backgroundImage: "url('/bg-header.webp')" }}
         />
-      </div>
+        <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/60 to-transparent pointer-events-none" />
 
-      {/* 4. TOMBOL FILTER BESAR: DIJUAL & DISEWA */}
-      <div className="grid grid-cols-2 gap-2 sm:gap-3">
-        <Button
-          type="button"
-          size="lg"
-          variant="outline"
-          onClick={() => setListingTypeFilter(listingTypeFilter === "dijual" ? "all" : "dijual")}
-          className={cn(
-            "h-10 sm:h-12 text-xs sm:text-sm font-bold gap-1.5 sm:gap-2 rounded-xl border transition-all cursor-pointer shadow-xs",
-            listingTypeFilter === "dijual"
-              ? "bg-emerald-600 border-emerald-600 text-white hover:bg-emerald-700 shadow-emerald-600/20 shadow-md"
-              : "bg-card border-emerald-500/30 text-foreground hover:bg-emerald-500/10 hover:border-emerald-500"
-          )}
-        >
-          <Tag className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-          DIJUAL
-        </Button>
-        <Button
-          type="button"
-          size="lg"
-          variant="outline"
-          onClick={() => setListingTypeFilter(listingTypeFilter === "disewa" ? "all" : "disewa")}
-          className={cn(
-            "h-10 sm:h-12 text-xs sm:text-sm font-bold gap-1.5 sm:gap-2 rounded-xl border transition-all cursor-pointer shadow-xs",
-            listingTypeFilter === "disewa"
-              ? "bg-emerald-600 border-emerald-600 text-white hover:bg-emerald-700 shadow-emerald-600/20 shadow-md"
-              : "bg-card border-emerald-500/30 text-foreground hover:bg-emerald-500/10 hover:border-emerald-500"
-          )}
-        >
-          <Building2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-          DISEWA
-        </Button>
-      </div>
-
-      {/* 5. FILTER DROPDOWN / COLLAPSIBLE */}
-      <div className="space-y-3">
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => setIsFilterOpen(!isFilterOpen)}
-          className="w-full sm:w-auto h-9 sm:h-10 px-3.5 sm:px-4 text-xs font-semibold gap-2 rounded-xl border-emerald-500/30 bg-card hover:bg-emerald-500/10 text-foreground shadow-2xs cursor-pointer flex items-center justify-between sm:justify-start"
-        >
-          <div className="flex items-center gap-2">
-            <FilterIcon className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Filter</span>
-            {activeFilterCount > 0 && (
-              <Badge className="bg-emerald-600 text-white text-[10px] h-4.5 px-1.5 rounded-full">
-                {activeFilterCount}
-              </Badge>
-            )}
+        <div className="relative z-10 p-4 sm:p-6 md:p-8 space-y-3 sm:space-y-4">
+          <div className="max-w-xl">
+            <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30 text-[10px] font-bold uppercase tracking-wider mb-1.5">
+              Pencarian Properti
+            </Badge>
+            <h2 className="text-xl sm:text-2xl md:text-3xl font-black tracking-tight text-white leading-tight">
+              Temukan Properti Impian Anda
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-300 mt-1">
+              Gunakan filter presisi untuk menemukan hunian, tanah, atau ruang usaha terbaik.
+            </p>
           </div>
-          {isFilterOpen ? <ChevronUp className="w-3.5 h-3.5 text-muted-foreground" /> : <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />}
-        </Button>
 
-        {isFilterOpen && (
-          <Card className="border border-emerald-500/20 bg-card shadow-md rounded-2xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
-            <CardContent className="p-3.5 sm:p-4 space-y-4">
-              <div className="flex items-center justify-between border-b border-border/60 pb-2">
-                <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                  <SlidersHorizontal className="w-3.5 h-3.5 text-emerald-600" /> Opsi Filter Properti
-                </span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleResetFilters}
-                  className="h-6 text-xs text-muted-foreground hover:text-emerald-600 hover:bg-emerald-500/10 gap-1 cursor-pointer rounded-lg"
-                >
-                  <RotateCcw className="w-3 h-3" />
-                  Reset
-                </Button>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                {/* Kategori Filter */}
-                <div className="space-y-1">
-                  <label className="text-[11px] font-semibold text-muted-foreground">Kategori</label>
-                  <Select value={propertyTypeFilter} onValueChange={(val) => setPropertyTypeFilter(val ?? "")}>
-                    <SelectTrigger className="h-8 sm:h-9 text-xs rounded-xl border-border bg-background">
-                      <SelectValue placeholder="SEMUA KATEGORI" />
-                    </SelectTrigger>
-                    <SelectContent className="rounded-xl">
-                      <SelectItem value="all" className="text-xs font-semibold">SEMUA KATEGORI</SelectItem>
-                      <SelectItem value="rumah" className="text-xs font-semibold">RUMAH</SelectItem>
-                      <SelectItem value="apartemen" className="text-xs font-semibold">APARTEMEN</SelectItem>
-                      <SelectItem value="tanah" className="text-xs font-semibold">TANAH</SelectItem>
-                      <SelectItem value="ruko" className="text-xs font-semibold">RUKO</SelectItem>
-                      <SelectItem value="kost" className="text-xs font-semibold">KOST</SelectItem>
-                      <SelectItem value="villa" className="text-xs font-semibold">VILLA</SelectItem>
-                      <SelectItem value="hotel" className="text-xs font-semibold">HOTEL</SelectItem>
-                      <SelectItem value="pabrik" className="text-xs font-semibold">PABRIK</SelectItem>
-                      <SelectItem value="gudang" className="text-xs font-semibold">GUDANG</SelectItem>
-                      <SelectItem value="perkantoran" className="text-xs font-semibold">PERKANTORAN</SelectItem>
-                      <SelectItem value="ruang usaha" className="text-xs font-semibold">RUANG USAHA</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Harga Filter */}
-                <div className="space-y-1">
-                  <label className="text-[11px] font-semibold text-muted-foreground">Harga (IDR)</label>
-                  <div className="flex items-center gap-1.5">
-                    <Input
-                      type="number"
-                      placeholder="Min"
-                      value={minPrice}
-                      onChange={(e) => setMinPrice(e.target.value)}
-                      className="h-8 sm:h-9 text-xs rounded-xl border-border bg-background focus-visible:ring-emerald-500"
-                    />
-                    <span className="text-muted-foreground text-xs">-</span>
-                    <Input
-                      type="number"
-                      placeholder="Max"
-                      value={maxPrice}
-                      onChange={(e) => setMaxPrice(e.target.value)}
-                      className="h-8 sm:h-9 text-xs rounded-xl border-border bg-background focus-visible:ring-emerald-500"
-                    />
-                  </div>
-                </div>
-
-                {/* Luas Bangunan Filter */}
-                <div className="space-y-1">
-                  <label className="text-[11px] font-semibold text-muted-foreground">Luas Bangunan (LB m²)</label>
-                  <div className="flex items-center gap-1.5">
-                    <Input
-                      type="number"
-                      placeholder="Min LB"
-                      value={minBuildingArea}
-                      onChange={(e) => setMinBuildingArea(e.target.value)}
-                      className="h-8 sm:h-9 text-xs rounded-xl border-border bg-background focus-visible:ring-emerald-500"
-                    />
-                    <span className="text-muted-foreground text-xs">-</span>
-                    <Input
-                      type="number"
-                      placeholder="Max LB"
-                      value={maxBuildingArea}
-                      onChange={(e) => setMaxBuildingArea(e.target.value)}
-                      className="h-8 sm:h-9 text-xs rounded-xl border-border bg-background focus-visible:ring-emerald-500"
-                    />
-                  </div>
-                </div>
-
-                {/* Luas Tanah Filter */}
-                <div className="space-y-1">
-                  <label className="text-[11px] font-semibold text-muted-foreground">Luas Tanah (LT m²)</label>
-                  <div className="flex items-center gap-1.5">
-                    <Input
-                      type="number"
-                      placeholder="Min LT"
-                      value={minLandArea}
-                      onChange={(e) => setMinLandArea(e.target.value)}
-                      className="h-8 sm:h-9 text-xs rounded-xl border-border bg-background focus-visible:ring-emerald-500"
-                    />
-                    <span className="text-muted-foreground text-xs">-</span>
-                    <Input
-                      type="number"
-                      placeholder="Max LT"
-                      value={maxLandArea}
-                      onChange={(e) => setMaxLandArea(e.target.value)}
-                      className="h-8 sm:h-9 text-xs rounded-xl border-border bg-background focus-visible:ring-emerald-500"
-                    />
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
+          {/* INTEGRASI DASHBOARD PROPERTY SEARCH */}
+          <div className="pt-2">
+            <DashboardPropertySearch />
+          </div>
+        </div>
       </div>
 
-      {/* 6. MAIN LIST PROPERTI */}
-      {loading ? (
-        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5 sm:gap-4">
-          {[...Array(8)].map((_, i) => (
-            <Skeleton key={i} className="h-64 sm:h-72 w-full rounded-2xl bg-muted/60" />
-          ))}
-        </div>
-      ) : filteredProperties.length === 0 ? (
+     {/* 4. MAIN LIST PROPERTI */}
+{loading ? (
+  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
+    {[...Array(8)].map((_, i) => (
+      <Skeleton key={i} className="h-64 sm:h-72 w-full rounded-2xl bg-muted/60" />
+    ))}
+  </div>
+) : filteredProperties.length === 0 ? (
         <Card className="border border-border/80 p-8 sm:p-10 text-center space-y-3 rounded-2xl bg-card shadow-2xs">
           <Building2 className="w-8 h-8 sm:w-10 sm:h-10 text-muted-foreground mx-auto" />
           <h3 className="text-xs sm:text-sm font-bold text-foreground">Tidak ada properti ditemukan</h3>
@@ -822,25 +688,25 @@ function PropertiesCatalogContent() {
           </p>
         </Card>
       ) : viewMode === "grid" ? (
-        /* ================= 🔲 GRID VIEW (2 KOLOM DI MOBILE HPs) ================= */
-        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5 sm:gap-4">
-          {filteredProperties.map((prop) => {
-            const isRent = prop.listing_type === "sewa" || prop.listing_type === "disewa" || prop.listing_type === "rent";
+  /* ================= 🔲 GRID VIEW ================= */
+  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
+    {filteredProperties.map((prop) => {
+      const isRent = prop.listing_type === "sewa" || prop.listing_type === "disewa" || prop.listing_type === "rent";
 
-            return (
-              <Card
-                key={prop.id}
-                onClick={() => goToDetail(prop.id)}
-                className="group border border-border/70 shadow-2xs hover:shadow-md hover:border-emerald-500/40 transition-all rounded-2xl overflow-hidden cursor-pointer flex flex-col justify-between bg-card"
-              >
+      return (
+        <Card
+          key={prop.id}
+          onClick={() => goToDetail(prop.id)}
+          className="group border border-border/70 shadow-2xs hover:shadow-md hover:border-emerald-500/40 transition-all rounded-2xl overflow-hidden cursor-pointer flex flex-col justify-between bg-card"
+        >
                 <div>
-                  {/* Foto Properti dengan Watermark Melayang */}
+                  {/* Foto Properti */}
                   <div className="relative aspect-[4/3] sm:aspect-[16/10] bg-muted overflow-hidden">
                     <WatermarkedImage
                       src={prop.thumbnail}
                       alt={prop.title}
-                      className="w-full h-full"
-                      imageClassName="group-hover:scale-105 transition-transform duration-500"
+                      className="absolute inset-0 w-full h-full"
+                      imageClassName="group-hover:scale-105 transition-transform duration-500 object-cover w-full h-full"
                       watermarkSize="w-1/3"
                       watermarkOpacity={0.7}
                     />
@@ -862,14 +728,14 @@ function PropertiesCatalogContent() {
                     )}
 
                     {/* Badge Tipe Listing */}
-                    <div className="absolute top-1.5 left-1.5">
+                    <div className="absolute top-1.5 left-1.5 z-10">
                       <Badge className={cn("text-[8px] sm:text-[9px] font-bold px-1.5 sm:px-2 py-0.5 uppercase tracking-wide text-white border-0 rounded-md", isRent ? "bg-amber-600" : "bg-emerald-600")}>
                         {isRent ? "SEWA" : "JUAL"}
                       </Badge>
                     </div>
 
                     {/* Kode Listing */}
-                    <div className="absolute bottom-1.5 right-1.5">
+                    <div className="absolute bottom-1.5 right-1.5 z-10">
                       <span className="text-[8px] sm:text-[9px] font-mono font-medium text-white bg-slate-950/80 px-1.5 py-0.5 rounded-md backdrop-blur-xs border border-white/10">
                         {prop.listing_code}
                       </span>
@@ -882,7 +748,6 @@ function PropertiesCatalogContent() {
                       {formatCurrency(prop.price)}
                     </div>
 
-                    {/* 🏠 BARISAN JUDUL (DENGAN TRUNCATE ...) & BADGE KATEGORI DI KANAN */}
                     <div className="flex items-center justify-between gap-1.5 pt-0.5">
                       <h3
                         className="font-bold text-[11px] sm:text-xs text-foreground truncate flex-1 group-hover:text-emerald-600 transition-colors"
@@ -901,7 +766,6 @@ function PropertiesCatalogContent() {
                       <MapPin className="w-3 h-3 text-emerald-600 shrink-0" /> {prop.location}
                     </p>
 
-                    {/* 📐 SPESIFIKASI RINGKAS */}
                     <div className="flex items-center justify-between pt-1.5 sm:pt-2 text-[9px] sm:text-[11px] text-muted-foreground font-semibold border-t border-border/60 flex-wrap gap-y-1">
                       <div className="flex items-center gap-1.5 sm:gap-2">
                         <span className="flex items-center gap-0.5" title="Kamar Tidur">
@@ -927,10 +791,9 @@ function PropertiesCatalogContent() {
                   </CardContent>
                 </div>
 
-                {/* Footer Kartu: Profil Agen & Tombol WhatsApp */}
+                {/* Footer Kartu */}
                 <CardFooter className="p-2 sm:p-2.5 border-t border-border/60 bg-muted/30 flex items-center justify-between gap-1" onClick={(e) => e.stopPropagation()}>
                   <div className="flex items-center gap-1">
-                    {/* 💬 TOMBOL WHATSAPP PENGGANTI DETAIL (LENGKAP DENGAN LOG CRM) */}
                     <button
                       type="button"
                       onClick={(e) => handleWhatsAppClick(prop, e)}
@@ -948,7 +811,6 @@ function PropertiesCatalogContent() {
                     </Button>
                   </div>
 
-                  {/* Profil Agen */}
                   <div className="flex items-center gap-1 min-w-0 shrink-0" title={`Agen: ${prop.uploader_name}`}>
                     <span className="text-[9px] sm:text-[10px] text-muted-foreground font-semibold truncate max-w-[45px] sm:max-w-[75px] text-right">
                       {prop.uploader_name}
@@ -998,8 +860,8 @@ function PropertiesCatalogContent() {
                         <WatermarkedImage
                           src={prop.thumbnail}
                           alt={prop.title}
-                          className="w-10 h-10 rounded-xl border border-border/60 shrink-0 bg-muted overflow-hidden"
-                          imageClassName="w-full h-full object-cover"
+                          className="w-10 h-10 rounded-xl border border-border/60 shrink-0 bg-muted overflow-hidden relative"
+                          imageClassName="absolute inset-0 w-full h-full object-cover"
                           watermarkSize="w-1/2"
                           watermarkOpacity={0.6}
                         />
@@ -1058,7 +920,6 @@ function PropertiesCatalogContent() {
                           <Share2 className="w-3 h-3" />
                         </Button>
 
-                        {/* 🔒 MENU EDIT/HAPUS HANYA UNTUK AGEN / ADMIN */}
                         {!isGuestOrViewer && (
                           <DropdownMenu>
                             <DropdownMenuTrigger className="h-7 w-7 rounded-lg hover:bg-accent flex items-center justify-center border border-border/80">

@@ -2,6 +2,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { Menu } from "lucide-react";
 import { AppSidebar } from "@/components/dashboard/app-sidebar";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -54,14 +55,14 @@ export default function DashboardLayout({
 
       {/* 🟢 SHEET DRAWER TANPA TOMBOL X BAWAAN & TANPA SPACE PUTIH KOSONG */}
       <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
-  <SheetContent
-    side="left"
-    className="p-0 w-64 max-w-64 border-r-0 shadow-2xl bg-card [&>button]:hidden"
-  >
-    <SheetTitle className="sr-only">Navigasi Sidebar</SheetTitle>
-    <AppSidebar onClose={() => setSidebarOpen(false)} />
-  </SheetContent>
-</Sheet>
+        <SheetContent
+          side="left"
+          className="p-0 w-64 max-w-64 border-r-0 shadow-2xl bg-card [&>button]:hidden"
+        >
+          <SheetTitle className="sr-only">Navigasi Sidebar</SheetTitle>
+          <AppSidebar onClose={() => setSidebarOpen(false)} />
+        </SheetContent>
+      </Sheet>
 
       {/* Area Utama (Layar Penuh / Clean View) */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
@@ -79,10 +80,15 @@ export default function DashboardLayout({
               <Menu size={22} />
             </Button>
             
-            <h2 className="text-lg sm:text-xl font-extrabold tracking-tight select-none flex items-center gap-1.5">
+            {/* 🟢 BACAAN INLAND PROPERTY SUDAH TERHUBUNG KE BERANDA / DASHBOARD */}
+            <Link
+              href="/dashboard"
+              className="text-lg sm:text-xl font-extrabold tracking-tight select-none flex items-center gap-1.5 hover:opacity-85 transition-opacity cursor-pointer"
+              title="Kembali ke Beranda Dashboard"
+            >
               <span className="text-emerald-600 dark:text-emerald-400">Inland</span>
               <span className="text-slate-900 dark:text-white">Property</span>
-            </h2>
+            </Link>
           </div>
 
           <div className="flex items-center gap-3">

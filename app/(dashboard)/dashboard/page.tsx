@@ -35,6 +35,7 @@ import {
 import { supabase } from "@/lib/supabase/client";
 import { dashboardService, type DashboardStats } from "@/services/dashboard.service";
 import { DashboardPropertySearch } from "@/components/dashboard/DashboardPropertySearch";
+import { WatermarkedImage } from "@/components/ui/WatermarkedImage";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -71,7 +72,6 @@ interface PropertyItem {
 const DEFAULT_FALLBACK_IMAGE =
   "https://images.unsplash.com/photo-1564013799919-ab600027ffc6?auto=format&fit=crop&w=800&q=80";
 
-// 🔴 1. TAMBAHKAN FUNGSI INI DI SINI
 const capitalizeWords = (str: string) => {
   if (!str) return "";
   return str
@@ -92,7 +92,6 @@ const formatPropertyItem = (p: any): PropertyItem => {
   const landObj = Array.isArray(p.land) ? p.land[0] : p.land;
   const mediaArr = Array.isArray(p.media) ? p.media : [];
 
-  // Mendapatkan Profil Pembuat / Agen
   const agentObj = Array.isArray(p.agent)
     ? p.agent[0]
     : p.agent || (Array.isArray(p.user) ? p.user[0] : p.user) || (Array.isArray(p.users) ? p.users[0] : p.users);
@@ -102,7 +101,6 @@ const formatPropertyItem = (p: any): PropertyItem => {
   const agentAvatar = agentObj?.avatar_url || agentObj?.photo_url || agentObj?.avatar || p.agent_avatar || null;
   const agentPhone = agentObj?.phone || agentObj?.whatsapp || p.agent_phone || p.phone || null;
 
-  // 🔴 2. TERAPKAN DI BAGIAN INI
   const rawCategory = p.category || p.property_type || p.type || "Rumah";
   const categoryName = typeof rawCategory === "string" 
     ? capitalizeWords(rawCategory) 
@@ -209,15 +207,12 @@ export default function DashboardPage() {
 
   const canSeeAdminManagement = isAdmin; 
   const canSeeAiSummary = isSuperAdmin || isAdmin || isAgent || isExecutive;
-  
-  // Hak Akses Invoice: Hanya Super Admin, Admin, dan Agent
   const canAccessInvoice = isLoggedIn && (isSuperAdmin || isAdmin || isAgent);
 
-  // 🎯 Handler Tombol WhatsApp + Log Aktivitas CRM
+  // Handler Tombol WhatsApp + Log Aktivitas CRM
   const handleWhatsAppClick = async (e: React.MouseEvent, prop: PropertyItem) => {
-    e.stopPropagation(); // Mencegah navigasi ke halaman detail properti
+    e.stopPropagation();
 
-    // 1. Log Aktivitas CRM ke Supabase
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
@@ -233,11 +228,10 @@ export default function DashboardPage() {
       console.error("Gagal mencatat log aktivitas CRM:", err);
     }
 
-    // 2. Membuka WhatsApp
     const phoneNum = prop.agent_phone ? prop.agent_phone.replace(/\D/g, "") : "";
     const formattedPhone = phoneNum
       ? (phoneNum.startsWith("0") ? `62${phoneNum.slice(1)}` : phoneNum)
-      : "6281234567890"; // Fallback nomor default
+      : "6281234567890";
 
     const waMsg = encodeURIComponent(
       `Halo, saya berminat dengan properti: *${prop.title}* (${prop.listing_code}). Apakah masih tersedia?`
@@ -250,7 +244,7 @@ export default function DashboardPage() {
     window.open(`https://wa.me/${formattedPhone}?text=${waMsg}`, "_blank");
   };
 
-  // 1. Fetch AI Summary
+  // Fetch AI Summary
   const loadAiSummary = useCallback(async () => {
     setLoadingAiSummary(true);
     try {
@@ -272,7 +266,7 @@ export default function DashboardPage() {
     }
   }, []);
 
-  // 2. Fetch Data Dashboard, Properti Unggulan, dan Properti Terbaru
+  // Fetch Data Dashboard
   const loadDashboardData = useCallback(async () => {
     setLoadingLeads(true);
     setLoadingFeatured(true);
@@ -282,7 +276,7 @@ export default function DashboardPage() {
       const dataStats = await dashboardService.getStats();
       setStats(dataStats);
 
-      // A. Fetch Properti Unggulan (Hanya 4 unit unggulan)
+      // A. Fetch Properti Unggulan
       const { data: featuredData } = await supabase
         .from("properties")
         .select(`
@@ -306,7 +300,7 @@ export default function DashboardPage() {
         setFeaturedProperties([]);
       }
 
-      // B. Fetch Properti Terbaru (4 unit keluaran terbaru)
+      // B. Fetch Properti Terbaru
       const { data: latestData } = await supabase
         .from("properties")
         .select(`
@@ -329,7 +323,7 @@ export default function DashboardPage() {
         setLatestProperties([]);
       }
 
-      // C. Fetch Leads CRM Follow-Up
+      // C. Fetch Leads CRM
       const { data: leadsData } = await supabase
         .from("crm_leads")
         .select(`
@@ -449,18 +443,18 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="space-y-6 pb-16 max-w-7xl mx-auto px-4 sm:px-6 bg-[#FDFBF7] min-h-screen">
+    <div className="space-y-5 pb-16 max-w-7xl mx-auto px-3 sm:px-6 bg-[#FDFBF7] dark:bg-slate-950 min-h-screen text-slate-900 dark:text-slate-100 transition-colors">
       
-      {/* 🚪 0. HEADER BANNER UNTUK PENGUNJUNG TAMU / BELUM LOGIN */}
+      {/* 🚪 0. BANNER PENGUNJUNG TAMU */}
       {!isLoggedIn && (
-        <div className="pt-4">
-          <div className="bg-white border border-[#F4EFE6] rounded-xl p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-2xs">
+        <div className="pt-3">
+          <div className="bg-white dark:bg-slate-900 border border-[#F4EFE6] dark:border-slate-800 rounded-xl p-3.5 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
             <div>
-              <h1 className="text-sm sm:text-base font-bold text-slate-900">
-                Selamat Datang di <span className="text-emerald-600">Inland Property</span>
+              <h1 className="text-xs sm:text-base font-bold text-slate-900 dark:text-white">
+                Selamat Datang di <span className="text-emerald-600 dark:text-emerald-400">Inland Property</span>
               </h1>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Masuk atau daftar akun untuk mengakses fitur lengkap CRM, pencarian properti, dan konsultasi.
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                Masuk atau daftar akun untuk mengakses fitur lengkap CRM dan pencarian properti.
               </p>
             </div>
             <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto">
@@ -468,15 +462,15 @@ export default function DashboardPage() {
                 variant="outline"
                 size="sm"
                 onClick={() => router.push("/login")}
-                className="flex-1 sm:flex-initial text-xs h-9 border-[#F4EFE6] hover:bg-[#F4EFE6] text-slate-800 font-semibold gap-1.5 cursor-pointer"
+                className="flex-1 sm:flex-initial text-xs h-8 sm:h-9 border-[#F4EFE6] dark:border-slate-800 hover:bg-[#F4EFE6] dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 font-semibold gap-1.5 cursor-pointer"
               >
-                <LogIn className="w-3.5 h-3.5 text-emerald-600" />
+                <LogIn className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                 Masuk
               </Button>
               <Button
                 size="sm"
                 onClick={() => router.push("/register")}
-                className="flex-1 sm:flex-initial text-xs h-9 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold gap-1.5 cursor-pointer shadow-2xs"
+                className="flex-1 sm:flex-initial text-xs h-8 sm:h-9 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold gap-1.5 cursor-pointer shadow-2xs"
               >
                 <UserPlus className="w-3.5 h-3.5" />
                 Daftar
@@ -486,54 +480,50 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* 🔍 1. HEADER HERO SEARCH (DENGAN PENYESUAIAN UKURAN TEKS & LEBAR PENCARIAN) */}
-      <section className="relative rounded-2xl overflow-hidden shadow-sm border border-[#F4EFE6]">
-        {/* Gambar Latar Belakang Asli */}
+      {/* 🔍 1. HEADER HERO SEARCH */}
+      <section className="relative rounded-2xl overflow-hidden shadow-xs border border-emerald-950/10 dark:border-emerald-500/20">
         <div 
           className="absolute inset-0 bg-cover bg-center z-0"
           style={{ backgroundImage: "url('/bg-header.webp')" }}
         />
+        <div className="absolute inset-0 bg-gradient-to-r from-slate-950/85 via-slate-950/65 to-slate-950/30 z-[1]" />
         
-        {/* Konten & Form Pencarian */}
-        <div className="relative z-10 p-5 sm:p-8 space-y-3 max-w-2xl text-left">
+        <div className="relative z-10 p-3.5 sm:p-7 space-y-2.5 max-w-2xl text-left">
           <div className="space-y-1">
-            <Badge className="bg-emerald-600 text-white border-0 text-[9px] font-semibold uppercase tracking-wider shadow-md">
+            <Badge className="bg-emerald-600 text-white border-0 text-[8px] sm:text-[9px] font-semibold uppercase tracking-wider shadow-md px-2 py-0.5">
               Portal Properti Eksklusif
             </Badge>
             
-            {/* Teks Judul Dikecilkan Ukurannya */}
-            <h2 className="text-lg sm:text-xl md:text-2xl font-extrabold text-white tracking-tight drop-shadow-md">
+            <h2 className="text-base sm:text-xl md:text-2xl font-extrabold text-white tracking-tight drop-shadow-md leading-tight sm:leading-snug">
               Temukan Hunian Impian Anda Bersama Kami
             </h2>
 
-            {/* Teks Subjudul Dikecilkan Ukurannya */}
-            <p className="text-[11px] sm:text-xs text-slate-100 max-w-lg font-medium drop-shadow-sm leading-relaxed">
+            <p className="text-[10px] sm:text-xs text-slate-200 max-w-lg font-medium drop-shadow-sm leading-normal sm:leading-relaxed">
               Gunakan pencarian dan filter cepat di bawah untuk menemukan properti terbaik sesuai lokasi, tipe, dan anggaran Anda.
             </p>
           </div>
 
-          {/* Kotak Pencarian Tidak Terlalu Panjang (max-w-xl) */}
-          <div className="pt-1 max-w-xl">
+          <div className="pt-0.5 w-full max-w-full sm:max-w-xl">
             <DashboardPropertySearch />
           </div>
         </div>
       </section>
 
-      {/* 🔴 2. QUICK ACCESS BULAT (KPR, TITIP PROPERTI, INVOICE, JADWAL SURVEY) */}
-      <section className={cn("border-b border-[#F4EFE6] pb-5", isLoggedIn ? "pt-2" : "pt-0")}>
-        <h2 className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-3">
+      {/* 🔴 2. QUICK ACCESS BULAT */}
+      <section className={cn("border-b border-[#F4EFE6] dark:border-slate-800 pb-4", isLoggedIn ? "pt-1" : "pt-0")}>
+        <h2 className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2.5">
           Akses Cepat
         </h2>
-        <div className="flex items-center gap-6 overflow-x-auto pb-1">
+        <div className="flex items-center gap-5 sm:gap-6 overflow-x-auto pb-1">
           <button
             type="button"
             onClick={() => router.push("/kpr")}
-            className="group flex flex-col items-center gap-2 cursor-pointer focus:outline-none shrink-0"
+            className="group flex flex-col items-center gap-1.5 cursor-pointer focus:outline-none shrink-0"
           >
-            <div className="w-14 h-14 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center shadow-xs transition-all duration-300 group-hover:scale-105 border-2 border-white">
-              <Calculator className="w-6 h-6" />
+            <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center shadow-xs transition-all duration-300 group-hover:scale-105 border-2 border-white dark:border-slate-900">
+              <Calculator className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
-            <span className="text-xs font-semibold text-slate-800 group-hover:text-emerald-600 transition-colors">
+            <span className="text-[11px] sm:text-xs font-semibold text-slate-800 dark:text-slate-200 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
               Simulasi KPR
             </span>
           </button>
@@ -541,30 +531,29 @@ export default function DashboardPage() {
           <button
             type="button"
             onClick={handleTitipProperti}
-            className="group flex flex-col items-center gap-2 cursor-pointer focus:outline-none shrink-0"
+            className="group flex flex-col items-center gap-1.5 cursor-pointer focus:outline-none shrink-0"
           >
-            <div className="relative w-14 h-14 rounded-full bg-white hover:bg-[#F4EFE6] text-emerald-600 border-2 border-[#F4EFE6] flex items-center justify-center shadow-2xs transition-all duration-300 group-hover:scale-105">
-              <Handshake className="w-6 h-6" />
-              <span className="absolute -top-1 -right-1 bg-emerald-600 text-[8px] text-white font-bold px-1.5 py-0.5 rounded-full uppercase shadow-2xs">
+            <div className="relative w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-white dark:bg-slate-900 hover:bg-[#F4EFE6] dark:hover:bg-slate-800 text-emerald-600 dark:text-emerald-400 border-2 border-[#F4EFE6] dark:border-slate-800 flex items-center justify-center shadow-2xs transition-all duration-300 group-hover:scale-105">
+              <Handshake className="w-5 h-5 sm:w-6 sm:h-6" />
+              <span className="absolute -top-1 -right-1 bg-emerald-600 text-[7px] sm:text-[8px] text-white font-bold px-1.5 py-0.5 rounded-full uppercase shadow-2xs">
                 Soon
               </span>
             </div>
-            <span className="text-xs font-semibold text-slate-800 group-hover:text-emerald-600 transition-colors">
+            <span className="text-[11px] sm:text-xs font-semibold text-slate-800 dark:text-slate-200 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
               Titip Properti
             </span>
           </button>
 
-          {/* 🔒 INVOICE HANYA UNTUK SUPER ADMIN, ADMIN, DAN AGENT */}
           {canAccessInvoice && (
             <button
               type="button"
               onClick={() => router.push("/invoices")}
-              className="group flex flex-col items-center gap-2 cursor-pointer focus:outline-none shrink-0"
+              className="group flex flex-col items-center gap-1.5 cursor-pointer focus:outline-none shrink-0"
             >
-              <div className="w-14 h-14 rounded-full bg-white hover:bg-[#F4EFE6] text-emerald-600 border-2 border-[#F4EFE6] flex items-center justify-center shadow-2xs transition-all duration-300 group-hover:scale-105">
-                <FileText className="w-6 h-6" />
+              <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-white dark:bg-slate-900 hover:bg-[#F4EFE6] dark:hover:bg-slate-800 text-emerald-600 dark:text-emerald-400 border-2 border-[#F4EFE6] dark:border-slate-800 flex items-center justify-center shadow-2xs transition-all duration-300 group-hover:scale-105">
+                <FileText className="w-5 h-5 sm:w-6 sm:h-6" />
               </div>
-              <span className="text-xs font-semibold text-slate-800 group-hover:text-emerald-600 transition-colors">
+              <span className="text-[11px] sm:text-xs font-semibold text-slate-800 dark:text-slate-200 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
                 Invoice
               </span>
             </button>
@@ -573,58 +562,58 @@ export default function DashboardPage() {
           <button
             type="button"
             onClick={() => router.push("/surveys")}
-            className="group flex flex-col items-center gap-2 cursor-pointer focus:outline-none shrink-0"
+            className="group flex flex-col items-center gap-1.5 cursor-pointer focus:outline-none shrink-0"
           >
-            <div className="w-14 h-14 rounded-full bg-white hover:bg-[#F4EFE6] text-emerald-600 border-2 border-[#F4EFE6] flex items-center justify-center shadow-2xs transition-all duration-300 group-hover:scale-105">
-              <CalendarCheck className="w-6 h-6" />
+            <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-white dark:bg-slate-900 hover:bg-[#F4EFE6] dark:hover:bg-slate-800 text-emerald-600 dark:text-emerald-400 border-2 border-[#F4EFE6] dark:border-slate-800 flex items-center justify-center shadow-2xs transition-all duration-300 group-hover:scale-105">
+              <CalendarCheck className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
-            <span className="text-xs font-semibold text-slate-800 group-hover:text-emerald-600 transition-colors">
+            <span className="text-[11px] sm:text-xs font-semibold text-slate-800 dark:text-slate-200 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
               Jadwal Survey
             </span>
           </button>
         </div>
       </section>
 
-      {/* 🟢 3. KPI RINGKASAN METRIK KHUSUS ADMIN & SUPER ADMIN */}
+      {/* 🟢 3. KPI RINGKASAN METRIK KHUSUS ADMIN */}
       {canSeeAdminManagement && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <Card className="border border-[#F4EFE6] bg-white shadow-2xs rounded-xl">
+          <Card className="border border-[#F4EFE6] dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs rounded-xl">
             <CardContent className="p-3.5 space-y-1">
-              <div className="flex items-center justify-between text-slate-500">
+              <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
                 <span className="text-xs font-medium">Listing Aktif</span>
-                <Building2 className="w-4 h-4 text-emerald-600" />
+                <Building2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
               </div>
-              <h3 className="text-lg font-bold text-slate-900">{stats?.activeListings || 0} Unit</h3>
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white">{stats?.activeListings || 0} Unit</h3>
             </CardContent>
           </Card>
 
-          <Card className="border border-[#F4EFE6] bg-white shadow-2xs rounded-xl">
+          <Card className="border border-[#F4EFE6] dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs rounded-xl">
             <CardContent className="p-3.5 space-y-1">
-              <div className="flex items-center justify-between text-slate-500">
+              <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
                 <span className="text-xs font-medium">Total Properti</span>
-                <Building2 className="w-4 h-4 text-emerald-600" />
+                <Building2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
               </div>
-              <h3 className="text-lg font-bold text-slate-900">{stats?.totalProperties || 0} Unit</h3>
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white">{stats?.totalProperties || 0} Unit</h3>
             </CardContent>
           </Card>
 
-          <Card className="border border-[#F4EFE6] bg-white shadow-2xs rounded-xl">
+          <Card className="border border-[#F4EFE6] dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs rounded-xl">
             <CardContent className="p-3.5 space-y-1">
-              <div className="flex items-center justify-between text-slate-500">
+              <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
                 <span className="text-xs font-medium">Total Leads CRM</span>
-                <Users className="w-4 h-4 text-emerald-600" />
+                <Users className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
               </div>
-              <h3 className="text-lg font-bold text-slate-900">{stats?.todayLeads || 0} Prospek</h3>
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white">{stats?.todayLeads || 0} Prospek</h3>
             </CardContent>
           </Card>
 
-          <Card className="border border-[#F4EFE6] bg-white shadow-2xs rounded-xl">
+          <Card className="border border-[#F4EFE6] dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs rounded-xl">
             <CardContent className="p-3.5 space-y-1">
-              <div className="flex items-center justify-between text-slate-500">
+              <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
                 <span className="text-xs font-medium">Status Sistem</span>
-                <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
               </div>
-              <h3 className="text-xs font-bold text-emerald-600">Terverifikasi (Online)</h3>
+              <h3 className="text-xs font-bold text-emerald-600 dark:text-emerald-400">Terverifikasi (Online)</h3>
             </CardContent>
           </Card>
         </div>
@@ -634,14 +623,16 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
         {/* KOLOM UTAMA */}
-        <div className={cn("space-y-8", isAgent ? "lg:col-span-8" : "lg:col-span-12")}>
+        <div className={cn("space-y-6", isAgent ? "lg:col-span-8" : "lg:col-span-12")}>
           
-          {/* ⭐ SECTION 1: PROPERTI UNGGULAN (4 KARTU) */}
-          <section className="space-y-3">
-            <div className="flex items-center justify-between border-b border-[#F4EFE6] pb-2.5">
+          {/* ⭐ SECTION 1: PROPERTI UNGGULAN */}
+          <section className="bg-gradient-to-b from-emerald-950/[0.04] via-emerald-900/[0.02] to-transparent dark:from-emerald-950/20 dark:via-emerald-950/10 dark:to-transparent border border-emerald-700/20 dark:border-emerald-500/20 rounded-2xl p-3.5 sm:p-5 space-y-3.5 shadow-xs">
+            <div className="flex items-center justify-between border-b border-emerald-700/15 dark:border-emerald-500/20 pb-2.5">
               <div className="flex items-center gap-2">
-                <Star className="w-4 h-4 text-amber-500 fill-amber-500" />
-                <h2 className="text-xs font-bold uppercase tracking-wider text-slate-800">
+                <div className="p-1 bg-amber-500/10 border border-amber-500/20 rounded-md">
+                  <Star className="w-4 h-4 text-amber-500 fill-amber-500" />
+                </div>
+                <h2 className="text-xs sm:text-sm font-extrabold uppercase tracking-wider text-emerald-950 dark:text-emerald-400">
                   Properti Unggulan (Favorit)
                 </h2>
               </div>
@@ -650,7 +641,7 @@ export default function DashboardPage() {
                 variant="ghost"
                 size="sm"
                 onClick={() => router.push("/properties?featured=true")}
-                className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 hover:bg-[#F4EFE6]/50 gap-1 rounded-lg cursor-pointer h-7"
+                className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 hover:text-emerald-800 dark:hover:text-emerald-300 hover:bg-emerald-600/10 rounded-lg cursor-pointer h-7"
               >
                 Lihat Semua <ChevronRight className="w-3.5 h-3.5" />
               </Button>
@@ -659,13 +650,13 @@ export default function DashboardPage() {
             {loadingFeatured ? (
               <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-3.5">
                 {[...Array(4)].map((_, i) => (
-                  <Skeleton key={i} className="h-56 w-full rounded-xl bg-[#F4EFE6]" />
+                  <Skeleton key={i} className="h-56 w-full rounded-xl bg-[#F4EFE6] dark:bg-slate-800" />
                 ))}
               </div>
             ) : featuredProperties.length === 0 ? (
-              <Card className="border border-[#F4EFE6] bg-white p-6 text-center rounded-xl shadow-2xs">
+              <Card className="border border-[#F4EFE6] dark:border-slate-800 bg-white dark:bg-slate-900 p-6 text-center rounded-xl shadow-2xs">
                 <Star className="w-7 h-7 text-amber-400 mx-auto mb-2 opacity-50" />
-                <p className="text-xs text-slate-500 font-medium">Belum ada properti unggulan yang ditandai bintang oleh Admin.</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">Belum ada properti unggulan yang ditandai bintang oleh Admin.</p>
               </Card>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-3.5">
@@ -679,29 +670,29 @@ export default function DashboardPage() {
                     <Card
                       key={prop.id}
                       onClick={() => router.push(`/properties/${prop.id}`)}
-                      className="group border border-amber-200 hover:border-amber-500/60 bg-white rounded-xl overflow-hidden shadow-2xs hover:shadow-md transition-all duration-300 cursor-pointer flex flex-col justify-between"
+                      className="group border border-amber-200/80 dark:border-amber-500/30 hover:border-amber-500/80 bg-white dark:bg-slate-900 rounded-xl overflow-hidden shadow-2xs hover:shadow-md transition-all duration-300 cursor-pointer flex flex-col justify-between"
                     >
                       <div>
-                        {/* Thumbnail Foto */}
-                        <div className="relative aspect-[16/10] bg-[#F4EFE6] overflow-hidden">
-                          <img
+                        {/* FOTO PROPERTI DENGAN WATERMARK INLAND PROPERTY */}
+                        <div className="relative aspect-[16/10] bg-[#F4EFE6] dark:bg-slate-800 overflow-hidden">
+                          <WatermarkedImage
                             src={prop.thumbnail}
                             alt={prop.title}
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).src = DEFAULT_FALLBACK_IMAGE;
-                            }}
+                            className="w-full h-full"
+                            imageClassName="group-hover:scale-105 transition-transform duration-500"
+                            watermarkOpacity={0.6}
+                            watermarkSize="w-1/3"
                           />
 
                           {/* Badge Premium Favorit & Tipe Listing */}
-                          <div className="absolute top-1.5 left-1.5 flex items-center gap-1">
+                          <div className="absolute top-1.5 left-1.5 flex items-center gap-1 z-10">
                             <Badge className="bg-amber-500 text-white border-0 text-[7.5px] font-bold px-1 py-0.5 gap-0.5 shadow-xs">
                               <Star className="w-2 h-2 fill-white" /> UNGGULAN
                             </Badge>
                             <Badge
                               className={cn(
                                 "text-[8px] font-bold px-1.5 py-0.5 uppercase tracking-wide text-white border-0 rounded",
-                                isRent ? "bg-slate-800" : "bg-emerald-600"
+                                isRent ? "bg-slate-800 dark:bg-slate-700" : "bg-emerald-600"
                               )}
                             >
                               {isRent ? "SEWA" : "DIJUAL"}
@@ -709,8 +700,8 @@ export default function DashboardPage() {
                           </div>
 
                           {/* Kode Listing */}
-                          <div className="absolute bottom-1.5 right-1.5">
-                            <span className="text-[8.5px] font-mono font-medium text-slate-700 bg-white/95 px-1 py-0.5 rounded border border-[#F4EFE6]">
+                          <div className="absolute bottom-1.5 right-1.5 z-10">
+                            <span className="text-[8.5px] font-mono font-medium text-slate-700 dark:text-slate-300 bg-white/95 dark:bg-slate-900/95 px-1 py-0.5 rounded border border-[#F4EFE6] dark:border-slate-800">
                               {prop.listing_code}
                             </span>
                           </div>
@@ -718,54 +709,58 @@ export default function DashboardPage() {
 
                         {/* Informasi Properti */}
                         <CardContent className="p-2.5 space-y-1">
-                          <div className="text-xs font-bold text-emerald-600 leading-none pt-0.5">
+                          <div className="text-xs font-bold text-emerald-600 dark:text-emerald-400 leading-none pt-0.5">
                             {formatIDR(prop.price)}
                           </div>
 
-                          {/* 🏠 BARISAN JUDUL (DENGAN TRUNCATE ...) & BADGE KATEGORI DI KANAN */}
                           <div className="flex items-center justify-between gap-1.5 pt-0.5">
                             <h3 
-                              className="font-semibold text-[11px] leading-tight text-slate-900 truncate flex-1 group-hover:text-emerald-600 transition-colors"
+                              className="font-semibold text-[11px] leading-tight text-slate-900 dark:text-white truncate flex-1 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors"
                               title={prop.title}
                             >
                               {prop.title}
                             </h3>
 
-                            <Badge variant="outline" className="text-[8px] font-bold px-1.5 py-0.2 shrink-0 bg-emerald-50 text-emerald-700 border-emerald-200 flex items-center gap-0.5 rounded-md">
-                              <Building2 className="w-2.5 h-2.5 text-emerald-600" />
+                            <Badge variant="outline" className="text-[8px] font-bold px-1.5 py-0.2 shrink-0 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800 flex items-center gap-0.5 rounded-md">
+                              <Building2 className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400" />
                               <span>{prop.category}</span>
                             </Badge>
                           </div>
 
-                          <p className="text-[10px] text-slate-500 flex items-center gap-1 truncate">
-                            <MapPin className="w-2.5 h-2.5 text-emerald-600 shrink-0" />
+                          <p className="text-[10px] text-slate-500 dark:text-slate-400 flex items-center gap-1 truncate">
+                            <MapPin className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
                             {prop.location}
                           </p>
 
-                          {/* Spesifikasi Ringkas (KT, KM, LB, LT) */}
-                          <div className="flex items-center gap-2 pt-1.5 text-[9px] text-slate-600 font-medium border-t border-[#F4EFE6] flex-wrap">
-                            <span className="flex items-center gap-0.5">
-                              <Bed className="w-2.5 h-2.5 text-emerald-600 shrink-0" />
-                              {prop.bedrooms || 0} KT
-                            </span>
-                            <span className="flex items-center gap-0.5">
-                              <Bath className="w-2.5 h-2.5 text-emerald-600 shrink-0" />
-                              {prop.bathrooms || 0} KM
-                            </span>
-                            <span className="flex items-center gap-0.5">
-                              <Maximize2 className="w-2.5 h-2.5 text-emerald-600 shrink-0" />
-                              {prop.building_area || 0}m²
-                            </span>
-                            <span className="flex items-center gap-0.5">
-                              <Ruler className="w-2.5 h-2.5 text-emerald-600 shrink-0" />
-                              {prop.land_area || 0}m²
-                            </span>
+                          {/* SPESIFIKASI: KT/KM (KIRI) vs LB/LT (KANAN) */}
+                          <div className="flex items-center justify-between pt-1.5 text-[9px] text-slate-600 dark:text-slate-300 font-medium border-t border-[#F4EFE6] dark:border-slate-800">
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <span className="flex items-center gap-0.5" title="Kamar Tidur">
+                                <Bed className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                                {prop.bedrooms || 0} KT
+                              </span>
+                              <span className="flex items-center gap-0.5" title="Kamar Mandi">
+                                <Bath className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                                {prop.bathrooms || 0} KM
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-1.5 shrink-0 text-slate-500 dark:text-slate-400">
+                              <span className="flex items-center gap-0.5" title="Luas Bangunan">
+                                <Maximize2 className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                                LB {prop.building_area || 0}m²
+                              </span>
+                              <span className="flex items-center gap-0.5" title="Luas Tanah">
+                                <Ruler className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                                LT {prop.land_area || 0}m²
+                              </span>
+                            </div>
                           </div>
 
-                          {/* 👤 PROFIL AGEN + 💬 TOMBOL WHATSAPP (SEBELAH KANAN + CRM LOG) */}
-                          <div className="flex items-center justify-between gap-1.5 pt-1.5 border-t border-[#F4EFE6] mt-0.5">
+                          {/* PROFIL AGEN + WHATSAPP */}
+                          <div className="flex items-center justify-between gap-1.5 pt-1.5 border-t border-[#F4EFE6] dark:border-slate-800 mt-0.5">
                             <div className="flex items-center gap-1.5 min-w-0">
-                              <div className="w-4 h-4 rounded-full overflow-hidden bg-emerald-100 flex items-center justify-center text-[8px] font-bold text-emerald-700 shrink-0">
+                              <div className="w-4 h-4 rounded-full overflow-hidden bg-emerald-100 dark:bg-emerald-900 flex items-center justify-center text-[8px] font-bold text-emerald-700 dark:text-emerald-300 shrink-0">
                                 {prop.agent_avatar ? (
                                   <img
                                     src={prop.agent_avatar}
@@ -776,15 +771,14 @@ export default function DashboardPage() {
                                     }}
                                   />
                                 ) : (
-                                  <User className="w-2.5 h-2.5 text-emerald-600" />
+                                  <User className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400" />
                                 )}
                               </div>
-                              <span className="text-[9.5px] font-medium text-slate-600 truncate">
+                              <span className="text-[9.5px] font-medium text-slate-600 dark:text-slate-300 truncate">
                                 {prop.agent_name}
                               </span>
                             </div>
 
-                            {/* Tombol Simbol WhatsApp di Sebelah Kanan */}
                             <button
                               type="button"
                               onClick={(e) => handleWhatsAppClick(e, prop)}
@@ -805,12 +799,14 @@ export default function DashboardPage() {
             )}
           </section>
 
-          {/* 🆕 SECTION 2: PROPERTI TERBARU (4 KARTU) */}
-          <section className="space-y-3">
-            <div className="flex items-center justify-between border-b border-[#F4EFE6] pb-2.5">
+          {/* 🆕 SECTION 2: PROPERTI TERBARU */}
+          <section className="bg-gradient-to-b from-emerald-950/[0.04] via-emerald-900/[0.02] to-transparent dark:from-emerald-950/20 dark:via-emerald-950/10 dark:to-transparent border border-emerald-700/20 dark:border-emerald-500/20 rounded-2xl p-3.5 sm:p-5 space-y-3.5 shadow-xs">
+            <div className="flex items-center justify-between border-b border-emerald-700/15 dark:border-emerald-500/20 pb-2.5">
               <div className="flex items-center gap-2">
-                <Clock className="w-4 h-4 text-emerald-600" />
-                <h2 className="text-xs font-bold uppercase tracking-wider text-slate-800">
+                <div className="p-1 bg-emerald-600/10 border border-emerald-600/20 rounded-md">
+                  <Clock className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                </div>
+                <h2 className="text-xs sm:text-sm font-extrabold uppercase tracking-wider text-emerald-950 dark:text-emerald-400">
                   Properti Terbaru
                 </h2>
               </div>
@@ -819,7 +815,7 @@ export default function DashboardPage() {
                 variant="ghost"
                 size="sm"
                 onClick={() => router.push("/properties")}
-                className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 hover:bg-[#F4EFE6]/50 gap-1 rounded-lg cursor-pointer h-7"
+                className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 hover:text-emerald-800 dark:hover:text-emerald-300 hover:bg-emerald-600/10 rounded-lg cursor-pointer h-7"
               >
                 Lihat Semua <ChevronRight className="w-3.5 h-3.5" />
               </Button>
@@ -828,13 +824,13 @@ export default function DashboardPage() {
             {loadingLatest ? (
               <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-3.5">
                 {[...Array(4)].map((_, i) => (
-                  <Skeleton key={i} className="h-56 w-full rounded-xl bg-[#F4EFE6]" />
+                  <Skeleton key={i} className="h-56 w-full rounded-xl bg-[#F4EFE6] dark:bg-slate-800" />
                 ))}
               </div>
             ) : latestProperties.length === 0 ? (
-              <Card className="border border-[#F4EFE6] bg-white p-8 text-center rounded-xl shadow-2xs">
-                <Building2 className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                <p className="text-xs text-slate-500 font-medium">Belum ada properti baru yang dipublikasikan.</p>
+              <Card className="border border-[#F4EFE6] dark:border-slate-800 bg-white dark:bg-slate-900 p-8 text-center rounded-xl shadow-2xs">
+                <Building2 className="w-8 h-8 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
+                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">Belum ada properti baru yang dipublikasikan.</p>
               </Card>
             ) : (
               <div className="space-y-3">
@@ -849,35 +845,33 @@ export default function DashboardPage() {
                       <Card
                         key={prop.id}
                         onClick={() => router.push(`/properties/${prop.id}`)}
-                        className="group border border-[#F4EFE6] hover:border-emerald-600/40 bg-white rounded-xl overflow-hidden shadow-2xs hover:shadow-md transition-all duration-300 cursor-pointer flex flex-col justify-between"
+                        className="group border border-[#F4EFE6] dark:border-slate-800 hover:border-emerald-600/60 dark:hover:border-emerald-500/60 bg-white dark:bg-slate-900 rounded-xl overflow-hidden shadow-2xs hover:shadow-md transition-all duration-300 cursor-pointer flex flex-col justify-between"
                       >
                         <div>
-                          {/* Thumbnail Foto */}
-                          <div className="relative aspect-[16/10] bg-[#F4EFE6] overflow-hidden">
-                            <img
+                          {/* FOTO PROPERTI DENGAN WATERMARK INLAND PROPERTY */}
+                          <div className="relative aspect-[16/10] bg-[#F4EFE6] dark:bg-slate-800 overflow-hidden">
+                            <WatermarkedImage
                               src={prop.thumbnail}
                               alt={prop.title}
-                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                              onError={(e) => {
-                                (e.target as HTMLImageElement).src = DEFAULT_FALLBACK_IMAGE;
-                              }}
+                              className="w-full h-full"
+                              imageClassName="group-hover:scale-105 transition-transform duration-500"
+                              watermarkOpacity={0.6}
+                              watermarkSize="w-1/3"
                             />
 
-                            {/* Badge Tipe Listing */}
-                            <div className="absolute top-1.5 left-1.5">
+                            <div className="absolute top-1.5 left-1.5 z-10">
                               <Badge
                                 className={cn(
                                   "text-[8px] font-bold px-1.5 py-0.5 uppercase tracking-wide text-white border-0 rounded",
-                                  isRent ? "bg-slate-800" : "bg-emerald-600"
+                                  isRent ? "bg-slate-800 dark:bg-slate-700" : "bg-emerald-600"
                                 )}
                               >
                                 {isRent ? "SEWA" : "DIJUAL"}
                               </Badge>
                             </div>
 
-                            {/* Kode Listing */}
-                            <div className="absolute bottom-1.5 right-1.5">
-                              <span className="text-[8.5px] font-mono font-medium text-slate-700 bg-white/95 px-1 py-0.5 rounded border border-[#F4EFE6]">
+                            <div className="absolute bottom-1.5 right-1.5 z-10">
+                              <span className="text-[8.5px] font-mono font-medium text-slate-700 dark:text-slate-300 bg-white/95 dark:bg-slate-900/95 px-1 py-0.5 rounded border border-[#F4EFE6] dark:border-slate-800">
                                 {prop.listing_code}
                               </span>
                             </div>
@@ -885,54 +879,58 @@ export default function DashboardPage() {
 
                           {/* Informasi Properti */}
                           <CardContent className="p-2.5 space-y-1">
-                            <div className="text-xs font-bold text-emerald-600 leading-none pt-0.5">
+                            <div className="text-xs font-bold text-emerald-600 dark:text-emerald-400 leading-none pt-0.5">
                               {formatIDR(prop.price)}
                             </div>
 
-                            {/* 🏠 BARISAN JUDUL (DENGAN TRUNCATE ...) & BADGE KATEGORI DI KANAN */}
                             <div className="flex items-center justify-between gap-1.5 pt-0.5">
                               <h3 
-                                className="font-semibold text-[11px] leading-tight text-slate-900 truncate flex-1 group-hover:text-emerald-600 transition-colors"
+                                className="font-semibold text-[11px] leading-tight text-slate-900 dark:text-white truncate flex-1 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors"
                                 title={prop.title}
                               >
                                 {prop.title}
                               </h3>
 
-                              <Badge variant="outline" className="text-[8px] font-bold px-1.5 py-0.2 shrink-0 bg-emerald-50 text-emerald-700 border-emerald-200 flex items-center gap-0.5 rounded-md">
-                                <Building2 className="w-2.5 h-2.5 text-emerald-600" />
+                              <Badge variant="outline" className="text-[8px] font-bold px-1.5 py-0.2 shrink-0 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800 flex items-center gap-0.5 rounded-md">
+                                <Building2 className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400" />
                                 <span>{prop.category}</span>
                               </Badge>
                             </div>
 
-                            <p className="text-[10px] text-slate-500 flex items-center gap-1 truncate">
-                              <MapPin className="w-2.5 h-2.5 text-emerald-600 shrink-0" />
+                            <p className="text-[10px] text-slate-500 dark:text-slate-400 flex items-center gap-1 truncate">
+                              <MapPin className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
                               {prop.location}
                             </p>
 
-                            {/* Spesifikasi Ringkas (KT, KM, LB, LT) */}
-                            <div className="flex items-center gap-2 pt-1.5 text-[9px] text-slate-600 font-medium border-t border-[#F4EFE6] flex-wrap">
-                              <span className="flex items-center gap-0.5">
-                                <Bed className="w-2.5 h-2.5 text-emerald-600 shrink-0" />
-                                {prop.bedrooms || 0} KT
-                              </span>
-                              <span className="flex items-center gap-0.5">
-                                <Bath className="w-2.5 h-2.5 text-emerald-600 shrink-0" />
-                                {prop.bathrooms || 0} KM
-                              </span>
-                              <span className="flex items-center gap-0.5">
-                                <Maximize2 className="w-2.5 h-2.5 text-emerald-600 shrink-0" />
-                                {prop.building_area || 0}m²
-                              </span>
-                              <span className="flex items-center gap-0.5">
-                                <Ruler className="w-2.5 h-2.5 text-emerald-600 shrink-0" />
-                                {prop.land_area || 0}m²
-                              </span>
+                            {/* SPESIFIKASI: KT/KM (KIRI) vs LB/LT (KANAN) */}
+                            <div className="flex items-center justify-between pt-1.5 text-[9px] text-slate-600 dark:text-slate-300 font-medium border-t border-[#F4EFE6] dark:border-slate-800">
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <span className="flex items-center gap-0.5" title="Kamar Tidur">
+                                  <Bed className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                                  {prop.bedrooms || 0} KT
+                                </span>
+                                <span className="flex items-center gap-0.5" title="Kamar Mandi">
+                                  <Bath className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                                  {prop.bathrooms || 0} KM
+                                </span>
+                              </div>
+
+                              <div className="flex items-center gap-1.5 shrink-0 text-slate-500 dark:text-slate-400">
+                                <span className="flex items-center gap-0.5" title="Luas Bangunan">
+                                  <Maximize2 className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                                  LB {prop.building_area || 0}m²
+                                </span>
+                                <span className="flex items-center gap-0.5" title="Luas Tanah">
+                                  <Ruler className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                                  LT {prop.land_area || 0}m²
+                                </span>
+                              </div>
                             </div>
 
-                            {/* 👤 PROFIL AGEN + 💬 TOMBOL WHATSAPP (SEBELAH KANAN + CRM LOG) */}
-                            <div className="flex items-center justify-between gap-1.5 pt-1.5 border-t border-[#F4EFE6] mt-0.5">
+                            {/* PROFIL AGEN + WHATSAPP */}
+                            <div className="flex items-center justify-between gap-1.5 pt-1.5 border-t border-[#F4EFE6] dark:border-slate-800 mt-0.5">
                               <div className="flex items-center gap-1.5 min-w-0">
-                                <div className="w-4 h-4 rounded-full overflow-hidden bg-emerald-100 flex items-center justify-center text-[8px] font-bold text-emerald-700 shrink-0">
+                                <div className="w-4 h-4 rounded-full overflow-hidden bg-emerald-100 dark:bg-emerald-900 flex items-center justify-center text-[8px] font-bold text-emerald-700 dark:text-emerald-300 shrink-0">
                                   {prop.agent_avatar ? (
                                     <img
                                       src={prop.agent_avatar}
@@ -943,15 +941,14 @@ export default function DashboardPage() {
                                       }}
                                     />
                                   ) : (
-                                    <User className="w-2.5 h-2.5 text-emerald-600" />
+                                    <User className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400" />
                                   )}
                                 </div>
-                                <span className="text-[9.5px] font-medium text-slate-600 truncate">
+                                <span className="text-[9.5px] font-medium text-slate-600 dark:text-slate-300 truncate">
                                   {prop.agent_name}
                                 </span>
                               </div>
 
-                              {/* Tombol Simbol WhatsApp di Sebelah Kanan */}
                               <button
                                 type="button"
                                 onClick={(e) => handleWhatsAppClick(e, prop)}
@@ -970,7 +967,6 @@ export default function DashboardPage() {
                   })}
                 </div>
 
-                {/* 🎯 TOMBOL "LIHAT SEMUA PROPERTI" UTAMA */}
                 <div className="pt-2">
                   <Button
                     onClick={() => router.push("/properties")}
@@ -986,13 +982,13 @@ export default function DashboardPage() {
 
           {/* 🚧 SECTION 3: PROYEK INLAND (COMING SOON) */}
           <section className="space-y-3">
-            <div className="flex items-center justify-between border-b border-[#F4EFE6] pb-2.5">
+            <div className="flex items-center justify-between border-b border-[#F4EFE6] dark:border-slate-800 pb-2.5">
               <div className="flex items-center gap-2">
-                <FolderKanban className="w-4 h-4 text-emerald-600" />
-                <h2 className="text-xs font-bold uppercase tracking-wider text-slate-800">
+                <FolderKanban className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                <h2 className="text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200">
                   Proyek Inland
                 </h2>
-                <Badge variant="outline" className="text-[9px] bg-amber-50 text-amber-700 border-amber-200 font-semibold gap-1">
+                <Badge variant="outline" className="text-[9px] bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800 font-semibold gap-1">
                   <Lock className="w-2.5 h-2.5" /> Segera Hadir
                 </Badge>
               </div>
@@ -1001,31 +997,29 @@ export default function DashboardPage() {
                 variant="ghost"
                 size="sm"
                 onClick={handleProyekInlandClick}
-                className="text-xs font-semibold text-slate-400 hover:text-slate-600 gap-1 rounded-lg cursor-pointer h-7"
+                className="text-xs font-semibold text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 gap-1 rounded-lg cursor-pointer h-7"
               >
                 Lihat Proyek <Lock className="w-3 h-3" />
               </Button>
             </div>
 
-            {/* Visual Container Terkunci */}
             <div 
               onClick={handleProyekInlandClick}
-              className="relative rounded-2xl border border-[#F4EFE6] bg-white p-4 sm:p-6 overflow-hidden cursor-pointer group shadow-2xs hover:border-emerald-600/40 transition-all duration-300"
+              className="relative rounded-2xl border border-[#F4EFE6] dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-6 overflow-hidden cursor-pointer group shadow-2xs hover:border-emerald-600/40 transition-all duration-300"
             >
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5 opacity-40 blur-[2px] pointer-events-none select-none">
                 {[...Array(4)].map((_, idx) => (
-                  <Card key={idx} className="border border-[#F4EFE6] bg-slate-50 rounded-xl overflow-hidden">
-                    <div className="h-20 bg-slate-300" />
+                  <Card key={idx} className="border border-[#F4EFE6] dark:border-slate-800 bg-slate-50 dark:bg-slate-800 rounded-xl overflow-hidden">
+                    <div className="h-20 bg-slate-300 dark:bg-slate-700" />
                     <CardContent className="p-2 space-y-1">
-                      <div className="h-2.5 bg-slate-300 rounded w-3/4" />
-                      <div className="h-2 bg-slate-200 rounded w-1/2" />
+                      <div className="h-2.5 bg-slate-300 dark:bg-slate-700 rounded w-3/4" />
+                      <div className="h-2 bg-slate-200 dark:bg-slate-600 rounded w-1/2" />
                     </CardContent>
                   </Card>
                 ))}
               </div>
 
-              {/* Overlay Lock Banner */}
-              <div className="absolute inset-0 bg-gradient-to-t from-slate-900/80 via-slate-900/50 to-slate-900/30 flex flex-col items-center justify-center text-center p-6 space-y-3 z-10 backdrop-blur-[1px]">
+              <div className="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-900/60 to-slate-900/40 flex flex-col items-center justify-center text-center p-6 space-y-3 z-10 backdrop-blur-[1px]">
                 <div className="w-12 h-12 rounded-full bg-white/10 border border-white/20 backdrop-blur-md flex items-center justify-center text-white shadow-lg group-hover:scale-110 transition-transform duration-300">
                   <Lock className="w-5 h-5 text-amber-400" />
                 </div>
@@ -1046,25 +1040,25 @@ export default function DashboardPage() {
 
           {/* AI EXECUTIVE SUMMARY */}
           {canSeeAiSummary && (
-            <Card className="border border-[#F4EFE6] bg-white shadow-2xs rounded-xl">
-              <CardHeader className="p-3.5 pb-2 flex flex-row items-center justify-between border-b border-[#F4EFE6]">
+            <Card className="border border-[#F4EFE6] dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs rounded-xl">
+              <CardHeader className="p-3.5 pb-2 flex flex-row items-center justify-between border-b border-[#F4EFE6] dark:border-slate-800">
                 <div className="flex items-center gap-2">
                   <div className="p-1.5 bg-emerald-600 text-white rounded-lg">
                     <Sparkles className="w-3.5 h-3.5" />
                   </div>
                   <div>
-                    <CardTitle className="text-xs font-bold text-slate-900">
+                    <CardTitle className="text-xs font-bold text-slate-900 dark:text-white">
                       AI Executive Summary
                     </CardTitle>
-                    <CardDescription className="text-[11px] text-slate-500">
+                    <CardDescription className="text-[11px] text-slate-500 dark:text-slate-400">
                       Ringkasan Analitik Sistem
                     </CardDescription>
                   </div>
                 </div>
 
                 {isSuperAdmin && (
-                  <div className="flex items-center gap-1.5 bg-[#F4EFE6]/60 px-2 py-0.5 rounded-lg border border-[#F4EFE6]">
-                    <Power className={cn("w-3 h-3", aiEnabled ? "text-emerald-600" : "text-slate-400")} />
+                  <div className="flex items-center gap-1.5 bg-[#F4EFE6]/60 dark:bg-slate-800 px-2 py-0.5 rounded-lg border border-[#F4EFE6] dark:border-slate-700">
+                    <Power className={cn("w-3 h-3", aiEnabled ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400")} />
                     <button
                       type="button"
                       disabled={togglingAi}
@@ -1092,7 +1086,7 @@ export default function DashboardPage() {
                       }}
                       className={cn(
                         "text-[10px] font-bold px-2 py-0.5 rounded transition cursor-pointer",
-                        aiEnabled ? "bg-emerald-600 text-white" : "bg-slate-300 text-slate-700"
+                        aiEnabled ? "bg-emerald-600 text-white" : "bg-slate-300 dark:bg-slate-700 text-slate-700 dark:text-slate-300"
                       )}
                     >
                       {togglingAi ? "..." : (aiEnabled ? "ON" : "OFF")}
@@ -1100,10 +1094,10 @@ export default function DashboardPage() {
                   </div>
                 )}
               </CardHeader>
-              <CardContent className="p-3.5 text-xs text-slate-700 leading-relaxed">
+              <CardContent className="p-3.5 text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
                 {loadingAiSummary ? (
                   <div className="flex items-center gap-2 text-slate-400 animate-pulse py-1">
-                    <RefreshCw className="w-3 h-3 animate-spin text-emerald-600" />
+                    <RefreshCw className="w-3 h-3 animate-spin text-emerald-600 dark:text-emerald-400" />
                     <span>Merangkum analisis sistem...</span>
                   </div>
                 ) : (
@@ -1117,10 +1111,10 @@ export default function DashboardPage() {
         {/* KOLOM SAMPING (KHUSUS AGEN) */}
         {isAgent && (
           <div className="lg:col-span-4 space-y-6">
-            <Card className="border border-[#F4EFE6] bg-white shadow-2xs rounded-xl">
-              <CardHeader className="p-3.5 border-b border-[#F4EFE6]">
-                <CardTitle className="text-xs font-bold text-slate-900 flex items-center gap-2">
-                  <UserCheck className="w-3.5 h-3.5 text-emerald-600" /> Leads Perlu Follow-Up
+            <Card className="border border-[#F4EFE6] dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs rounded-xl">
+              <CardHeader className="p-3.5 border-b border-[#F4EFE6] dark:border-slate-800">
+                <CardTitle className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <UserCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" /> Leads Perlu Follow-Up
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-3 space-y-2 text-xs">
@@ -1128,10 +1122,10 @@ export default function DashboardPage() {
                   <p className="text-center py-4 text-slate-400">Memuat prospek...</p>
                 ) : agentFollowUpLeads.length > 0 ? (
                   agentFollowUpLeads.map((lead) => (
-                    <div key={lead.id} className="p-2.5 border border-[#F4EFE6] rounded-lg space-y-1.5 bg-[#FDFBF7]">
+                    <div key={lead.id} className="p-2.5 border border-[#F4EFE6] dark:border-slate-800 rounded-lg space-y-1.5 bg-[#FDFBF7] dark:bg-slate-800/50">
                       <div>
-                        <p className="font-semibold text-slate-900">{lead.name}</p>
-                        <p className="text-[10px] text-slate-500">{lead.property}</p>
+                        <p className="font-semibold text-slate-900 dark:text-white">{lead.name}</p>
+                        <p className="text-[10px] text-slate-500 dark:text-slate-400">{lead.property}</p>
                       </div>
                       <Button
                         size="sm"
@@ -1156,16 +1150,16 @@ export default function DashboardPage() {
 
 function DashboardLoadingSkeleton() {
   return (
-    <div className="space-y-6 pb-12 max-w-7xl mx-auto px-4 sm:px-6 bg-[#FDFBF7]">
-      <Skeleton className="h-20 w-full rounded-xl bg-[#F4EFE6]" />
+    <div className="space-y-6 pb-12 max-w-7xl mx-auto px-4 sm:px-6 bg-[#FDFBF7] dark:bg-slate-950 min-h-screen">
+      <Skeleton className="h-20 w-full rounded-xl bg-[#F4EFE6] dark:bg-slate-800" />
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[...Array(4)].map((_, i) => (
-          <Skeleton key={i} className="h-20 w-full rounded-xl bg-[#F4EFE6]" />
+          <Skeleton key={i} className="h-20 w-full rounded-xl bg-[#F4EFE6] dark:bg-slate-800" />
         ))}
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <Skeleton className="lg:col-span-8 h-80 rounded-xl bg-[#F4EFE6]" />
-        <Skeleton className="lg:col-span-4 h-80 rounded-xl bg-[#F4EFE6]" />
+        <Skeleton className="lg:col-span-8 h-80 rounded-xl bg-[#F4EFE6] dark:bg-slate-800" />
+        <Skeleton className="lg:col-span-4 h-80 rounded-xl bg-[#F4EFE6] dark:bg-slate-800" />
       </div>
     </div>
   );

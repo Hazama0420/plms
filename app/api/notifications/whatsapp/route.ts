@@ -1,15 +1,20 @@
 // app/api/notifications/whatsapp/route.ts
 import { NextResponse } from "next/server";
 import { sendWaToAgent } from "@/lib/fonnte";
+import { requireRole } from "@/lib/api-auth";
+import { validate, whatsappNotificationSchema } from "@/lib/validations";
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const { agentId, leadName, clientPhone, propertyInterest } = body;
+    // Mengirim WhatsApp memakai token Fonnte berbayar milik perusahaan.
+    // Tanpa penjagaan ini siapa pun bisa mengirim pesan atas nama Anda.
+    const auth = await requireRole(["agent", "marketing", "admin", "super_admin"]);
+    if (!auth.ok) return auth.response;
 
-    if (!agentId) {
-      return NextResponse.json({ error: "Parameter agentId wajib diisi" }, { status: 400 });
-    }
+    const parsed = validate(whatsappNotificationSchema, await req.json());
+    if (!parsed.ok) return parsed.response;
+
+    const { agentId, leadName, clientPhone, propertyInterest } = parsed.data;
 
     // Panggil helper Fonnte
     const res = await sendWaToAgent({

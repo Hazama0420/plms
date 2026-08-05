@@ -1,6 +1,6 @@
 // services/notification.service.ts
 import { supabase } from "@/lib/supabase/client";
-import type { Notification, CreateNotificationDto, SendNotificationDto } from "@/types/notification.types";
+import type { Notification, SendNotificationDto } from "@/types/notification.types";
 
 export const notificationService = {
   // ============================================================
@@ -131,99 +131,37 @@ export const notificationService = {
   },
 
   // ============================================================
-  // CREATE NOTIFICATION – Buat notifikasi baru (internal)
-  // ============================================================
-  async createNotification(data: CreateNotificationDto): Promise<Notification> {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error("Pengguna tidak terautentikasi");
-
-    // Cek role (hanya admin/super_admin yang bisa create)
-    const { data: userData } = await supabase
-      .from("users")
-      .select("role")
-      .eq("id", user.id)
-      .single();
-
-    if (!userData || !["super_admin", "admin"].includes(userData.role)) {
-      throw new Error("Hanya admin yang bisa mengirim notifikasi");
-    }
-
-    const { data: notification, error } = await supabase
-      .from("notifications")
-      .insert({
-        user_id: data.user_id,
-        sender_id: user.id,
-        type: data.type,
-        title: data.title,
-        message: data.message,
-        link: data.link || null,
-      })
-      .select(`
-        *,
-        sender:sender_id(id, full_name, avatar_url)
-      `)
-      .single();
-
-    if (error) throw new Error(error.message);
-    return notification as Notification;
-  },
-
-  // ============================================================
   // SEND NOTIFICATION – Kirim notifikasi ke satu/lebih user
   // ============================================================
+  //
+  // Dialihkan ke Route Handler /api/notifications.
+  //
+  // Versi sebelumnya menyisipkan baris langsung dari peramban memakai kunci
+  // anon. RLS melarang penyisipan atas nama akun lain — dan memang seharusnya
+  // begitu — sehingga pengiriman ke agen/admin lain tidak pernah tersimpan.
+  // Route tersebut memakai klien service-role, memeriksa role pengirim, dan
+  // sekaligus mengirim push ke perangkat penerima.
   async sendNotification(data: SendNotificationDto): Promise<Notification[]> {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error("Pengguna tidak terautentikasi");
-
-    // Cek role
-    const { data: userData } = await supabase
-      .from("users")
-      .select("role")
-      .eq("id", user.id)
-      .single();
-
-    if (!userData || !["super_admin", "admin"].includes(userData.role)) {
-      throw new Error("Hanya admin yang bisa mengirim notifikasi");
-    }
-
-    let targetUserIds: string[] = [];
-
-    if (data.recipient_type === "specific") {
-      targetUserIds = data.user_ids || [];
-    } else if (data.recipient_type === "all_agents") {
-      const { data: agents } = await supabase
-        .from("users")
-        .select("id")
-        .eq("role", "agent");
-      targetUserIds = agents?.map((a) => a.id) || [];
-    } else if (data.recipient_type === "all_admins") {
-      const { data: admins } = await supabase
-        .from("users")
-        .select("id")
-        .in("role", ["super_admin", "admin"]);
-      targetUserIds = admins?.map((a) => a.id) || [];
-    } else if (data.recipient_type === "all_users") {
-      const { data: users } = await supabase.from("users").select("id");
-      targetUserIds = users?.map((u) => u.id) || [];
-    }
-
-    if (targetUserIds.length === 0) {
-      throw new Error("Tidak ada penerima yang valid");
-    }
-
-    const notifications = [];
-    for (const userId of targetUserIds) {
-      const result = await this.createNotification({
-        user_id: userId,
+    const response = await fetch("/api/notifications", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        recipient_type: data.recipient_type,
+        user_ids: data.user_ids,
         type: data.type,
         title: data.title,
         message: data.message,
         link: data.link,
-      });
-      notifications.push(result);
+      }),
+    });
+
+    const result = await response.json().catch(() => ({}));
+
+    if (!response.ok || !result?.success) {
+      throw new Error(result?.error || "Gagal mengirim notifikasi");
     }
 
-    return notifications;
+    return (result.data as Notification[]) || [];
   },
 
   // ============================================================

@@ -1,65 +1,109 @@
 // app/api/notifications/send/route.ts
+//
+// Menyiarkan pengumuman resmi: satu baris `notifications` per penerima nyata,
+// lalu satu push ke perangkat mereka.
+//
+// Perubahan penting dari versi sebelumnya:
+//   1. Penerima ditentukan dari tabel `users`, bukan dari nama segment OneSignal
+//      yang harus dikonfigurasi manual di dasbor mereka ("Active Users" dsb.
+//      tidak ada secara bawaan, jadi push-nya diam-diam nihil atau salah orang).
+//   2. Baris lonceng ditulis di sini, bukan di klien. Klien sebelumnya menyimpan
+//      satu baris tanpa `user_id`, sementara pembacaannya menyaring
+//      `.eq("user_id", ...)` — sehingga pengumumannya tidak pernah tampil.
 import { NextResponse } from "next/server";
+import { requireRole } from "@/lib/api-auth";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { sendPushToUsers } from "@/lib/onesignal";
+import { notificationSendSchema, validate } from "@/lib/validations";
+
+/** Peran yang tercakup oleh tiap pilihan targetRole. */
+const ROLE_GROUPS: Record<"internal" | "viewer" | "all", string[] | null> = {
+  internal: ["super_admin", "admin", "agent", "marketing"],
+  viewer: ["viewer"],
+  all: null, // null berarti tanpa penyaringan peran
+};
 
 export async function POST(req: Request) {
   try {
-    const { title, message, targetRole, category, type, actionUrl } = await req.json();
+    const auth = await requireRole(["admin", "super_admin"]);
+    if (!auth.ok) return auth.response;
 
-    const ONESIGNAL_APP_ID = process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID;
-    const ONESIGNAL_REST_API_KEY = process.env.ONESIGNAL_REST_API_KEY;
+    const parsed = validate(notificationSendSchema, await req.json());
+    if (!parsed.ok) return parsed.response;
 
-    if (!ONESIGNAL_APP_ID || !ONESIGNAL_REST_API_KEY) {
+    const { title, message, targetRole, category, type, actionUrl } = parsed.data;
+
+    const supabaseAdmin = createAdminClient();
+
+    // 1. Kumpulkan penerima.
+    let query = supabaseAdmin.from("users").select("id");
+    const roles = ROLE_GROUPS[targetRole];
+    if (roles) query = query.in("role", roles);
+
+    const { data: recipients, error: recipientErr } = await query;
+    if (recipientErr) throw new Error("Gagal mengambil daftar penerima: " + recipientErr.message);
+
+    const userIds = (recipients ?? []).map((u) => u.id as string).filter(Boolean);
+
+    if (userIds.length === 0) {
       return NextResponse.json(
-        { success: false, error: "Kunci OneSignal (App ID / REST API Key) belum diatur di file .env" },
-        { status: 400 }
+        { success: false, error: `Tidak ada pengguna dengan target "${targetRole}".` },
+        { status: 422 }
       );
     }
 
-    // Tentukan segment OneSignal penerima
-    let segment = "Subscribed Users"; // Default semua user
-    if (targetRole === "internal") {
-      segment = "Active Users"; // Ubah sesuai segment internal Anda di OneSignal Dashboard
-    }
+    // 2. Tulis baris lonceng untuk masing-masing penerima.
+    //
+    // `link` dan `action_url` diisi nilai yang sama: antarmuka membaca keduanya
+    // (action_url lebih dulu) dan kolom mana yang terpakai berbeda antar layar.
+    const { error: dbError } = await supabaseAdmin.from("notifications").insert(
+      userIds.map((userId) => ({
+        user_id: userId,
+        sender_id: auth.ctx.userId,
+        type: type || "announcement",
+        category: category || "admin",
+        target_role: targetRole,
+        title,
+        message,
+        link: actionUrl ?? null,
+        action_url: actionUrl ?? null,
+        is_read: false,
+      }))
+    );
 
-    const oneSignalPayload = {
-      app_id: ONESIGNAL_APP_ID,
-      included_segments: [segment],
-      headings: { en: title, id: title },
-      contents: { en: message, id: message },
-      url: actionUrl || undefined,
+    if (dbError) throw new Error("Gagal menyimpan notifikasi: " + dbError.message);
+
+    // 3. Push ke perangkat penerima.
+    const push = await sendPushToUsers(userIds, {
+      title,
+      message,
+      url: actionUrl,
       data: {
         category: category || "admin",
         type: type || "announcement",
-        targetRole: targetRole || "internal",
+        targetRole,
       },
-    };
-
-    // Kirim request ke OneSignal REST API
-    const response = await fetch("https://onesignal.com/api/v1/notifications", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json; charset=utf-8",
-        Authorization: `Basic ${ONESIGNAL_REST_API_KEY}`,
-      },
-      body: JSON.stringify(oneSignalPayload),
     });
 
-    const resultData = await response.json();
-
-    if (!response.ok) {
-      throw new Error(resultData.errors ? JSON.stringify(resultData.errors) : "Gagal terhubung ke OneSignal API");
-    }
-
+    // Kegagalan push tidak membatalkan pengumuman — barisnya sudah tersimpan
+    // dan tetap terbaca di lonceng web. Statusnya dilaporkan apa adanya agar
+    // admin tahu apakah perangkat benar-benar menerima.
     return NextResponse.json({
       success: true,
-      message: "Push notification berhasil dikirim via OneSignal",
-      response: resultData,
+      message: push.success
+        ? `Pengumuman tersimpan untuk ${userIds.length} pengguna, push terkirim ke ${push.recipients} perangkat.`
+        : `Pengumuman tersimpan untuk ${userIds.length} pengguna, tetapi push gagal dikirim.`,
+      recipients: userIds.length,
+      push: {
+        delivered: push.recipients,
+        ok: push.success,
+        ...(push.skipped ? { note: push.skipped } : {}),
+        ...(push.error ? { error: push.error } : {}),
+      },
     });
-  } catch (error: any) {
-    console.error("OneSignal Send Error:", error);
-    return NextResponse.json(
-      { success: false, error: error.message || "Terjadi kesalahan pada server pengiriman OneSignal" },
-      { status: 500 }
-    );
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    console.error("[notifikasi/send]", detail);
+    return NextResponse.json({ success: false, error: detail }, { status: 500 });
   }
 }

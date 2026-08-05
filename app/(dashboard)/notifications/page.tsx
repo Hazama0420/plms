@@ -232,24 +232,10 @@ export default function NotificationsPage() {
 
     setIsSending(true);
     try {
-      // 1. Simpan ke Tabel Supabase Notifications
-      const { error: dbErr } = await supabase.from("notifications").insert([
-        {
-          sender_id: currentUserId,
-          title: sendTitle.trim(),
-          message: sendMessage.trim(),
-          type: "announcement",
-          category: "admin",
-          target_role: sendTargetRole,
-          action_url: sendActionUrl.trim() || null,
-        },
-      ]);
-
-      if (dbErr) {
-        throw new Error(dbErr.message || JSON.stringify(dbErr));
-      }
-
-      // 2. Trigger API Route OneSignal REST API Push Notification
+      // Penyimpanan baris notifikasi dan pengiriman push keduanya dikerjakan
+      // oleh route di bawah. Sebelumnya halaman ini menyisipkan satu baris
+      // sendiri tanpa `user_id`, sementara pembacaan notifikasi menyaring
+      // berdasarkan kolom itu — pengumumannya tidak pernah muncul di lonceng.
       const apiRes = await fetch("/api/notifications/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -265,10 +251,12 @@ export default function NotificationsPage() {
 
       const apiResult = await apiRes.json();
       if (!apiRes.ok || !apiResult.success) {
-        throw new Error(apiResult.error || "Gagal mengirim OneSignal push notification");
+        throw new Error(apiResult.error || "Gagal menyiarkan pengumuman");
       }
 
-      toast.success("Pengumuman berhasil disiarkan ke pengguna dan OneSignal!");
+      toast.success("Pengumuman berhasil disiarkan!", {
+        description: apiResult.message,
+      });
       setIsSendModalOpen(false);
       setSendTitle("");
       setSendMessage("");

@@ -1,39 +1,34 @@
 // services/onesignal.service.ts
+//
+// @deprecated — pakai `@/lib/onesignal` secara langsung.
+//
+// Berkas ini dipertahankan hanya sebagai penerus. Isi aslinya rusak dan tidak
+// pernah dipanggil siapa pun: ia menggabungkan `process.env.ONESIGNAL_REST_API_KEY`
+// (hanya ada di server) dengan `window.location.origin` (hanya ada di peramban)
+// di dalam satu fungsi, sehingga mustahil berjalan di mana pun. Penargetannya
+// juga memakai `include_external_user_ids`, API SDK v15 yang diabaikan oleh
+// aplikasi OneSignal berbasis SDK v16 seperti proyek ini.
+//
+// Berkas ini boleh dihapus begitu tidak ada lagi impor yang mengarah ke sini.
+
+import { sendPushToUsers, type PushResult } from "@/lib/onesignal";
 
 export const oneSignalService = {
+  /** @deprecated Gunakan sendPushToUsers() dari "@/lib/onesignal". */
   async sendNotificationToUser({
-    userId, // ID user Supabase (yang jadi External ID di OneSignal)
+    userId,
     title,
     message,
     url,
   }: {
+    /** ID user Supabase — sama dengan External ID di OneSignal. */
     userId: string;
     title: string;
     message: string;
     url?: string;
-  }) {
-    try {
-      const response = await fetch("https://onesignal.com/api/v1/notifications", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json; charset=utf-8",
-          // ⚠️ Ambil REST API Key dari environment variable server-side Anda
-          Authorization: `Basic ${process.env.ONESIGNAL_REST_API_KEY}`,
-        },
-        body: JSON.stringify({
-          app_id: process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID,
-          // Targetkan berdasarkan External ID (user.id Supabase)
-          include_external_user_ids: [userId],
-          headings: { en: title },
-          contents: { en: message },
-          url: url || `${window.location.origin}/crm`,
-        }),
-      });
-
-      const data = await response.json();
-      return data;
-    } catch (error) {
-      console.error("Gagal mengirim OneSignal notification:", error);
-    }
+  }): Promise<PushResult> {
+    return sendPushToUsers([userId], { title, message, url });
   },
 };
+
+export { sendPushToUsers, sendPushToSegments } from "@/lib/onesignal";

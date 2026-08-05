@@ -34,9 +34,27 @@ declare global {
   }
 }
 
+/**
+ * Sakelar notifikasi yang dikenal halaman Pengaturan.
+ *
+ * Sengaja tidak `any`: setiap kunci di sini harus ikut disusun ulang di
+ * `loadedPrefs` (app/(dashboard)/settings/page.tsx). Ketika `preferences`
+ * masih bertipe `any`, hilangnya `push_notifications` dari daftar itu tidak
+ * terdeteksi kompiler — sakelar push yang sudah dimatikan pengguna terhapus
+ * dari basis data setiap kali preferensi lain disimpan.
+ */
+export interface NotificationPreferences {
+  push_notifications?: boolean;
+  email_notifications?: boolean;
+  whatsapp_notifications?: boolean;
+  lead_alerts?: boolean;
+  property_updates?: boolean;
+  reminder_alerts?: boolean;
+}
+
 interface NotificationsTabProps {
-  preferences: any;
-  persistPreferences: (partial: any) => void;
+  preferences: NotificationPreferences;
+  persistPreferences: (partial: NotificationPreferences) => void;
   userEmail: string;
   userRole?: string; // 👈 Menampung role pengguna (super_admin, admin, agent, viewer)
 }
@@ -245,27 +263,34 @@ export function NotificationsTab({
         </CardHeader>
 
         <CardContent className="p-5 space-y-4">
-          {/* EMAIL NOTIFICATIONS (BERLAKU UNTUK SEMUA ROLE) */}
-          <div className="flex items-center justify-between p-3.5 rounded-xl border bg-card">
+          {/* EMAIL NOTIFICATIONS — kanal belum terpasang (lihat badge). */}
+          <div className="flex items-center justify-between p-3.5 rounded-xl border bg-muted/30">
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400">
+              <div className="p-2 rounded-lg bg-slate-100 dark:bg-slate-900 text-slate-500 dark:text-slate-400">
                 <Mail className="w-4 h-4" />
               </div>
               <div>
-                <Label className="text-xs font-bold text-foreground block">
+                <Label className="text-xs font-bold text-muted-foreground flex items-center gap-2">
                   Notifikasi Email {isInternalUser ? "Aktivitas CRM" : "Kabar & Pengumuman"}
+                  <Badge
+                    variant="outline"
+                    className="bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/50 dark:text-amber-300 text-[9px] font-semibold"
+                  >
+                    Segera Hadir
+                  </Badge>
                 </Label>
                 <p className="text-[11px] text-muted-foreground">
-                  {isInternalUser
-                    ? `Kirim ringkasan laporan bulanan dan pembaruan sistem ke ${userEmail}`
-                    : `Kirim kabar proyek properti terbaru dan informasi pengumuman ke ${userEmail}`}
+                  Pengiriman email ke {userEmail} belum tersedia. Gunakan lonceng dan
+                  push perangkat untuk sementara.
                 </p>
               </div>
             </div>
-            <Switch
-              checked={preferences.email_notifications ?? true}
-              onCheckedChange={(val) => persistPreferences({ email_notifications: val })}
-            />
+            {/*
+              Dinonaktifkan secara sadar: tidak ada satu pun pengirim email di
+              aplikasi ini, jadi sakelar yang bisa dinyalakan hanya akan
+              menjanjikan sesuatu yang tidak pernah terkirim.
+            */}
+            <Switch checked={false} disabled />
           </div>
 
           {/* 🔒 FITUR KHUSUS INTERNAL (SUPER ADMIN, ADMIN, AGENT) */}
@@ -282,7 +307,8 @@ export function NotificationsTab({
                       Notifikasi WhatsApp Gateway
                     </Label>
                     <p className="text-[11px] text-muted-foreground">
-                      Kirim pesan konfirmasi janji temu & pengingat jadwal survei lokasi ke WhatsApp Anda
+                      Izinkan sistem mengirim pesan WhatsApp ke nomor Anda. Dimatikan
+                      berarti pesan otomatis dilewati, termasuk yang dipicu dari halaman lead.
                     </p>
                   </div>
                 </div>
@@ -347,7 +373,8 @@ export function NotificationsTab({
                       Pengingat Jadwal & Follow-up Lead
                     </Label>
                     <p className="text-[11px] text-muted-foreground">
-                      Pengingat otomatis H-1 sebelum agenda survei atau batas waktu follow-up klien
+                      Pemberitahuan saat agenda follow-up baru dijadwalkan untuk Anda.
+                      Pengingat otomatis H-1 menyusul.
                     </p>
                   </div>
                 </div>

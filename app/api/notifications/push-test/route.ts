@@ -1,59 +1,80 @@
-// app/api/notifications/send/route.ts
+// app/api/notifications/push-test/route.ts
+//
+// Uji coba push tanpa menyentuh tabel `notifications` — untuk memastikan
+// kredensial OneSignal dan pendaftaran External ID sudah benar.
+//
+// Default targetRole-nya "self": mengirim hanya ke perangkat admin yang menekan
+// tombol. Uji coba tidak semestinya mengganggu seluruh pengguna, dan versi
+// sebelumnya menyiarkannya ke segment "All".
 import { NextResponse } from "next/server";
+import { requireRole } from "@/lib/api-auth";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { sendPushToUsers } from "@/lib/onesignal";
+import { pushTestSchema, validate } from "@/lib/validations";
+
+const ROLE_GROUPS: Record<"internal" | "viewer" | "all", string[] | null> = {
+  internal: ["super_admin", "admin", "agent", "marketing"],
+  viewer: ["viewer"],
+  all: null,
+};
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const { title, message, targetRole, category, actionUrl } = body;
+    const auth = await requireRole(["admin", "super_admin"]);
+    if (!auth.ok) return auth.response;
 
-    const onesignalAppId = process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID;
-    const onesignalApiKey = process.env.ONESIGNAL_REST_API_KEY;
+    const parsed = validate(pushTestSchema, await request.json());
+    if (!parsed.ok) return parsed.response;
 
-    if (!onesignalApiKey || !onesignalAppId) {
+    const { title, message, targetRole, category, actionUrl } = parsed.data;
+
+    let userIds: string[];
+
+    if (targetRole === "self") {
+      userIds = [auth.ctx.userId];
+    } else {
+      const supabaseAdmin = createAdminClient();
+      let query = supabaseAdmin.from("users").select("id");
+
+      const roles = ROLE_GROUPS[targetRole];
+      if (roles) query = query.in("role", roles);
+
+      const { data, error } = await query;
+      if (error) throw new Error("Gagal mengambil daftar penerima: " + error.message);
+
+      userIds = (data ?? []).map((u) => u.id as string).filter(Boolean);
+    }
+
+    if (userIds.length === 0) {
       return NextResponse.json(
-        { success: false, error: "OneSignal REST API Key belum disetel di .env.local" },
-        { status: 400 }
+        { success: false, error: `Tidak ada pengguna dengan target "${targetRole}".` },
+        { status: 422 }
       );
     }
 
-    // Tentukan segment OneSignal berdasarkan targetRole
-    // (Pastikan Anda menggunakan segment di OneSignal dashboard, atau gunakan "All")
-    let segments = ["All"];
-    if (targetRole === "internal") {
-      segments = ["Active Users"]; // Atau segment khusus internal Anda
-    } else if (targetRole === "viewer") {
-      segments = ["Subscribed Users"]; 
-    }
-
-    // Kirim perintah push notification ke server OneSignal
-    const res = await fetch("https://onesignal.com/api/v1/notifications", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json; charset=utf-8",
-        "Authorization": `Basic ${onesignalApiKey}`,
-      },
-      body: JSON.stringify({
-        app_id: onesignalAppId,
-        included_segments: segments, 
-        headings: { en: title, id: title },
-        contents: { en: message, id: message },
-        url: actionUrl || undefined,
-        data: {
-          category: category || "admin",
-          targetRole: targetRole || "internal",
-        },
-      }),
+    const push = await sendPushToUsers(userIds, {
+      title,
+      message,
+      url: actionUrl,
+      data: { category: category || "admin", targetRole, test: true },
     });
 
-    const result = await res.json();
-
-    if (!res.ok) {
-      throw new Error(result.errors ? result.errors.join(", ") : "Gagal mengirim ke OneSignal");
+    if (!push.success) {
+      return NextResponse.json({ success: false, error: push.error }, { status: 502 });
     }
 
-    return NextResponse.json({ success: true, data: result });
-  } catch (error: any) {
-    console.error("OneSignal Push Error:", error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return NextResponse.json({
+      success: true,
+      targeted: userIds.length,
+      delivered: push.recipients,
+      // Nol perangkat bukan kegagalan: penerima mungkin belum pernah menekan
+      // "Izinkan", atau External ID-nya belum terdaftar karena belum pernah
+      // membuka aplikasi sejak penautan akun diaktifkan.
+      ...(push.skipped ? { note: push.skipped } : {}),
+    });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    console.error("[notifikasi/push-test]", detail);
+    return NextResponse.json({ success: false, error: detail }, { status: 500 });
   }
 }

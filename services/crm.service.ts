@@ -659,27 +659,33 @@ export const crmService = {
     followup_date: string;
     notes?: string;
   }) {
-    const { data: followup, error } = await supabase
-      .from("crm_followups")
-      .insert({
-        lead_id: data.lead_id,
+    // Lewat route, bukan insert langsung: agenda yang ditugaskan ke agen lain
+    // harus memunculkan notifikasi untuk agen tersebut, dan baris notifikasi
+    // atas nama akun lain hanya bisa ditulis dengan service role di server.
+    const res = await fetch(`/api/leads/${data.lead_id}/follow-up`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
         assigned_to: data.assigned_to,
         followup_date: data.followup_date,
         notes: data.notes || null,
-        status: "pending",
-      })
-      .select()
-      .single();
+      }),
+    });
 
-    if (error) throw new Error(error.message);
+    const json = await res.json();
+    if (!res.ok || !json.success) {
+      throw new Error(json.error || "Gagal membuat agenda follow-up");
+    }
 
+    // Pencatatan aktivitas tetap di sisi peramban: barisnya ditulis atas nama
+    // user yang sedang login, jadi tidak butuh service role.
     await this.logActivity({
       lead_id: data.lead_id,
       activity_type: "followup_scheduled",
       notes: `Follow-up dijadwalkan pada ${new Date(data.followup_date).toLocaleString("id-ID")}`,
     });
 
-    return followup;
+    return json.data;
   },
 
   async updateFollowup(id: string, data: {

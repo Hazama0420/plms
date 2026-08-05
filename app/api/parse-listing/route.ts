@@ -2,15 +2,29 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { aiService } from "@/services/ai.service";
+import { requireAuth } from "@/lib/api-auth";
+
+const MAX_TEXT_LENGTH = 20_000;
 
 export async function POST(request: NextRequest) {
   try {
+    // Endpoint ini memanggil AI berbayar — wajib login.
+    const auth = await requireAuth();
+    if (!auth.ok) return auth.response;
+
     const { text } = await request.json();
 
-    if (!text || text.trim().length < 10) {
+    if (!text || typeof text !== "string" || text.trim().length < 10) {
       return NextResponse.json(
         { error: "Teks terlalu pendek. Minimal 10 karakter." },
         { status: 400 }
+      );
+    }
+
+    if (text.length > MAX_TEXT_LENGTH) {
+      return NextResponse.json(
+        { error: `Teks terlalu panjang. Maksimal ${MAX_TEXT_LENGTH} karakter.` },
+        { status: 413 }
       );
     }
 

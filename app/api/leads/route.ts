@@ -1,44 +1,104 @@
 // app/api/leads/route.ts
+//
+// Endpoint ini SENGAJA publik: dipakai form inquiry pengunjung yang belum login,
+// dan menulis dengan service role. Penjagaannya berupa validasi ketat + rate
+// limit per IP.
+//
+// Agen diberi tahu lewat lonceng web + push perangkat saja. Pesan WhatsApp
+// otomatis sengaja TIDAK dipicu dari sini: endpoint ini terbuka untuk publik,
+// sehingga setiap pengiriman berarti pesan Fonnte berbayar yang dapat dipicu
+// siapa pun. WA tetap tersedia lewat aksi manual di halaman lead
+// (/api/notifications/whatsapp) yang terjaga role.
 import { NextResponse } from "next/server";
-import { sendSystemNotification } from "@/lib/notification-helper";
+import { notifyEvent } from "@/lib/notification-helper";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { sendWaToAgent } from "@/lib/fonnte"; // 🔑 Langsung import helper Fonnte
+import { getClientIp, rateLimit } from "@/lib/rate-limit";
+import { leadInsertSchema, validate } from "@/lib/validations";
+
+// Maksimal 5 pengajuan lead per IP tiap 10 menit.
+const LEAD_LIMIT = 5;
+const LEAD_WINDOW_MS = 10 * 60_000;
 
 export async function POST(req: Request) {
   try {
+    const clientIp = getClientIp(req);
+    const limit = rateLimit(`leads:${clientIp}`, LEAD_LIMIT, LEAD_WINDOW_MS);
+
+    if (!limit.allowed) {
+      return NextResponse.json(
+        { error: "Terlalu banyak pengajuan. Silakan coba lagi beberapa saat lagi." },
+        { status: 429, headers: { "Retry-After": String(limit.retryAfterSeconds) } }
+      );
+    }
+
     const supabase = createAdminClient();
     const body = await req.json();
 
-    const name = body.name || body.full_name;
-    const phone = body.phone || body.whatsapp;
-    const email = body.email || null;
-    const propertyIdInput = body.property_id || body.propertyId || null;
-    const source = body.source || "Chat / Inquiry Properti";
-    const notes = body.notes || body.message || null;
+    // Validasi terpusat: batas panjang, format email, dan pembersihan nomor
+    // telepon kini ditangani skema (lib/validations.ts), termasuk penyeragaman
+    // alias field dari berbagai form pemanggil.
+    const parsed = validate(leadInsertSchema, body);
+    if (!parsed.ok) return parsed.response;
 
-    if (!name) {
-      return NextResponse.json({ error: "Nama calon pembeli wajib diisi." }, { status: 400 });
-    }
+    const { name, source: sourceInput } = parsed.data;
+    const propertyIdInput = parsed.data.property_id ?? null;
+    const source = sourceInput || "Chat / Inquiry Properti";
 
-    const cleanPhone = phone ? String(phone).replace(/[^0-9]/g, "") : null;
+    // Dinormalkan ke null: skema menghasilkan undefined untuk isian kosong,
+    // dan kolom yang undefined akan dilewati saat insert alih-alih dikosongkan.
+    const email = parsed.data.email ?? null;
+    const notes = parsed.data.notes ?? null;
+
+    // Sudah bersih dari karakter non-digit oleh skema.
+    const cleanPhone = parsed.data.phone ?? null;
+
+    // `status` dipaksa "new" di bawah — pengunjung tidak boleh menentukan
+    // tahapan CRM atau menugaskan lead ke agen pilihannya sendiri.
 
     // 1. Cari Data Properti & Pemilik (Agen Penanggung Jawab)
+    //
+    // `assigned_to` dari body sengaja diabaikan: kalau dipakai, pengunjung
+    // anonim bisa menimpakan lead ke agen mana pun. Penanggung jawab hanya
+    // boleh berasal dari pemilik listing atau agen default.
     let propertyTitle = "Properti Pilihan";
-    let ownerAgentId = body.assigned_to || null;
+    let ownerAgentId: string | null = null;
     let validPropertyUuid: string | null = null;
+    // Harga listing dipakai sebagai perkiraan anggaran calon pembeli, meniru
+    // perilaku form inquiry sebelumnya.
+    let budgetValue: number | null = null;
 
     if (propertyIdInput) {
-      const { data: propData } = await supabase
-        .from("properties")
-        .select("id, title, user_id")
-        .or(`id.eq.${propertyIdInput},listing_code.eq.${propertyIdInput}`)
-        .maybeSingle();
+      const propertyRef = String(propertyIdInput).trim();
 
-      if (propData) {
-        propertyTitle = propData.title || propertyTitle;
-        validPropertyUuid = propData.id;
-        if (!ownerAgentId) {
-          ownerAgentId = propData.user_id; // Pemilik listing otomatis jadi agen
+      // Nilai ini masuk ke filter PostgREST, jadi bentuknya harus dipastikan
+      // dulu — string bebas bisa menyelundupkan operator filter lain.
+      const isUuid =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(propertyRef);
+      const isListingCode = /^[A-Za-z0-9_-]{1,64}$/.test(propertyRef);
+
+      if (isUuid || isListingCode) {
+        // select("*") disengaja: repo ini memakai `user_id` (diisi saat listing
+        // dibuat) dan `created_by` di tempat berbeda, jadi menyebut kolom satu
+        // per satu berisiko menunjuk kolom yang tidak ada — dan query yang gagal
+        // membuat seluruh lead jatuh ke agen default tanpa jejak.
+        const query = supabase.from("properties").select("*, price:property_price(*)");
+        const { data: propData } = await (isUuid
+          ? query.eq("id", propertyRef)
+          : query.eq("listing_code", propertyRef)
+        ).maybeSingle();
+
+        if (propData) {
+          propertyTitle = propData.title || propertyTitle;
+          validPropertyUuid = propData.id;
+          // Agen pemegang didahulukan atas pembuat listing: dialah yang sedang
+          // bertanggung jawab atas properti ini setelah penugasan ulang.
+          ownerAgentId =
+            propData.assigned_to || propData.created_by || propData.user_id || null;
+
+          // PostgREST mengembalikan relasi satu-ke-satu sebagai objek, tetapi
+          // sebagai larik bila kardinalitasnya tidak dapat disimpulkannya.
+          const priceRow = Array.isArray(propData.price) ? propData.price[0] : propData.price;
+          budgetValue = priceRow?.selling_price || priceRow?.rental_price || null;
         }
       }
     }
@@ -70,6 +130,9 @@ export async function POST(req: Request) {
           contact_code: `CONT-${Date.now()}`,
           full_name: name,
           phone: cleanPhone,
+          // Kontak dari inquiry web selalu dihubungi lewat nomor yang sama;
+          // mengisi kedua kolom membuat tombol WA di CRM langsung berfungsi.
+          whatsapp: cleanPhone,
           email: email,
         })
         .select("id")
@@ -89,6 +152,7 @@ export async function POST(req: Request) {
         source: source,
         status: "new",
         interest_type: propertyTitle,
+        budget: budgetValue,
         notes: notes,
       })
       .select("*, contact:crm_contacts(*)")
@@ -113,38 +177,44 @@ export async function POST(req: Request) {
       }
     }
 
-    // 5. Kirim Notifikasi Lonceng Web
+    // 5. Catat jejak aktivitas.
+    //
+    // Dibaca tab Aktivitas di detail lead, AgentActivityMonitor, halaman
+    // Admin → Logs, dan kartu "Aktivitas Terkini" di dasbor. Tanpa baris ini,
+    // lead dari website tidak meninggalkan jejak sama sekali di keempatnya.
+    //
+    // Dilewati bila belum ada agen penanggung jawab: `user_id` menunjuk ke tabel
+    // users, sedangkan pengirim inquiry adalah tamu yang tidak punya akun.
     if (ownerAgentId) {
-      await sendSystemNotification({
-        userId: ownerAgentId,
+      const { error: actErr } = await supabase.from("crm_activities").insert({
+        lead_id: newLead.id,
+        user_id: ownerAgentId,
+        activity_type: "Lead Masuk (Website)",
+        notes: `Prospek baru "${name}" berminat pada properti "${propertyTitle}"`,
+      });
+
+      if (actErr) {
+        console.error("⚠️ Gagal simpan crm_activities:", actErr.message);
+      }
+    }
+
+    // 6. Kirim Notifikasi Lonceng Web + Push ke agen penanggung jawab.
+    //
+    // Kegagalan notifikasi tidak boleh menggagalkan penyimpanan lead: bagi
+    // pengunjung, datanya sudah tercatat dan itulah yang penting.
+    if (ownerAgentId) {
+      await notifyEvent({
+        event: "lead.created",
+        userIds: [ownerAgentId],
         title: "🔥 Calon Pembeli Baru (Lead)!",
         message: `${name} tertarik dengan listing "${propertyTitle}". Segera hubungi!`,
-        type: "lead",
         link: `/crm/leads/${newLead.id}`,
-      }).catch((err) => console.error("Gagal notif lonceng:", err));
-
-      // 6. 🔥 LANGSUNG PANGGIL HELPER FONNTE SECARA DIRECT (TIDAK LAGI PAKAI FETCH DARI SERVER KE SERVER)
-      try {
-        const waResult = await sendWaToAgent({
-          agentId: ownerAgentId,
-          leadName: name,
-          clientPhone: cleanPhone || "-",
-          propertyInterest: propertyTitle,
-        });
-
-        if (waResult.success) {
-          console.log("✅ WA Otomatis Fonnte BERHASIL Terkirim ke Agen!");
-        } else {
-          console.warn("⚠️ WA Fonnte tidak terkirim:", waResult.reason);
-        }
-      } catch (waErr) {
-        console.error("⚠️ Error eksekusi WA Fonnte:", waErr);
-      }
+      }).catch((err) => console.error("Gagal kirim notifikasi lead:", err));
     }
 
     return NextResponse.json({
       success: true,
-      message: "Lead & Minat Properti berhasil tersimpan, WA terkirim otomatis!",
+      message: "Lead & minat properti berhasil tersimpan. Agen telah diberi tahu.",
       data: newLead,
     });
   } catch (error: any) {

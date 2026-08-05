@@ -1,52 +1,69 @@
 // app/api/chat/route.ts
+//
+// Endpoint ini SENGAJA publik: AIChatWidget dipasang di root layout sehingga
+// pengunjung yang belum login pun bisa bertanya. Karena memanggil AI berbayar,
+// penjagaannya berupa rate limit berlapis, bukan wajib login.
 import { NextResponse } from "next/server";
 import { aiService } from "@/services/ai.service";
-import { supabase } from "@/lib/supabase/client";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { getAuthContext } from "@/lib/api-auth";
+import { getClientIp, rateLimit } from "@/lib/rate-limit";
+import { chatMessageSchema, validate } from "@/lib/validations";
 
 const DAILY_LIMIT = 15; // Batas maksimal pesan per hari untuk non-superadmin
 
+// Rem cepat per IP: menahan banjir permintaan sebelum menyentuh database.
+const BURST_LIMIT = 10;
+const BURST_WINDOW_MS = 60_000;
+
 export async function POST(req: Request) {
   try {
-    const { messages } = await req.json();
+    const body = await req.json();
 
-    if (!messages || !Array.isArray(messages)) {
-      return NextResponse.json(
-        { error: "Format pesan tidak valid" },
-        { status: 400 }
-      );
-    }
+    // Bentuk payload dan batas panjang pesan diperiksa skema
+    // (lib/validations.ts). Sebelumnya pesan terlalu panjang dijawab 413;
+    // sekarang seragam 400 seperti galat validasi lain.
+    const parsed = validate(chatMessageSchema, body);
+    if (!parsed.ok) return parsed.response;
 
-    const lastMessage = messages[messages.length - 1]?.text;
+    const { messages } = parsed.data;
+
+    // Route hanya memakai pesan terakhir sebagai prompt. Entri riwayat boleh
+    // kosong, tapi prompt yang benar-benar dikirim ke AI tidak.
+    const lastMessage = messages[messages.length - 1]?.text?.trim();
     if (!lastMessage) {
       return NextResponse.json({ error: "Pesan kosong" }, { status: 400 });
     }
 
-    // 1. Identifikasi Pengguna & Cek Role di Database
-    const forwardedFor = req.headers.get("x-forwarded-for");
-    const clientIp = forwardedFor ? forwardedFor.split(",")[0] : "127.0.0.1";
-    
-    const { data: { user } } = await supabase.auth.getUser();
-    let userRole = "viewer";
-    let userIdentifier = clientIp;
+    const clientIp = getClientIp(req);
 
-    if (user) {
-      userIdentifier = user.id;
-      // Ambil role asli dari tabel users
-      const { data: profile } = await supabase
-        .from("users")
-        .select("role")
-        .eq("id", user.id)
-        .maybeSingle();
-
-      if (profile && profile.role) {
-        userRole = profile.role.toLowerCase();
-      } else if (user.user_metadata?.role) {
-        userRole = user.user_metadata.role.toLowerCase();
-      }
+    const burst = rateLimit(`chat:${clientIp}`, BURST_LIMIT, BURST_WINDOW_MS);
+    if (!burst.allowed) {
+      return NextResponse.json(
+        {
+          error: "Terlalu banyak permintaan. Mohon tunggu sebentar.",
+          limitExceeded: true,
+        },
+        { status: 429, headers: { "Retry-After": String(burst.retryAfterSeconds) } }
+      );
     }
 
+    // 1. Identifikasi Pengguna & Cek Role di Database.
+    //
+    // Sebelumnya bagian ini memakai klien Supabase versi browser, yang di server
+    // tidak pernah membaca cookie sesi. Akibatnya getUser() selalu null: kuota
+    // dihitung per-IP untuk semua orang dan Super Admin tak pernah dikenali.
+    const auth = await getAuthContext();
+
+    const userRole = auth?.role ?? "viewer";
+    const userIdentifier = auth?.userId ?? clientIp;
+
+    // Penghitung kuota memakai service role: tabel ai_usage harus tetap
+    // tertutup dari klien anonim lewat RLS.
+    const supabase = createAdminClient();
+
     // Cek apakah user adalah Super Admin
-    const isSuperAdmin = userRole === "super_admin" || userRole === "superadmin";
+    const isSuperAdmin = userRole === "super_admin";
 
     // 2. JIKA BUKAN SUPER ADMIN, terapkan pembatasan rate limit harian
     if (!isSuperAdmin) {

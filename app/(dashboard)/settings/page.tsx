@@ -27,7 +27,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 // IMPORT SUB-KOMPONEN SETTINGS
 import { ProfileTab } from "@/components/settings/ProfileTab";
 import { BrandingTab } from "@/components/settings/BrandingTab";
-import { AppearanceTab } from "@/components/settings/AppearanceTab";
+import { AppearanceTab, type CatalogViewMode } from "@/components/settings/AppearanceTab";
 import { NotificationsTab } from "@/components/settings/NotificationsTab";
 import { SystemTab } from "@/components/settings/SystemTab";
 import { ChatAdminModal } from "@/components/settings/ChatAdminModal";
@@ -37,15 +37,26 @@ type ThemeChoice = "light" | "dark" | "system";
 interface UserPreferences {
   theme_preference: ThemeChoice;
   dark_mode: boolean;
+  // Sakelar notifikasi.
+  //
+  // Setiap kunci di sini WAJIB ikut disusun ulang di `loadedPrefs`
+  // (loadUserData). persistPreferences menulis seluruh objek preferences
+  // sekaligus, jadi kunci yang tidak ikut dimuat akan terhapus dari basis data
+  // begitu pengguna mengubah preferensi lain — persis yang dulu terjadi pada
+  // push_notifications: sakelar yang sudah dimatikan diam-diam menyala lagi
+  // di sisi server (lib/notification-helper.ts membacanya sebagai undefined).
+  push_notifications: boolean;
   email_notifications: boolean;
+  whatsapp_notifications: boolean;
   property_updates: boolean;
   lead_alerts: boolean;
-  whatsapp_notifications: boolean;
+  reminder_alerts: boolean;
   compact_view: boolean;
   currency: string;
   timezone: string;
   accent_color?: string;
-  default_catalog_view?: string;
+  /** Dipersempit ke CatalogViewMode agar cocok dengan prop AppearanceTab. */
+  default_catalog_view?: CatalogViewMode;
   font_size: "normal" | "compact" | "large";
 }
 
@@ -221,10 +232,12 @@ export default function SettingsPage() {
   const [preferences, setPreferences] = useState<UserPreferences>({
     theme_preference: "system",
     dark_mode: false,
+    push_notifications: true,
     email_notifications: true,
+    whatsapp_notifications: false,
     property_updates: true,
     lead_alerts: true,
-    whatsapp_notifications: false,
+    reminder_alerts: true,
     compact_view: false,
     currency: "IDR",
     timezone: "Asia/Jakarta",
@@ -363,15 +376,23 @@ export default function SettingsPage() {
           const loadedPrefs: UserPreferences = {
             theme_preference: savedTheme,
             dark_mode: savedTheme === "dark",
+            push_notifications: data.preferences.push_notifications ?? true,
             email_notifications: data.preferences.email_notifications ?? true,
+            whatsapp_notifications: data.preferences.whatsapp_notifications ?? false,
             property_updates: data.preferences.property_updates ?? true,
             lead_alerts: data.preferences.lead_alerts ?? true,
-            whatsapp_notifications: data.preferences.whatsapp_notifications ?? false,
+            reminder_alerts: data.preferences.reminder_alerts ?? true,
             compact_view: data.preferences.compact_view ?? false,
             currency: data.preferences.currency || "IDR",
             timezone: data.preferences.timezone || "Asia/Jakarta",
             accent_color: data.preferences.accent_color || localStorage.getItem("accent_color") || "emerald",
-            default_catalog_view: data.preferences.default_catalog_view || localStorage.getItem("default_catalog_view") || "grid",
+            // Dinormalkan ke dua nilai yang sah saja; nilai asing dari DB atau
+            // localStorage jangan sampai membuat tombolnya tidak ada yang aktif.
+            default_catalog_view:
+              (data.preferences.default_catalog_view ||
+                localStorage.getItem("default_catalog_view")) === "table"
+                ? "table"
+                : "grid",
             font_size: data.preferences.font_size || (localStorage.getItem("font_size") as any) || "normal",
           };
 
@@ -384,7 +405,8 @@ export default function SettingsPage() {
         } else {
           const savedCompact = localStorage.getItem("compact_mode") === "true";
           const savedAccent = localStorage.getItem("accent_color") || "emerald";
-          const savedCatalogView = localStorage.getItem("default_catalog_view") || "grid";
+          const savedCatalogView =
+            localStorage.getItem("default_catalog_view") === "table" ? "table" : "grid";
           const savedFontSize = (localStorage.getItem("font_size") as any) || "normal";
 
           const fallbackPrefs: Partial<UserPreferences> = {
@@ -707,6 +729,24 @@ export default function SettingsPage() {
     toast.success(isCompact ? "Tampilan Padat diaktifkan" : "Tampilan Normal diaktifkan");
   };
 
+  // Tampilan default katalog properti.
+  //
+  // Tombolnya sebelumnya mati total: `AppearanceTab` memanggil
+  // `handleDefaultCatalogViewChange?.(...)` sedangkan halaman ini tidak pernah
+  // mengirim prop tersebut, jadi optional-call-nya berhenti di `undefined`.
+  // Nilainya juga selalu tampak "grid" karena prop `defaultCatalogView` ikut
+  // tidak dikirim dan jatuh ke nilai bawaan.
+  const handleDefaultCatalogViewChange = (mode: CatalogViewMode) => {
+    // persistPreferences sekaligus menulis ke localStorage lewat
+    // applyAppearanceDOM, dan itulah yang dibaca halaman /properties saat dibuka.
+    persistPreferences({ default_catalog_view: mode });
+    toast.success(
+      mode === "grid"
+        ? "Katalog properti dibuka sebagai Kartu (Grid)"
+        : "Katalog properti dibuka sebagai Tabel Rinci"
+    );
+  };
+
   const handleFontSizeChange = (size: "normal" | "compact" | "large") => {
     persistPreferences({ font_size: size });
     const labelMap = { compact: "Kecil", normal: "Normal", large: "Besar" };
@@ -1009,6 +1049,8 @@ export default function SettingsPage() {
             handleThemeSelect={handleThemeSelect}
             compactView={preferences.compact_view}
             handleCompactToggle={handleCompactToggle}
+            defaultCatalogView={preferences.default_catalog_view}
+            handleDefaultCatalogViewChange={handleDefaultCatalogViewChange}
             fontSize={preferences.font_size}
             handleFontSizeChange={handleFontSizeChange}
           />

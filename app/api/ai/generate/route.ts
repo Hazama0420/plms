@@ -2,10 +2,22 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { aiService } from "@/services/ai.service";
+import { requireAuth } from "@/lib/api-auth";
 
 export async function POST(request: NextRequest) {
   try {
+    // Endpoint ini memanggil Gemini/Groq berbayar — wajib login.
+    const auth = await requireAuth();
+    if (!auth.ok) return auth.response;
+
     const { action, data } = await request.json();
+
+    if (!data || typeof data !== "object") {
+      return NextResponse.json(
+        { success: false, error: "Parameter 'data' wajib berupa objek." },
+        { status: 400 }
+      );
+    }
 
     // ===== ACTION: TITLE =====
     if (action === "title") {

@@ -70,7 +70,8 @@ export function AiWriterModal({
           leadName,
           property: propertyTitle,
           status: leadStatus,
-          userRole: normalizedRole,
+          // Role tidak lagi dikirim: server menentukannya sendiri dari sesi.
+          // `isAdmin` di atas murni untuk menyembunyikan tombol, bukan penjagaan.
         }),
       });
 

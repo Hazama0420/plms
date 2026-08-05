@@ -350,7 +350,7 @@ export default function LeadDetailPage() {
           leadName: clientName,
           property: propertyInterest,
           status: lead?.status || "New Lead",
-          userRole: currentUserRole,
+          // Role ditentukan server dari sesi, tidak lagi dikirim dari klien.
         }),
       });
 

@@ -2,6 +2,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
+import { notifyEvent } from "@/lib/notification-helper";
 
 export async function POST(
   req: NextRequest,
@@ -53,11 +54,16 @@ export async function POST(
       );
     }
 
+    // Tanpa penanggung jawab eksplisit, agenda menjadi milik pembuatnya.
+    // Sebelumnya disimpan sebagai null, sehingga agendanya tidak muncul di
+    // daftar siapa pun dan tidak ada yang bisa dinotifikasi.
+    const assignee: string = assigned_to || user.id;
+
     const { data, error } = await supabase
       .from("crm_followups")
       .insert({
         lead_id: leadId,
-        assigned_to: assigned_to || null,
+        assigned_to: assignee,
         followup_date: followup_date,
         notes: notes || null,
         status: "pending",
@@ -71,6 +77,28 @@ export async function POST(
         { error: error.message || "Gagal membuat follow-up" },
         { status: 500 }
       );
+    }
+
+    // Beri tahu penanggung jawab agenda.
+    //
+    // Sengaja dilewati bila agenda dibuat untuk diri sendiri: penggunanya baru
+    // saja mengisi formulirnya, jadi notifikasi itu hanya mengulang perbuatan
+    // sendiri. Notifikasi tetap dikirim untuk penugasan ke orang lain, yang
+    // memang tidak tahu apa-apa sampai diberi tahu.
+    if (assignee !== user.id) {
+      const jadwal = new Date(followup_date).toLocaleString("id-ID", {
+        dateStyle: "full",
+        timeStyle: "short",
+      });
+
+      await notifyEvent({
+        event: "followup.created",
+        userIds: [assignee],
+        title: "Agenda follow-up baru untuk Anda",
+        message: `Follow-up dijadwalkan pada ${jadwal}.`,
+        link: `/crm/leads/${leadId}`,
+        senderId: user.id,
+      }).catch((err) => console.error("Gagal kirim notifikasi follow-up:", err));
     }
 
     return NextResponse.json({

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Search,
   SlidersHorizontal,
@@ -27,24 +27,34 @@ import {
 
 export function DashboardPropertySearch() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [filterOpen, setFilterOpen] = useState(false);
 
+  // Nilai awal dibaca dari URL supaya panel filter mencerminkan pencarian yang
+  // sedang berjalan. Tanpa ini, membuka kembali panel menampilkan formulir
+  // kosong lalu menghapus seluruh filter begitu tombol "Cari" ditekan.
+  const initial = (key: string, fallback = "") => searchParams.get(key) ?? fallback;
+
   // State Filter
-  const [keyword, setKeyword] = useState("");
-  const [listingType, setListingType] = useState<string>("all");
-  const [propertyType, setPropertyType] = useState<string>("all");
-  const [provinceName, setProvinceName] = useState("");
-  const [cityName, setCityName] = useState("");
-  const [minBuildingArea, setMinBuildingArea] = useState("");
-  const [maxBuildingArea, setMaxBuildingArea] = useState("");
-  const [minLandArea, setMinLandArea] = useState("");
-  const [maxLandArea, setMaxLandArea] = useState("");
-  const [minPrice, setMinPrice] = useState("");
-  const [maxPrice, setMaxPrice] = useState("");
-  const [bedroom, setBedroom] = useState<string>("all");
-  const [sortBy, setSortBy] = useState<string>("all");
+  const [keyword, setKeyword] = useState(initial("q"));
+  const [listingType, setListingType] = useState<string>(initial("listing_type", "all"));
+  const [propertyType, setPropertyType] = useState<string>(initial("property_type", "all"));
+  const [provinceName, setProvinceName] = useState(initial("province_name"));
+  const [cityName, setCityName] = useState(initial("city_name"));
+  const [minBuildingArea, setMinBuildingArea] = useState(initial("buildingAreaMin"));
+  const [maxBuildingArea, setMaxBuildingArea] = useState(initial("buildingAreaMax"));
+  const [minLandArea, setMinLandArea] = useState(initial("landAreaMin"));
+  const [maxLandArea, setMaxLandArea] = useState(initial("landAreaMax"));
+  const [minPrice, setMinPrice] = useState(initial("priceMin"));
+  const [maxPrice, setMaxPrice] = useState(initial("priceMax"));
+  const [bedroom, setBedroom] = useState<string>(initial("bedroom", "all"));
+  const [sortBy, setSortBy] = useState<string>(initial("sort", "all"));
 
   // 🏢 KATEGORI PROPERTI LENGKAP
+  //
+  // `value` harus sama persis dengan isi kolom `property_type` di basis data —
+  // "perkantoran" dan "ruang usaha" tidak pernah cocok karena tersimpan sebagai
+  // `kantor` dan `ruang_usaha`.
   const propertyCategories = [
     { label: "Semua", value: "all" },
     { label: "🏠 Rumah", value: "rumah" },
@@ -56,8 +66,8 @@ export function DashboardPropertySearch() {
     { label: "🏨 Hotel", value: "hotel" },
     { label: "🏭 Pabrik", value: "pabrik" },
     { label: "📦 Gudang", value: "gudang" },
-    { label: "🏢 Perkantoran", value: "perkantoran" },
-    { label: "🏪 Ruang Usaha", value: "ruang usaha" },
+    { label: "🏢 Perkantoran", value: "kantor" },
+    { label: "🏪 Ruang Usaha", value: "ruang_usaha" },
   ];
 
   const bedroomOptions = [

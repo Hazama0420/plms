@@ -1,9 +1,14 @@
 // app/api/locations/search/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { createServerClient } from "@supabase/ssr";
-import { cookies } from "next/headers";
+import { requireAuth } from "@/lib/api-auth";
 
 export async function GET(req: NextRequest) {
+  // Hanya dipakai form internal pembuatan properti.
+  const auth = await requireAuth();
+  if (!auth.ok) return auth.response;
+
+  const { supabase } = auth.ctx;
+
   const searchParams = req.nextUrl.searchParams;
   const query = searchParams.get("q")?.trim();
 
@@ -11,25 +16,15 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ data: [] });
   }
 
-  const cookieStore = await cookies();
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name) { return cookieStore.get(name)?.value; },
-        set(name, value, options) { cookieStore.set({ name, value, ...options }); },
-        remove(name, options) { cookieStore.set({ name, value: "", ...options }); },
-      },
-    }
-  );
+  // Netralkan wildcard LIKE agar input pengguna tidak mengubah pola pencarian.
+  const safeQuery = query.replace(/[%_\\]/g, "\\$&");
 
   try {
     // Search di provinces
     const { data: provinces } = await supabase
       .from("provinces")
       .select("id, name, country_id")
-      .ilike("name", `%${query}%`)
+      .ilike("name", `%${safeQuery}%`)
       .limit(5);
 
     // Search di cities
@@ -41,7 +36,7 @@ export async function GET(req: NextRequest) {
         province_id,
         provinces(name)
       `)
-      .ilike("name", `%${query}%`)
+      .ilike("name", `%${safeQuery}%`)
       .limit(5);
 
     // Search di districts
@@ -53,7 +48,7 @@ export async function GET(req: NextRequest) {
         city_id,
         cities(name, provinces(name))
       `)
-      .ilike("name", `%${query}%`)
+      .ilike("name", `%${safeQuery}%`)
       .limit(5);
 
     // Search di villages
@@ -65,7 +60,7 @@ export async function GET(req: NextRequest) {
         district_id,
         districts(name, cities(name, provinces(name)))
       `)
-      .ilike("name", `%${query}%`)
+      .ilike("name", `%${safeQuery}%`)
       .limit(5);
 
     const results = [];

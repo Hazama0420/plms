@@ -457,13 +457,18 @@ export default function InvoicesPage() {
 
                   {/* 🟢 DROPDOWN AKSES LANGSUNG DI MOBILE */}
                   <DropdownMenu>
-  <DropdownMenuTrigger
-    onClick={(e) => e.stopPropagation()}
-  >
-    <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg">
-      <MoreHorizontal className="h-4 w-4" />
-    </Button>
-  </DropdownMenuTrigger>
+                    {/* `render` menggabungkan trigger dengan Button jadi satu
+                        elemen. Menaruh <Button> sebagai anak akan menghasilkan
+                        <button> di dalam <button> — HTML tidak sah dan memicu
+                        galat hidrasi. */}
+                    <DropdownMenuTrigger
+                      onClick={(e) => e.stopPropagation()}
+                      render={
+                        <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg" />
+                      }
+                    >
+                      <MoreHorizontal className="h-4 w-4" />
+                    </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-44 text-xs rounded-xl shadow-lg">
                       <DropdownMenuItem onClick={() => sendWAInvoice(inv)}>
                         <MessageCircle className="w-3.5 h-3.5 mr-2 text-emerald-600" /> Kirim WhatsApp
@@ -593,11 +598,13 @@ export default function InvoicesPage() {
                             </Button>
 
                             <DropdownMenu>
-  <DropdownMenuTrigger>
-    <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg">
-      <MoreHorizontal className="w-4 h-4" />
-    </Button>
-  </DropdownMenuTrigger>
+                              <DropdownMenuTrigger
+                                render={
+                                  <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg" />
+                                }
+                              >
+                                <MoreHorizontal className="w-4 h-4" />
+                              </DropdownMenuTrigger>
                               <DropdownMenuContent align="end" className="w-40 text-xs rounded-xl">
                                 <DropdownMenuItem onClick={() => handleUpdateStatus(inv.id, "paid")}>
                                   <CheckCircle2 className="w-3.5 h-3.5 mr-2 text-emerald-600" /> Tandai Lunas

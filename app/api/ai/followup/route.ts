@@ -1,54 +1,23 @@
 // app/api/ai/followup/route.ts
 import { aiService } from "@/services/ai.service";
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+import { requireRole } from "@/lib/api-auth";
+import { followupSchema, validate } from "@/lib/validations";
 
 export async function POST(req: Request) {
   try {
-    const { leadName, property, status, userRole } = await req.json();
+    // Role diambil dari sesi terverifikasi di server.
+    // Sebelumnya role dibaca dari body request (`userRole`), sehingga siapa pun
+    // bisa mengirim {"userRole":"super_admin"} dan melewati pengecekan.
+    const auth = await requireRole(["agent", "admin", "super_admin"]);
+    if (!auth.ok) return auth.response;
 
-    // 🔒 IDENTIFIKASI ROLE PENGGUNA
-    let role = (userRole || "").toLowerCase();
+    // Nilai dari body ikut masuk ke prompt AI, jadi tipe dan batas panjangnya
+    // dipastikan lebih dulu (lib/validations.ts).
+    const parsed = validate(followupSchema, await req.json());
+    if (!parsed.ok) return parsed.response;
 
-    // Jika userRole tidak dikirim dari frontend, cek via Token Supabase Auth
-    if (!role) {
-      const authHeader = req.headers.get("authorization") || "";
-      const token = authHeader.replace("Bearer ", "");
-
-      if (token) {
-        const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-          global: { headers: { Authorization: `Bearer ${token}` } },
-        });
-
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          const { data: profile } = await supabase
-            .from("users")
-            .select("role")
-            .eq("id", user.id)
-            .maybeSingle();
-
-          role = (profile?.role || user.user_metadata?.role || "viewer").toLowerCase();
-        }
-      }
-    }
-
-    // 🟢 IZINKAN AGENT, ADMIN, DAN SUPER ADMIN
-    const isAllowed =
-      role === "agent" ||
-      role === "admin" ||
-      role === "super_admin" ||
-      role === "superadmin";
-
-    if (!isAllowed) {
-      return NextResponse.json(
-        { error: "Akses Ditolak: Anda tidak memiliki izin menggunakan fitur AI Writer." },
-        { status: 403 }
-      );
-    }
+    const { leadName, property, status } = parsed.data;
 
     // 🧠 PROMPT AI CERDAS, FORMAL, TANPA SIMBOL MARKDOWN
     const prompt = `Anda adalah seorang konsultan properti profesional dan berdedikasi tinggi dari Inland Property. 

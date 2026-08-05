@@ -422,7 +422,7 @@ export default function FollowupsPage() {
           leadName: item.lead_name,
           property: item.notes || "Properti Pilihan",
           status: item.status || "Pending Follow-up",
-          userRole: currentUserRole || "agent",
+          // Role ditentukan server dari sesi, tidak lagi dikirim dari klien.
         }),
       });
 

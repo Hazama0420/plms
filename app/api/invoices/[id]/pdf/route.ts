@@ -1,7 +1,7 @@
 // app/api/invoices/[id]/pdf/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase/client";
 import { generateInvoiceHTML } from "@/lib/templates/invoice-template";
+import { requireAuth } from "@/lib/api-auth";
 import fs from "fs";
 import path from "path";
 
@@ -10,6 +10,13 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
+    // Invoice memuat nama klien & nominal transaksi. Tanpa penjagaan ini,
+    // siapa pun bisa menebak ID dan mengunduh invoice milik orang lain.
+    const auth = await requireAuth();
+    if (!auth.ok) return auth.response;
+
+    const { supabase } = auth.ctx;
+
     // 1. Resolve Next.js Async Params
     const resolvedParams = await params;
     const id = resolvedParams?.id;

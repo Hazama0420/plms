@@ -327,7 +327,7 @@ export default function LeadsPage() {
           leadName: clientName,
           property: propertyInterest,
           status: fuItem.status || "Perlu Follow-up",
-          userRole: currentUserRole,
+          // Role ditentukan server dari sesi, tidak lagi dikirim dari klien.
         }),
       });
 

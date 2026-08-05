@@ -2,32 +2,15 @@
 import { NextResponse } from "next/server";
 import { aiService } from "@/services/ai.service";
 import { dashboardService } from "@/services/dashboard.service";
-import { createServerClient } from "@supabase/ssr";
-import { cookies } from "next/headers";
+import { requireAuth } from "@/lib/api-auth";
 
 export async function GET() {
   try {
-    const cookieStore = await cookies();
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          getAll() {
-            return cookieStore.getAll();
-          },
-          setAll(cookiesToSet) {
-            try {
-              cookiesToSet.forEach(({ name, value, options }) =>
-                cookieStore.set(name, value, options)
-              );
-            } catch {
-              // Diabaikan
-            }
-          },
-        },
-      }
-    );
+    // Ringkasan ini membocorkan metrik bisnis dan memanggil AI berbayar.
+    const auth = await requireAuth();
+    if (!auth.ok) return auth.response;
+
+    const { supabase } = auth.ctx;
 
     // 1. Cek apakah fitur AI sedang dinonaktifkan (OFF) oleh Admin/Super Admin
     const { data: settingData } = await supabase

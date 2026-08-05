@@ -8,14 +8,27 @@ import { notifyEvent } from "@/lib/notification-helper";
 /**
  * GET /api/surveys/reminders
  *
- * Pengingat T-1 jam sebelum survei. Dipanggil Vercel Cron tiap 15 menit
- * (lihat vercel.json).
+ * Pengingat T-1 jam sebelum survei. Dirancang untuk dipanggil penjadwal luar
+ * tiap 15 menit.
+ *
+ * PENJADWALNYA DI LUAR VERCEL
+ * ===========================
+ * Sempat dijadwalkan lewat `vercel.json`, tapi akun Hobby membatasi cron ke
+ * sekali sehari — dan Vercel menolak SELURUH deployment bila jadwalnya lebih
+ * rapat, bukan hanya melewati cron-nya. Berkas itu dihapus supaya deployment
+ * bisa berjalan.
+ *
+ * Gunakan penjadwal luar (cron-job.org, GitHub Actions, atau cron di server
+ * sendiri) yang memanggil endpoint ini tiap 15 menit dengan header
+ * `Authorization: Bearer <CRON_SECRET>`. Selama pemanggilnya belum dipasang,
+ * pengingat otomatis tidak berjalan — sisa alur survei tidak terpengaruh.
  *
  * JENDELA 45–75 MENIT
  * ===================
- * Cron tiap 15 menit terhadap jendela selebar 30 menit menjamin setiap jadwal
- * tersapu minimal sekali — bahkan bila satu jalannya terlewat. Yang menjamin
- * tidak lebih dari sekali adalah kolom `reminder_sent_at`, bukan lebar jendela.
+ * Pemanggilan tiap 15 menit terhadap jendela selebar 30 menit menjamin setiap
+ * jadwal tersapu minimal sekali — bahkan bila satu jalannya terlewat. Yang
+ * menjamin tidak lebih dari sekali adalah kolom `reminder_sent_at`, bukan lebar
+ * jendela. Interval yang lebih longgar dari 30 menit akan melewatkan jadwal.
  *
  * URUTAN TANDAI-LALU-KIRIM
  * ========================

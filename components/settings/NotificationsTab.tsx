@@ -60,6 +60,48 @@ interface NotificationsTabProps {
   userRole?: string; // 👈 Menampung role pengguna (super_admin, admin, agent, viewer)
 }
 
+/**
+ * Menjalankan sebuah promise dengan batas waktu.
+ *
+ * Diperlukan karena metode OneSignal bisa menggantung tanpa batas bila skrip
+ * SDK-nya tidak pernah termuat — pemblokir iklan menahan cdn.onesignal.com di
+ * hampir semua daftar blokir. Tanpa batas waktu, `await` di dalam toggle tidak
+ * pernah selesai, blok `finally` tidak pernah dijalankan, dan sakelarnya
+ * berputar selamanya. Persis itu yang terjadi di domain produksi sementara di
+ * localhost tampak normal — di sana OneSignal memang sengaja dilewati
+ * (onesignal-provider.tsx:32), jadi toggle langsung memakai Notification API
+ * bawaan peramban.
+ */
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} tidak merespons dalam ${ms / 1000} detik.`)), ms)
+    ),
+  ]);
+}
+
+/**
+ * Mengembalikan objek OneSignal bila benar-benar siap dipakai, bukan sekadar ada.
+ *
+ * `window.OneSignal` sudah terisi stub oleh react-onesignal begitu modulnya
+ * dimuat, jadi pengecekan `if (window.OneSignal)` saja lolos walaupun SDK
+ * aslinya gagal diunduh. Yang menentukan adalah tersedianya metode yang hendak
+ * dipanggil.
+ *
+ * Objeknya dikembalikan — bukan boolean — supaya pemanggil punya satu rujukan
+ * yang sudah pasti ada. Predikat boolean tidak mempersempit tipe
+ * `window.OneSignal` di mata kompiler, dan membacanya ulang setelah `await`
+ * berarti membaca nilai yang bisa saja sudah berubah.
+ */
+function getReadyOneSignal(): any | null {
+  const os = typeof window !== "undefined" ? window.OneSignal : undefined;
+  const ready =
+    typeof os?.Notifications?.requestPermission === "function" &&
+    typeof os?.User?.PushSubscription?.optIn === "function";
+  return ready ? os : null;
+}
+
 export function NotificationsTab({
   preferences,
   persistPreferences,
@@ -84,28 +126,40 @@ export function NotificationsTab({
 
     setPermissionState(Notification.permission);
 
-    const syncOneSignalStatus = () => {
-      if (window.OneSignal?.User?.PushSubscription) {
-        const isOptedIn = window.OneSignal.User.PushSubscription.optedIn ?? false;
-        setIsOneSignalSubscribed(isOptedIn);
-      } else if (preferences.push_notifications && Notification.permission === "granted") {
-        setIsOneSignalSubscribed(true);
-      }
+    const pushSub = window.OneSignal?.User?.PushSubscription;
+
+    if (pushSub) {
+      setIsOneSignalSubscribed(pushSub.optedIn ?? false);
+    } else if (preferences.push_notifications && Notification.permission === "granted") {
+      setIsOneSignalSubscribed(true);
+    }
+
+    if (!pushSub?.addEventListener) return;
+
+    // Pendengar harus dilepas saat efek dijalankan ulang. Sebelumnya tidak, dan
+    // karena efek ini bergantung pada `preferences.push_notifications` — nilai
+    // yang justru diubah oleh pendengarnya sendiri lewat persistPreferences —
+    // setiap penekanan sakelar menambah satu pendengar baru di atas yang lama.
+    const onChange = (event: any) => {
+      const active = !!event?.current?.optedIn;
+      setIsOneSignalSubscribed(active);
+      persistPreferences({ push_notifications: active });
     };
 
-    syncOneSignalStatus();
-
-    if (window.OneSignal?.User?.PushSubscription) {
-      try {
-        window.OneSignal.User.PushSubscription.addEventListener("change", (event: any) => {
-          const active = !!event?.current?.optedIn;
-          setIsOneSignalSubscribed(active);
-          persistPreferences({ push_notifications: active });
-        });
-      } catch (err) {
-        console.debug("OneSignal event listener notice:", err);
-      }
+    try {
+      pushSub.addEventListener("change", onChange);
+    } catch (err) {
+      console.debug("OneSignal event listener notice:", err);
+      return;
     }
+
+    return () => {
+      try {
+        pushSub.removeEventListener?.("change", onChange);
+      } catch {
+        // SDK bisa sudah dibongkar saat halaman ditinggalkan — tidak perlu ribut.
+      }
+    };
   }, [preferences.push_notifications]);
 
   const handleTogglePushNotification = async (enabled: boolean) => {
@@ -121,29 +175,48 @@ export function NotificationsTab({
           toast.error("Izin Notifikasi Diblokir di Browser!", {
             description: "Klik ikon gembok/setelan di address bar browser Anda lalu ubah izin Notifikasi menjadi 'Allow'.",
           });
-          setLoadingPush(false);
           return;
         }
 
-        if (window.OneSignal) {
-          await window.OneSignal.Notifications.requestPermission();
-          await window.OneSignal.User.PushSubscription.optIn();
+        // getReadyOneSignal(), bukan sekadar `if (window.OneSignal)` — objeknya
+        // selalu ada sebagai stub, bahkan ketika SDK-nya gagal diunduh.
+        const os = getReadyOneSignal();
+
+        if (os) {
+          await withTimeout(os.Notifications.requestPermission(), 15_000, "OneSignal");
+          await withTimeout(os.User.PushSubscription.optIn(), 15_000, "OneSignal");
           setIsOneSignalSubscribed(true);
           toast.success("Push Notification OneSignal berhasil diaktifkan!");
         } else {
+          // Jalur cadangan: izin diminta lewat Notification API bawaan. Perangkat
+          // ini tidak akan menerima push dari server (OneSignal tidak mengenalnya),
+          // tapi setidaknya sakelarnya selesai dan pengguna tahu keadaannya.
           const result = await Notification.requestPermission();
           setPermissionState(result);
           if (result === "granted") {
             setIsOneSignalSubscribed(true);
-            toast.success("Izin Push Notification browser diberikan!");
+            toast.success("Izin notifikasi diberikan", {
+              description:
+                "Layanan OneSignal tidak dapat dihubungi — kemungkinan diblokir pemblokir iklan. Notifikasi lonceng di dalam aplikasi tetap berjalan.",
+            });
           } else {
             toast.warning("Izin notifikasi tidak diberikan.");
+            return;
           }
         }
         persistPreferences({ push_notifications: true });
       } else {
-        if (window.OneSignal?.User?.PushSubscription) {
-          await window.OneSignal.User.PushSubscription.optOut();
+        const os = getReadyOneSignal();
+
+        if (os) {
+          try {
+            await withTimeout(os.User.PushSubscription.optOut(), 15_000, "OneSignal");
+          } catch (err) {
+            // Mematikan sakelar tidak boleh gagal hanya karena SDK tidak
+            // merespons — preferensinya tetap disimpan di basis data, dan
+            // lib/notification-helper.ts membacanya sebelum mengirim apa pun.
+            console.warn("OneSignal optOut gagal, preferensi tetap disimpan:", err);
+          }
         }
         setIsOneSignalSubscribed(false);
         persistPreferences({ push_notifications: false });
@@ -151,7 +224,11 @@ export function NotificationsTab({
       }
     } catch (error: any) {
       console.error("Gagal mengubah OneSignal push status:", error);
-      toast.error("Gagal memperbarui setelan OneSignal", { description: error.message });
+      toast.error("Gagal memperbarui setelan push", {
+        description:
+          error?.message ??
+          "Coba muat ulang halaman, atau nonaktifkan pemblokir iklan untuk situs ini.",
+      });
     } finally {
       setLoadingPush(false);
       if (typeof window !== "undefined" && "Notification" in window) {

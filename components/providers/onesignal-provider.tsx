@@ -18,6 +18,11 @@ import { supabase } from "@/lib/supabase/client";
 // Strict Mode menjalankan efek dua kali saat pengembangan.
 let initPromise: Promise<void> | null = null;
 
+// Menandai bahwa init sudah dicoba dan gagal — biasanya karena pemblokir iklan
+// menahan cdn.onesignal.com. Dipakai untuk melewati seluruh pemanggilan API
+// OneSignal sesudahnya, alih-alih mengulang percobaan yang pasti gagal.
+let initFailed = false;
+
 /**
  * Menginisialisasi OneSignal paling banyak sekali per pemuatan halaman.
  * Mengembalikan null bila inisialisasi memang sengaja dilewati.
@@ -46,12 +51,24 @@ function ensureInit(): Promise<void> | null {
     allowLocalhostAsSecureOrigin: true,
     serviceWorkerPath: "OneSignalSDKWorker.js",
     serviceWorkerParam: { scope: "/" },
-  }).catch((err) => {
-    // Promise-nya sengaja tidak dibiarkan reject: penyelaras External ID di
-    // bawah menunggunya, dan kegagalan push tidak boleh menghentikan aplikasi.
-    console.error("Gagal inisialisasi OneSignal:", err);
-    initPromise = null;
-  });
+  })
+    .then(() => {
+      initFailed = false;
+    })
+    .catch((err) => {
+      // Skrip SDK bisa gagal dimuat karena pemblokir iklan — cdn.onesignal.com
+      // ada di hampir semua daftar blokir. Kegagalannya dicatat sekali di sini
+      // lalu diingat lewat initFailed; tanpa penanda itu, setiap perubahan
+      // status auth mencoba OneSignal.login() pada SDK yang tidak pernah ada
+      // dan melempar galat yang sama berulang kali.
+      //
+      // Promise-nya tetap tidak dibiarkan reject: yang menunggunya cuma
+      // penyelaras External ID, dan gagalnya push tidak boleh menghentikan
+      // aplikasi.
+      console.error("Gagal inisialisasi OneSignal:", err);
+      initFailed = true;
+      initPromise = null;
+    });
 
   return initPromise;
 }
@@ -71,7 +88,10 @@ export function OneSignalProvider({ children }: { children: React.ReactNode }) {
 
     const sync = async (userId: string | null) => {
       await ready;
-      if (!active || lastSynced === userId) return;
+
+      // Init gagal (umumnya diblokir pemblokir iklan) — SDK-nya tidak pernah
+      // ada, jadi login()/logout() hanya akan melempar galat yang sama.
+      if (initFailed || !active || lastSynced === userId) return;
 
       try {
         if (userId) {

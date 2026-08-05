@@ -260,14 +260,18 @@ export default function DashboardPage() {
   }, []);
 
   // Fetch Data Dashboard
-  const loadDashboardData = useCallback(async () => {
+  const loadDashboardData = useCallback(async (loggedIn: boolean, role: UserRole) => {
     setLoadingLeads(true);
     setLoadingFeatured(true);
     setLoadingLatest(true);
 
     try {
-      const dataStats = await dashboardService.getStats();
-      setStats(dataStats);
+      // Stats KPI hanya untuk staff internal — tamu tidak melihat card-nya
+      // (canSeeAdminManagement di :575). Featured & latest tetap untuk semua.
+      if (loggedIn) {
+        const dataStats = await dashboardService.getStats();
+        setStats(dataStats);
+      }
 
       // A. Fetch Properti Unggulan
       const { data: featuredData } = await supabase
@@ -316,37 +320,50 @@ export default function DashboardPage() {
         setLatestProperties([]);
       }
 
-      // C. Fetch Leads CRM
-      const { data: leadsData } = await supabase
-        .from("crm_leads")
-        .select(`
-          id,
-          status,
-          interest_type,
-          created_at,
-          crm_contacts (
-            full_name,
-            phone
-          )
-        `)
-        .order("created_at", { ascending: false })
-        .limit(4);
+      // C. Fetch Leads CRM — hanya untuk yang menindaklanjuti lead. Sidebar-nya
+      // dibatasi {isAgent && (...)} di :1109, jadi tamu tidak pernah melihatnya;
+      // tanpa penjagaan ini datanya tetap ikut terkirim ke browser tamu.
+      const canSeeLeads =
+        loggedIn &&
+        (role === "agent" ||
+          role === "admin" ||
+          role === "super_admin" ||
+          role === "superadmin");
 
-      if (leadsData && leadsData.length > 0) {
-        setAgentFollowUpLeads(
-          leadsData.map((lead: any) => {
-            const contact = Array.isArray(lead.crm_contacts)
-              ? lead.crm_contacts[0] || {}
-              : lead.crm_contacts || {};
+      if (canSeeLeads) {
+        const { data: leadsData } = await supabase
+          .from("crm_leads")
+          .select(`
+            id,
+            status,
+            interest_type,
+            created_at,
+            crm_contacts (
+              full_name,
+              phone
+            )
+          `)
+          .order("created_at", { ascending: false })
+          .limit(4);
 
-            return {
-              id: lead.id,
-              name: contact.full_name || "Calon Pembeli",
-              property: lead.interest_type || "Properti Pilihan",
-              phone: contact.phone || "#",
-            };
-          })
-        );
+        if (leadsData && leadsData.length > 0) {
+          setAgentFollowUpLeads(
+            leadsData.map((lead: any) => {
+              const contact = Array.isArray(lead.crm_contacts)
+                ? lead.crm_contacts[0] || {}
+                : lead.crm_contacts || {};
+
+              return {
+                id: lead.id,
+                name: contact.full_name || "Calon Pembeli",
+                property: lead.interest_type || "Properti Pilihan",
+                phone: contact.phone || "#",
+              };
+            })
+          );
+        } else {
+          setAgentFollowUpLeads([]);
+        }
       } else {
         setAgentFollowUpLeads([]);
       }
@@ -391,7 +408,11 @@ export default function DashboardPage() {
           }
         }
 
-        await loadDashboardData();
+        // Dikirim sebagai argumen, bukan dibaca dari state. setIsLoggedIn dan
+        // setUserRole di atas baru berlaku pada render berikutnya, jadi state
+        // yang dibaca di dalam callback ini masih nilai lama — tamu akan
+        // terbaca sebagai tamu, tapi user yang baru login juga.
+        await loadDashboardData(!!user, activeRole);
         if (isMounted) setLoading(false);
 
         if (activeRole !== "viewer") {

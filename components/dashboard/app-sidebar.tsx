@@ -90,11 +90,19 @@ const NAV_ITEMS: NavItem[] = [
     roles: ["super_admin", "admin", "agent", "marketing"],
   },
   {
+    // Tanpa `createHref`: jadwal survei tidak dibuat lewat halaman tersendiri,
+    // melainkan dari dialog di /surveys — biasanya berawal dari sebuah request
+    // yang datanya sudah terisi. Rute /surveys/create tidak pernah ada, jadi
+    // tombol "+" di menu ini hanya mengantar ke 404.
+    //
+    // `viewer` disertakan karena merekalah client-nya: di sinilah mereka
+    // mengajukan survei dan melihat jadwalnya sendiri. Yang membatasi apa yang
+    // terlihat adalah kepemilikan baris (RLS + filter di GET /api/surveys),
+    // bukan akses ke menunya.
     label: "Jadwal Survei",
     icon: CalendarDays,
     href: "/surveys",
-    createHref: "/surveys/create",
-    roles: ["super_admin", "admin", "agent", "marketing"],
+    roles: ["super_admin", "admin", "agent", "marketing", "viewer"],
   },
   {
     label: "Invoice",
@@ -146,6 +154,7 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
 
   const [userFullName, setUserFullName] = useState("");
   const [userAvatar, setUserAvatar] = useState("");
+  const [pendingRequestCount, setPendingRequestCount] = useState(0);
   const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({
     crm: true,
     admin: true,
@@ -188,6 +197,44 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
     }
     loadUserData();
   }, [user]);
+
+  // Jumlah pengajuan survei yang belum ditangani.
+  //
+  // Diambil dari /api/surveys/requests — route yang sama dengan halamannya,
+  // jadi angkanya sudah tersaring kepemilikan: agen hanya menghitung pengajuan
+  // atas properti yang ia pegang. Menghitung lewat query langsung ke tabel akan
+  // menampilkan angka milik agen lain di lencana.
+  //
+  // Hanya untuk tim internal: bagi client, "pending" berarti pengajuannya
+  // sendiri yang sedang menunggu — bukan pekerjaan yang menuntut perhatian.
+  useEffect(() => {
+    if (!user || !userRole) return;
+    if (!["super_admin", "admin", "agent"].includes(userRole)) {
+      setPendingRequestCount(0);
+      return;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const res = await fetch("/api/surveys/requests");
+        if (!res.ok) return;
+        const json = await res.json();
+        if (cancelled) return;
+        const pending = (json.data ?? []).filter(
+          (r: { status: string }) => r.status === "pending"
+        );
+        setPendingRequestCount(pending.length);
+      } catch {
+        // Lencana bersifat hiasan; kegagalannya tidak perlu mengganggu navigasi.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user, userRole, pathname]);
 
   const handleLogout = async () => {
     try {
@@ -249,6 +296,12 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
     const isExpanded = expandedItems[key] ?? false;
     const hasChildActive = hasActiveChild(item);
     const hasCreateButton = !!item.createHref && !isViewer;
+
+    // Lencana pengajuan survei — hanya di menu Jadwal Survei, dan hanya saat
+    // memang ada yang menunggu. Efek pengambilannya sudah mengunci angka ini ke
+    // nol bagi client, jadi tidak perlu penjagaan peran kedua di sini.
+    const showPendingBadge =
+      item.href === "/surveys" && pendingRequestCount > 0;
 
     const visibleChildren = hasChildren
       ? item.children!.filter(canSeeItem)
@@ -336,7 +389,15 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
           )}
           <item.icon size={17} className={cn(active && "text-emerald-600 dark:text-emerald-400")} />
           <span>{item.label}</span>
-          {active && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-emerald-600 shadow-2xs" />}
+          {showPendingBadge && (
+            <span
+              className="ml-auto min-w-[18px] h-[18px] px-1 rounded-full bg-amber-500 text-white text-[10px] font-bold flex items-center justify-center shadow-2xs"
+              title={`${pendingRequestCount} pengajuan survei menunggu ditangani`}
+            >
+              {pendingRequestCount > 99 ? "99+" : pendingRequestCount}
+            </span>
+          )}
+          {active && !showPendingBadge && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-emerald-600 shadow-2xs" />}
         </button>
 
         {hasCreateButton && !isViewer && (

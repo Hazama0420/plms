@@ -50,6 +50,7 @@ export interface NotificationPreferences {
   lead_alerts?: boolean;
   property_updates?: boolean;
   reminder_alerts?: boolean;
+  survey_alerts?: boolean;
 }
 
 interface NotificationsTabProps {
@@ -395,6 +396,34 @@ export function NotificationsTab({
               </p>
             </div>
           )}
+
+          {/* SURVEI — sengaja di luar gerbang isInternalUser.
+              Alur survei menyentuh kedua sisi: agen menerima pengajuan masuk,
+              client menerima konfirmasi dan penolakan jadwalnya sendiri. Bila
+              sakelar ini ikut disembunyikan dari viewer, satu-satunya notifikasi
+              yang mereka terima justru tidak punya tombol mati. */}
+          <div className="flex items-center justify-between p-3.5 rounded-xl border bg-card">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400">
+                <CalendarCheck className="w-4 h-4" />
+              </div>
+              <div>
+                <Label className="text-xs font-bold text-foreground block">
+                  Pengajuan &amp; Konfirmasi Survei
+                </Label>
+                <p className="text-[11px] text-muted-foreground">
+                  {isInternalUser
+                    ? "Pemberitahuan saat client mengajukan survei atas properti yang Anda pegang."
+                    : "Pemberitahuan saat pengajuan survei Anda dikonfirmasi atau ditolak agen."}{" "}
+                  Pengingat 1 jam sebelum survei mengikuti sakelar pengingat.
+                </p>
+              </div>
+            </div>
+            <Switch
+              checked={preferences.survey_alerts ?? true}
+              onCheckedChange={(val) => persistPreferences({ survey_alerts: val })}
+            />
+          </div>
         </CardContent>
       </Card>
     </div>

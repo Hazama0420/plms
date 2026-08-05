@@ -29,6 +29,7 @@ import {
   Zap,
   Tag,
   Calendar,
+  CalendarCheck,
   Layers,
   Armchair,
   Share2,
@@ -356,7 +357,20 @@ export default function PropertyDetailPage() {
     fetchUserAndRole();
   }, []);
 
+  // Daftar lengkap agen hanya dibutuhkan dropdown "Atur Agent" (:1500) yang
+  // hanya dirender untuk super admin. Sebelumnya query ini berjalan untuk setiap
+  // pengunjung — termasuk tamu di halaman publik — dan mengirimkan email serta
+  // nomor telepon seluruh staf ke peramban.
+  //
+  // Peran lain tidak kehilangan apa pun: fetchDirectAgent() di bawah mengambil
+  // satu baris agen penanggung jawab begitu ia tidak ditemukan di `agents`,
+  // dan assignedAgent() jatuh ke hasilnya.
+  //
+  // Dibandingkan ke `userRole` langsung, bukan ke isSuperAdmin, karena konstanta
+  // itu baru dideklarasikan di :427 — setelah efek ini.
   useEffect(() => {
+    if (userRole !== "super_admin" && userRole !== "superadmin") return;
+
     const fetchAgents = async () => {
       try {
         const { data, error } = await supabase
@@ -369,7 +383,7 @@ export default function PropertyDetailPage() {
       }
     };
     fetchAgents();
-  }, []);
+  }, [userRole]);
 
   useEffect(() => {
     const fetchProperty = async () => {
@@ -1559,6 +1573,23 @@ export default function PropertyDetailPage() {
                       <MessageCircle className="w-4 h-4 mr-1.5" /> Konsultasi Properti
                     </Button>
                   </div>
+                )}
+
+                {/* AJUKAN SURVEI —
+                    Hanya untuk pengguna yang sudah masuk: pengajuan disimpan
+                    atas nama akun pemanggil (POST /api/surveys/requests menolak
+                    tamu), dan agen menghubungi lewat nomor yang terikat akun itu.
+                    Disembunyikan bagi agen properti ini sendiri; ia yang membuat
+                    jadwal, bukan yang mengajukan. */}
+                {currentUser && property.status === "published" && property.assigned_to !== currentUser.id && (
+                  <Button
+                    variant="outline"
+                    onClick={() => router.push(`/surveys?request=${property.id}`)}
+                    className="w-full mt-3 h-11 rounded-xl font-bold text-xs cursor-pointer border-2 border-blue-600 text-blue-700 dark:text-blue-400 hover:bg-blue-600 hover:text-white dark:hover:bg-blue-600 dark:hover:text-white gap-2 transition-all"
+                  >
+                    <CalendarCheck className="w-4 h-4" />
+                    Ajukan Jadwal Survei
+                  </Button>
                 )}
               </CardContent>
             </Card>

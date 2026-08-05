@@ -1,10 +1,13 @@
 // app/(dashboard)/surveys/page.tsx
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase/client";
+import { normalizeRole } from "@/lib/permissions";
+import { openWhatsApp } from "@/lib/whatsapp-link";
 import { toast } from "sonner";
+import type { Survey, SurveyRequest, SurveyStatus } from "@/types/survey.types";
+import type { UserRole } from "@/types/user.types";
 import {
   Plus,
   Search,
@@ -12,42 +15,23 @@ import {
   MapPin,
   User,
   Clock,
-  MoreHorizontal,
-  Eye,
-  Trash2,
-  RefreshCw,
-  Navigation,
   MessageCircle,
   CheckCircle2,
-  ShieldAlert,
-  Lock,
+  XCircle,
+  AlertCircle,
+  Loader2,
+  ExternalLink,
+  Ban,
+  Building2,
+  Phone,
+  Pencil,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
-} from "@/components/ui/sheet";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogContent,
@@ -56,8 +40,6 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -65,862 +47,1495 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
-import { cn } from "@/lib/utils";
+import { Separator } from "@/components/ui/separator";
 
 // ============================================================
-// TIPE DATA & STATUS CONFIG
+// STATUS CONFIG
 // ============================================================
-export interface SurveyItem {
-  id: string;
-  property: string;
-  address: string;
-  date: string;
-  time: string;
-  surveyor: string;
-  surveyor_id?: string;
-  surveyor_phone?: string;
-  client_name?: string;
-  client_phone?: string;
-  status: "scheduled" | "completed" | "pending" | "cancelled" | string;
-  type: "Lapangan" | "Virtual" | string;
-  notes?: string;
-  created_by?: string;
-  created_at?: string;
-}
 
-const statusConfig: Record<string, { label: string; color: string; bg: string }> = {
-  scheduled: { label: "Terjadwal", color: "text-blue-600 dark:text-blue-400", bg: "bg-blue-100 dark:bg-blue-950/60 border-blue-200" },
-  completed: { label: "Selesai", color: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-100 dark:bg-emerald-950/60 border-emerald-200" },
-  pending: { label: "Menunggu", color: "text-amber-600 dark:text-amber-400", bg: "bg-amber-100 dark:bg-amber-950/60 border-amber-200" },
-  cancelled: { label: "Dibatalkan", color: "text-rose-600 dark:text-rose-400", bg: "bg-rose-100 dark:bg-rose-950/60 border-rose-200" },
+const surveyStatusConfig: Record<
+  SurveyStatus,
+  { label: string; color: string; bg: string }
+> = {
+  scheduled: {
+    label: "Terjadwal",
+    color: "text-blue-600 dark:text-blue-400",
+    bg: "bg-blue-100 dark:bg-blue-950/60 border-blue-200",
+  },
+  completed: {
+    label: "Selesai",
+    color: "text-emerald-600 dark:text-emerald-400",
+    bg: "bg-emerald-100 dark:bg-emerald-950/60 border-emerald-200",
+  },
+  cancelled: {
+    label: "Dibatalkan",
+    color: "text-rose-600 dark:text-rose-400",
+    bg: "bg-rose-100 dark:bg-rose-950/60 border-rose-200",
+  },
+  no_show: {
+    label: "Tidak Hadir",
+    color: "text-amber-600 dark:text-amber-400",
+    bg: "bg-amber-100 dark:bg-amber-950/60 border-amber-200",
+  },
 };
 
-const initialSurveySample: SurveyItem[] = [
-  {
-    id: "srv-1",
-    property: "Villa Luxury Green Valley",
-    address: "Jl. Raya Puncak Km 77, Cisarua, Bogor",
-    date: "2026-07-26",
-    time: "09:00",
-    surveyor: "Budi Santoso",
-    surveyor_phone: "081234567890",
-    client_name: "Hendra Wijaya",
-    client_phone: "081298765432",
-    status: "scheduled",
-    type: "Lapangan",
-    notes: "Klien minta didampingi arsitek untuk cek kondisi pondasi.",
-  },
-  {
-    id: "srv-2",
-    property: "Ruko Sentra Bisnis 3 Lantai",
-    address: "Jl. RS Fatmawati No. 42, Cilandak, Jakarta Selatan",
-    date: "2026-07-26",
-    time: "13:30",
-    surveyor: "Siti Rahayu",
-    surveyor_phone: "081987654321",
-    client_name: "Bambang Soetrisno",
-    client_phone: "081566778899",
-    status: "scheduled",
-    type: "Lapangan",
-    notes: "Survei kelayakan tempat untuk cabang restoran.",
-  },
-  {
-    id: "srv-3",
-    property: "Apartemen Harmoni Tower B",
-    address: "Tower B Lt. 12, BSD City, Tangerang Selatan",
-    date: "2026-07-27",
-    time: "10:30",
-    surveyor: "Agus Wijaya",
-    surveyor_phone: "081311223344",
-    client_name: "Siska Dewi",
-    client_phone: "081311223344",
-    status: "pending",
-    type: "Virtual",
-    notes: "Video call Zoom walkthrough unit apartemen.",
-  },
-  {
-    id: "srv-4",
-    property: "Rumah Cluster Menteng Style",
-    address: "Jl. Patra Kuningan No. 7, Jakarta Selatan",
-    date: "2026-07-24",
-    time: "15:00",
-    surveyor: "Mardian Gilang",
-    surveyor_phone: "081722334455",
-    client_name: "Rian Pratama",
-    client_phone: "081833445566",
-    status: "completed",
-    type: "Lapangan",
-    notes: "Klien sangat berminat, lanjut negosiasi harga.",
-  },
-];
+const requestStatusConfig: Record<string, { label: string; color: string }> = {
+  pending: { label: "Menunggu", color: "text-amber-600" },
+  contacted: { label: "Dihubungi", color: "text-blue-600" },
+  scheduled: { label: "Terjadwal", color: "text-emerald-600" },
+  rejected: { label: "Ditolak", color: "text-rose-600" },
+  cancelled: { label: "Dibatalkan", color: "text-slate-600" },
+};
+
+// ============================================================
+// HELPER FUNCTIONS
+// ============================================================
+
+function formatAddress(addr?: Survey["property"]): string {
+  if (!addr?.address) return "Lokasi tidak tersedia";
+  const parts = [
+    addr.address.district_name,
+    addr.address.city_name,
+    addr.address.province_name,
+  ].filter(Boolean);
+  return parts.join(", ") || addr.address.address || "Lokasi tidak tersedia";
+}
+
+function formatDateTime(iso: string): { date: string; time: string } {
+  const d = new Date(iso);
+  return {
+    date: d.toLocaleDateString("id-ID", {
+      weekday: "short",
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    }),
+    time: d.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }),
+  };
+}
+
+function openGoogleMaps(label: string, address: string) {
+  const query = encodeURIComponent(`${label}, ${address}`);
+  window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, "_blank");
+}
+
+/** Ubah nilai `<input type="datetime-local">` menjadi ISO string. */
+function localInputToISO(value: string): string {
+  // Nilai datetime-local tidak berzona waktu; `new Date()` menafsirkannya
+  // sebagai waktu lokal peramban, yang memang yang dimaksud pengguna.
+  return new Date(value).toISOString();
+}
+
+/** Nilai minimum untuk `<input type="datetime-local">` — sekarang, waktu lokal. */
+function nowLocalInputValue(): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
+    d.getHours()
+  )}:${pad(d.getMinutes())}`;
+}
+
+/**
+ * Ubah ISO string dari basis data menjadi nilai `<input type="datetime-local">`.
+ *
+ * Kebalikan dari localInputToISO. `toISOString()` TIDAK bisa dipakai di sini:
+ * hasilnya UTC, sehingga jadwal pukul 09:00 WIB akan tampil 02:00 di form —
+ * agen mengira jadwalnya salah lalu "memperbaikinya" menjadi benar-benar salah.
+ */
+function isoToLocalInput(iso: string): string {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
+    d.getHours()
+  )}:${pad(d.getMinutes())}`;
+}
+
+// ============================================================
+// TIPE LOKAL
+// ============================================================
+
+interface PropertyOption {
+  id: string;
+  title: string;
+  listing_code: string | null;
+}
+
+// ============================================================
+// HALAMAN
+// ============================================================
 
 export default function SurveysPage() {
-  const router = useRouter();
-  const [surveys, setSurveys] = useState<SurveyItem[]>([]);
+  // --- Identitas & peran ---
+  const [userId, setUserId] = useState<string | null>(null);
+  const [role, setRole] = useState<UserRole | "">("");
+  const [profile, setProfile] = useState<{ full_name: string; phone: string }>({
+    full_name: "",
+    phone: "",
+  });
+  const [roleReady, setRoleReady] = useState(false);
+
+  // --- Data ---
+  const [surveys, setSurveys] = useState<Survey[]>([]);
+  const [requests, setRequests] = useState<SurveyRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
 
-  // Auth & Hak Akses State
-  const [currentUser, setCurrentUser] = useState<any>(null);
-  const [userRole, setUserRole] = useState<string>("agent");
+  // --- Dialog: pengajuan survei (client) ---
+  const [isRequestOpen, setIsRequestOpen] = useState(false);
+  const [properties, setProperties] = useState<PropertyOption[]>([]);
+  const [requestForm, setRequestForm] = useState({
+    property_id: "",
+    requester_name: "",
+    requester_phone: "",
+    preferred_date: "",
+    preferred_time: "",
+    message: "",
+  });
 
-  // Selected Survey for Mobile Sheet Workflow
-  const [selectedSurvey, setSelectedSurvey] = useState<SurveyItem | null>(null);
-
-  // Create Survey Dialog State
-  const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [formData, setFormData] = useState({
-    property: "",
-    address: "",
-    date: "",
-    time: "",
-    surveyor: "",
-    client_name: "",
-    client_phone: "",
-    type: "Lapangan",
+  // --- Dialog: buat jadwal (agen) ---
+  const [scheduleTarget, setScheduleTarget] = useState<SurveyRequest | null>(null);
+  // --- Dialog: ubah jadwal yang sudah ada (agen pemilik / admin) ---
+  // Dialognya sama persis dengan "buat jadwal"; yang membedakan hanya sumber
+  // datanya dan route tujuannya (PATCH vs POST). Salah satu dari keduanya selalu
+  // null — keduanya tidak pernah terbuka bersamaan.
+  const [editTarget, setEditTarget] = useState<Survey | null>(null);
+  const [scheduleForm, setScheduleForm] = useState({
+    scheduled_at: "",
+    duration_min: "60",
+    type: "lapangan",
+    location_note: "",
+    meeting_url: "",
     notes: "",
   });
 
-  // 1. FETCH AUTH & USER ROLE
+  // --- Dialog: tolak pengajuan (agen) ---
+  const [rejectTarget, setRejectTarget] = useState<SurveyRequest | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
+
+  const [submitting, setSubmitting] = useState(false);
+
+  const isAdmin = role === "admin" || role === "super_admin";
+  const isAgent = role === "agent";
+  const isStaff = isAdmin || isAgent;
+
+  // ============================================================
+  // 1. AMBIL IDENTITAS & PERAN
+  // ============================================================
   useEffect(() => {
-    const fetchUserAndRole = async () => {
+    (async () => {
       try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          setCurrentUser(user);
-          const { data: userData } = await supabase
-            .from("users")
-            .select("role, full_name")
-            .eq("id", user.id)
-            .maybeSingle();
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
 
-          const role = userData?.role || user.user_metadata?.role || "agent";
-          setUserRole(role.toLowerCase().trim());
-
-          // Set default nama surveyor di form jika ada
-          if (userData?.full_name || user.user_metadata?.full_name) {
-            setFormData((prev) => ({
-              ...prev,
-              surveyor: userData?.full_name || user.user_metadata?.full_name || "",
-            }));
-          }
+        if (!user) {
+          setRoleReady(true);
+          return;
         }
+
+        setUserId(user.id);
+
+        const { data: userData } = await supabase
+          .from("users")
+          .select("role, full_name, phone")
+          .eq("id", user.id)
+          .maybeSingle();
+
+        // Kolom `users.role` di produksi memuat dua ejaan: "superadmin" dan
+        // "super_admin". Seluruh sisi server melewatkannya lewat normalizeRole()
+        // (api-auth.ts:63, proxy.ts:128); tanpa langkah yang sama di sini,
+        // super_admin berejaan "superadmin" akan jatuh ke tampilan client —
+        // tidak melihat tab apa pun dan kehilangan tombol kelola jadwal,
+        // padahal API tetap meloloskannya.
+        setRole(normalizeRole(userData?.role ?? user.user_metadata?.role));
+        setProfile({
+          full_name: userData?.full_name || user.user_metadata?.full_name || "",
+          phone: userData?.phone || "",
+        });
       } catch (err) {
-        console.error("Gagal mengambil data user & role:", err);
+        console.error("Gagal mengambil data pengguna:", err);
+      } finally {
+        setRoleReady(true);
       }
-    };
-    fetchUserAndRole();
+    })();
   }, []);
 
-  // 2. EVALUASI HAK AKSES DENGAN USEMEMO
-  const role = useMemo(() => (userRole || "").toLowerCase().trim(), [userRole]);
-  const isAdmin = useMemo(
-    () => role.includes("admin") || role === "super_admin" || role === "superadmin",
-    [role]
-  );
-  const isViewer = useMemo(
-    () => role.includes("viewer") || role.includes("review") || role.includes("commissioner"),
-    [role]
-  );
+  // Isi otomatis nama & telepon di form pengajuan begitu profil tersedia
+  useEffect(() => {
+    setRequestForm((prev) => ({
+      ...prev,
+      requester_name: prev.requester_name || profile.full_name,
+      requester_phone: prev.requester_phone || profile.phone,
+    }));
+  }, [profile]);
 
-  // Apakah user bisa membuat survei baru? (Admin & Agent BISA, Viewer TIDAK)
-  const canCreate = !isViewer;
+  // ============================================================
+  // 2. AMBIL DATA — semuanya lewat API, tidak ada query langsung
+  //    ke tabel `surveys` dari peramban. Inilah yang menutup kebocoran:
+  //    filter kepemilikan ditegakkan di server (dan oleh RLS), bukan di sini.
+  // ============================================================
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [surveyRes, requestRes] = await Promise.all([
+        fetch("/api/surveys"),
+        fetch("/api/surveys/requests"),
+      ]);
 
-  // Evaluasi apakah user memiliki izin mengedit/menghapus/mengubah status survei tertentu
-  const canManageSurvey = useCallback(
-    (survey: SurveyItem | null): boolean => {
-      if (!survey || !currentUser) return false;
-      if (isAdmin) return true; // Admin & Super Admin punya akses penuh
-      if (isViewer) return false; // Viewer tidak punya akses kelola
+      const surveyJson = await surveyRes.json();
+      const requestJson = await requestRes.json();
 
-      // Untuk Agen: Hanya bisa kelola jika dibuat oleh mereka atau ditugaskan sebagai surveyor
-      const currentUserId = String(currentUser.id).trim();
-      const isCreator = survey.created_by && String(survey.created_by).trim() === currentUserId;
-      const isSurveyorId = survey.surveyor_id && String(survey.surveyor_id).trim() === currentUserId;
+      if (!surveyRes.ok) throw new Error(surveyJson.error || "Gagal memuat jadwal survei.");
+      if (!requestRes.ok) throw new Error(requestJson.error || "Gagal memuat pengajuan survei.");
 
-      // Cek pencocokan nama surveyor jika ID tidak tersedia
-      const currentUserName = (
-        currentUser.user_metadata?.full_name ||
-        currentUser.email ||
-        ""
-      ).toLowerCase();
-      const isSurveyorName =
-        survey.surveyor && currentUserName !== "" && survey.surveyor.toLowerCase().includes(currentUserName);
-
-      return Boolean(isCreator || isSurveyorId || isSurveyorName);
-    },
-    [currentUser, isAdmin, isViewer]
-  );
-
- // Fetch Surveys dari Supabase (Tanpa memaksa fallback data dummy saat kosong)
-const fetchSurveys = useCallback(async () => {
-  setLoading(true);
-  try {
-    let query = supabase
-      .from("surveys")
-      .select("*")
-      .order("date", { ascending: true });
-
-    if (statusFilter !== "all") {
-      query = query.eq("status", statusFilter);
+      setSurveys(surveyJson.data || []);
+      setRequests(requestJson.data || []);
+    } catch (err: any) {
+      // Kegagalan dilaporkan sebagai kegagalan — tidak ada lagi data karangan
+      // yang muncul seolah-olah berhasil dimuat.
+      console.error("Gagal memuat data survei:", err);
+      toast.error("Gagal memuat data survei", {
+        description: err?.message || "Periksa koneksi Anda lalu coba lagi.",
+      });
+      setSurveys([]);
+      setRequests([]);
+    } finally {
+      setLoading(false);
     }
-
-    const { data, error } = await query;
-
-    if (error) {
-      console.error("Error fetching surveys:", error);
-      // Jika ada error/tabel belum dibuat, baru gunakan dummy sample
-      setSurveys(initialSurveySample);
-    } else {
-      // Jika berhasil dipanggil, tampilkan data asli dari database (meskipun kosong)
-      setSurveys(data || []);
-    }
-  } catch (err) {
-    console.error("Error fetching surveys:", err);
-    setSurveys([]);
-  } finally {
-    setLoading(false);
-  }
-}, [statusFilter]);
+  }, []);
 
   useEffect(() => {
-    fetchSurveys();
-  }, [fetchSurveys]);
+    if (roleReady) fetchData();
+  }, [roleReady, fetchData]);
 
-  // Handle Delete Survey dengan Proteksi Akses
-  const handleDelete = async (survey: SurveyItem) => {
-    if (!canManageSurvey(survey)) {
-      toast.error("Akses Ditolak!", {
-        description: "Anda hanya dapat menghapus jadwal survei yang Anda buat sendiri.",
-      });
-      return;
-    }
+  // Daftar properti terbit untuk dropdown pengajuan — data publik, aman diambil
+  // langsung. Hanya dimuat saat dialog dibuka pertama kali.
+  //
+  // `ensureId` menjamin properti yang datang lewat tautan /surveys?request=<id>
+  // ikut termuat walau bukan termasuk 200 listing terbaru. Tanpa itu, properti
+  // lama yang dibuka dari halaman detailnya tidak akan ketemu di daftar dan
+  // pemicunya menampilkan teks "Memuat properti..." selamanya.
+  const loadProperties = useCallback(
+    async (ensureId?: string) => {
+      try {
+        const { data, error } = await supabase
+          .from("properties")
+          .select("id, title, listing_code")
+          .eq("status", "published")
+          .order("created_at", { ascending: false })
+          .limit(200);
 
-    if (!confirm("Yakin ingin menghapus jadwal survei ini?")) return;
+        if (error) throw error;
 
-    try {
-      const { error } = await supabase.from("surveys").delete().eq("id", survey.id);
-      if (error) throw error;
+        let list = data || [];
 
-      toast.success("Jadwal survei berhasil dihapus");
-      setSurveys((prev) => prev.filter((s) => s.id !== survey.id));
-      if (selectedSurvey?.id === survey.id) setSelectedSurvey(null);
-    } catch (err) {
-      toast.success("Jadwal survei berhasil dihapus");
-      setSurveys((prev) => prev.filter((s) => s.id !== survey.id));
-    }
-  };
+        if (ensureId && !list.some((p) => p.id === ensureId)) {
+          const { data: extra } = await supabase
+            .from("properties")
+            .select("id, title, listing_code")
+            .eq("id", ensureId)
+            .eq("status", "published")
+            .maybeSingle();
 
-  // Handle Status Update dengan Proteksi Akses
-  const handleUpdateStatus = async (survey: SurveyItem, newStatus: string) => {
-    if (!canManageSurvey(survey)) {
-      toast.error("Akses Ditolak!", {
-        description: "Anda hanya dapat mengubah status jadwal survei milik Anda sendiri.",
-      });
-      return;
-    }
+          if (extra) list = [extra, ...list];
+        }
 
-    try {
-      await supabase.from("surveys").update({ status: newStatus }).eq("id", survey.id);
-      toast.success("Status survei berhasil diperbarui");
-      setSurveys((prev) =>
-        prev.map((s) => (s.id === survey.id ? { ...s, status: newStatus } : s))
-      );
-      if (selectedSurvey?.id === survey.id) {
-        setSelectedSurvey((prev) => (prev ? { ...prev, status: newStatus } : null));
+        setProperties(list);
+      } catch (err) {
+        console.error("Gagal memuat daftar properti:", err);
+        toast.error("Gagal memuat daftar properti");
       }
-    } catch (err) {
-      toast.success("Status survei berhasil diperbarui");
-      setSurveys((prev) =>
-        prev.map((s) => (s.id === survey.id ? { ...s, status: newStatus } : s))
-      );
-    }
-  };
+    },
+    []
+  );
 
-  // Handle Create Survey dengan Proteksi Akses
-  const handleCreateSurvey = async () => {
-    if (!canCreate) {
-      toast.error("Akses Ditolak!", { description: "Role Anda tidak memiliki akses membuat jadwal survei." });
-      return;
-    }
+  // Buka dialog pengajuan lewat tautan dari halaman detail properti:
+  // /surveys?request=<propertyId>
+  useEffect(() => {
+    if (!roleReady) return;
+    const params = new URLSearchParams(window.location.search);
+    const propertyId = params.get("request");
+    if (!propertyId) return;
 
-    if (!formData.property || !formData.date || !formData.time) {
-      toast.error("Lengkapi nama properti, tanggal, dan jam survei");
+    setRequestForm((prev) => ({ ...prev, property_id: propertyId }));
+    setIsRequestOpen(true);
+    loadProperties(propertyId);
+
+    // Bersihkan query supaya dialog tidak terbuka lagi saat pengguna kembali
+    window.history.replaceState({}, "", "/surveys");
+  }, [roleReady, loadProperties]);
+
+  // ============================================================
+  // 3. AKSI
+  // ============================================================
+
+  const handleSubmitRequest = async () => {
+    if (!requestForm.property_id) {
+      toast.error("Pilih properti yang ingin disurvei");
       return;
     }
 
     setSubmitting(true);
     try {
-      const newSurveyItem = {
-        property: formData.property,
-        address: formData.address || "Lokasi Properti",
-        date: formData.date,
-        time: formData.time,
-        surveyor: formData.surveyor || currentUser?.user_metadata?.full_name || "Tim Agent",
-        surveyor_id: currentUser?.id,
-        client_name: formData.client_name || "Calon Pembeli",
-        client_phone: formData.client_phone || "",
-        type: formData.type,
-        status: "scheduled",
-        notes: formData.notes || "",
-        created_by: currentUser?.id,
-      };
+      const res = await fetch("/api/surveys/requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestForm),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Gagal mengirim pengajuan.");
 
-      const { error } = await supabase.from("surveys").insert(newSurveyItem);
-      if (error) throw error;
-
-      toast.success("Jadwal survei baru berhasil dibuat");
-      setIsCreateOpen(false);
-      resetForm();
-      fetchSurveys();
-    } catch (err) {
-      const localItem: SurveyItem = {
-        id: `srv-${Date.now()}`,
-        property: formData.property,
-        address: formData.address || "Lokasi Properti",
-        date: formData.date,
-        time: formData.time,
-        surveyor: formData.surveyor || currentUser?.user_metadata?.full_name || "Tim Agent",
-        surveyor_id: currentUser?.id,
-        client_name: formData.client_name || "Calon Pembeli",
-        client_phone: formData.client_phone || "",
-        type: formData.type,
-        status: "scheduled",
-        notes: formData.notes || "",
-        created_by: currentUser?.id,
-      };
-      setSurveys((prev) => [localItem, ...prev]);
-      toast.success("Jadwal survei baru berhasil disimpan");
-      setIsCreateOpen(false);
-      resetForm();
+      toast.success("Pengajuan terkirim", {
+        description: json.message || "Agen akan menghubungi Anda segera.",
+      });
+      setIsRequestOpen(false);
+      setRequestForm((prev) => ({
+        ...prev,
+        property_id: "",
+        preferred_date: "",
+        preferred_time: "",
+        message: "",
+      }));
+      fetchData();
+    } catch (err: any) {
+      toast.error("Pengajuan gagal", { description: err?.message });
     } finally {
       setSubmitting(false);
     }
   };
 
-  const resetForm = () => {
-    setFormData({
-      property: "",
-      address: "",
-      date: "",
-      time: "",
-      surveyor: currentUser?.user_metadata?.full_name || "",
-      client_name: "",
-      client_phone: "",
-      type: "Lapangan",
-      notes: "",
+  const handleMarkContacted = async (req: SurveyRequest) => {
+    try {
+      const res = await fetch(`/api/surveys/requests/${req.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "contacted" }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Gagal memperbarui status.");
+
+      toast.success("Ditandai sudah dihubungi");
+      fetchData();
+    } catch (err: any) {
+      toast.error("Gagal memperbarui status", { description: err?.message });
+    }
+  };
+
+  const handleReject = async () => {
+    if (!rejectTarget) return;
+    if (rejectReason.trim().length === 0) {
+      toast.error("Alasan penolakan wajib diisi");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const res = await fetch(`/api/surveys/requests/${rejectTarget.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "rejected", reject_reason: rejectReason.trim() }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Gagal menolak pengajuan.");
+
+      toast.success("Pengajuan ditolak", { description: "Client menerima notifikasi." });
+      setRejectTarget(null);
+      setRejectReason("");
+      fetchData();
+    } catch (err: any) {
+      toast.error("Gagal menolak pengajuan", { description: err?.message });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleCreateSchedule = async () => {
+    if (!scheduleTarget) return;
+    if (!scheduleForm.scheduled_at) {
+      toast.error("Tentukan waktu survei");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/surveys", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          request_id: scheduleTarget.id,
+          property_id: scheduleTarget.property_id,
+          client_id: scheduleTarget.requester_id,
+          client_name: scheduleTarget.requester_name,
+          client_phone: scheduleTarget.requester_phone,
+          scheduled_at: localInputToISO(scheduleForm.scheduled_at),
+          duration_min: Number(scheduleForm.duration_min),
+          type: scheduleForm.type,
+          location_note: scheduleForm.location_note,
+          meeting_url: scheduleForm.meeting_url,
+          notes: scheduleForm.notes,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Gagal membuat jadwal.");
+
+      toast.success("Jadwal survei dibuat", {
+        description: "Client menerima notifikasi konfirmasi.",
+      });
+      setScheduleTarget(null);
+      fetchData();
+    } catch (err: any) {
+      toast.error("Gagal membuat jadwal", { description: err?.message });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleUpdateSurveyStatus = async (survey: Survey, status: SurveyStatus) => {
+    try {
+      const res = await fetch(`/api/surveys/${survey.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Gagal memperbarui jadwal.");
+
+      toast.success(`Jadwal ditandai "${surveyStatusConfig[status].label}"`);
+      fetchData();
+    } catch (err: any) {
+      toast.error("Gagal memperbarui jadwal", { description: err?.message });
+    }
+  };
+
+  const openScheduleDialog = (req: SurveyRequest) => {
+    setScheduleTarget(req);
+    setScheduleForm({
+      scheduled_at: "",
+      duration_min: "60",
+      type: "lapangan",
+      location_note: "",
+      meeting_url: "",
+      notes: req.message ? `Dari pengajuan: ${req.message}` : "",
     });
   };
 
-  // Deep Link Google Maps Generator
-  const openGoogleMaps = (address: string, propertyName: string) => {
-    const query = encodeURIComponent(`${propertyName}, ${address}`);
-    window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, "_blank");
+  /**
+   * Buka dialog ubah jadwal, terisi nilai yang sekarang berlaku.
+   *
+   * Form-nya sama dengan dialog buat jadwal — pengubahan waktu, durasi, metode,
+   * titik temu, dan catatan semuanya lewat satu tempat. Route PATCH-nya sudah
+   * mengosongkan `reminder_sent_at` bila waktunya bergeser dan memberi tahu
+   * client, jadi tidak ada yang perlu diurus di sisi ini.
+   */
+  const openEditDialog = (survey: Survey) => {
+    setEditTarget(survey);
+    setScheduleForm({
+      scheduled_at: isoToLocalInput(survey.scheduled_at),
+      duration_min: String(survey.duration_min ?? 60),
+      type: survey.type || "lapangan",
+      location_note: survey.location_note || "",
+      meeting_url: survey.meeting_url || "",
+      notes: survey.notes || "",
+    });
   };
 
-  // Direct WhatsApp Generator
-  const openWhatsApp = (phone?: string, text?: string) => {
-    if (!phone) {
-      toast.error("Nomor telepon tidak tersedia");
+  const handleUpdateSchedule = async () => {
+    if (!editTarget) return;
+    if (!scheduleForm.scheduled_at) {
+      toast.error("Tentukan waktu survei");
       return;
     }
-    const cleanPhone = phone.replace(/[^0-9]/g, "").replace(/^0/, "62");
-    window.open(
-      `https://wa.me/${cleanPhone}?text=${encodeURIComponent(
-        text || "Halo, mengenai jadwal survei lokasi properti..."
-      )}`,
-      "_blank"
-    );
+
+    setSubmitting(true);
+    try {
+      const nextISO = localInputToISO(scheduleForm.scheduled_at);
+
+      const res = await fetch(`/api/surveys/${editTarget.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          // Waktu hanya dikirim bila benar-benar berubah. Mengirimnya selalu
+          // akan mengosongkan reminder_sent_at dan memberi notifikasi
+          // "jadwal diubah" kepada client walau agen cuma memperbaiki catatan.
+          ...(nextISO !== editTarget.scheduled_at ? { scheduled_at: nextISO } : {}),
+          duration_min: Number(scheduleForm.duration_min),
+          type: scheduleForm.type,
+          location_note: scheduleForm.location_note,
+          meeting_url: scheduleForm.meeting_url,
+          notes: scheduleForm.notes,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Gagal memperbarui jadwal.");
+
+      toast.success("Jadwal diperbarui", { description: json.message });
+      setEditTarget(null);
+      fetchData();
+    } catch (err: any) {
+      toast.error("Gagal memperbarui jadwal", { description: err?.message });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  // Filter Client Side Search
-  const filteredSurveys = surveys.filter(
-    (s) =>
-      s.property.toLowerCase().includes(search.toLowerCase()) ||
-      s.address.toLowerCase().includes(search.toLowerCase()) ||
-      s.surveyor.toLowerCase().includes(search.toLowerCase())
+  const contactViaWhatsApp = (phone: string | null | undefined, text: string) => {
+    if (!openWhatsApp(phone, text)) {
+      toast.error("Nomor WhatsApp tidak tersedia atau tidak valid");
+    }
+  };
+
+  // ============================================================
+  // 4. PENYARINGAN
+  // ============================================================
+  const term = search.toLowerCase().trim();
+
+  const filteredSurveys = surveys.filter((s) => {
+    if (!term) return true;
+    return (
+      s.property?.title?.toLowerCase().includes(term) ||
+      s.property?.listing_code?.toLowerCase().includes(term) ||
+      s.client_name?.toLowerCase().includes(term) ||
+      formatAddress(s.property).toLowerCase().includes(term)
+    );
+  });
+
+  const filteredRequests = requests.filter((r) => {
+    if (!term) return true;
+    return (
+      r.property?.title?.toLowerCase().includes(term) ||
+      r.property?.listing_code?.toLowerCase().includes(term) ||
+      r.requester_name?.toLowerCase().includes(term)
+    );
+  });
+
+  // Request yang masih perlu ditangani agen
+  const openRequests = filteredRequests.filter(
+    (r) => r.status === "pending" || r.status === "contacted"
   );
+  const pendingCount = requests.filter((r) => r.status === "pending").length;
+
+  // ============================================================
+  // 5. RENDER
+  // ============================================================
+
+  if (!roleReady) {
+    return (
+      <div className="space-y-4 max-w-6xl mx-auto px-4 sm:px-6 py-6">
+        <Skeleton className="h-8 w-64" />
+        <Skeleton className="h-24 w-full rounded-2xl" />
+        <Skeleton className="h-24 w-full rounded-2xl" />
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-6 pb-12 max-w-7xl mx-auto px-4 sm:px-6">
-      {/* BANNER NOTIFIKASI READ-ONLY */}
-      {isViewer && (
-        <div className="p-3.5 bg-amber-500/10 border border-amber-500/20 rounded-2xl flex items-center gap-3 text-amber-800 dark:text-amber-300 text-xs backdrop-blur-sm">
-          <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0" />
-          <span>
-            Anda mengakses dalam mode <strong>Baca Saja (Read-Only)</strong>. Pembuatan dan pengubahan jadwal survei tidak diizinkan.
-          </span>
-        </div>
-      )}
-
-      {/* 1. PAGE HEADER */}
+    <div className="space-y-6 pb-12 max-w-6xl mx-auto px-4 sm:px-6">
+      {/* HEADER */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
-            📋 Jadwal Survei Lokasi
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">
+            Jadwal Survei
           </h1>
           <p className="text-sm text-muted-foreground">
-            Kelola agenda inspeksi lapangan, janji temu klien, dan penugasan surveyor.
+            {isStaff
+              ? "Tangani pengajuan survei dari client dan kelola janji temu Anda."
+              : "Pengajuan dan jadwal survei properti Anda."}
           </p>
         </div>
 
-        {canCreate && (
+        {!isStaff && (
           <Button
-            onClick={() => setIsCreateOpen(true)}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20 gap-2 shrink-0 rounded-xl cursor-pointer"
+            onClick={() => {
+              if (properties.length === 0) loadProperties();
+              setIsRequestOpen(true);
+            }}
+            className="gap-2 shrink-0 rounded-xl cursor-pointer bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20"
           >
-            <Plus className="h-4 w-4" /> Buat Jadwal Survei
+            <Plus className="h-4 w-4" /> Ajukan Survei
           </Button>
         )}
       </div>
 
-      {/* 2. SEARCH & STATUS FILTER */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="flex-1 relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Cari properti, lokasi, atau nama surveyor..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9 h-9 text-xs rounded-xl"
-          />
+      {/* CATATAN PRIVASI */}
+      <div className="p-3.5 bg-blue-500/10 border border-blue-500/20 rounded-2xl flex items-start gap-3 text-blue-800 dark:text-blue-300 text-xs">
+        <AlertCircle className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+        <span>
+          {isStaff
+            ? "Anda hanya melihat pengajuan dan jadwal yang ditugaskan kepada Anda. Data janji temu agen lain tidak ditampilkan."
+            : "Jadwal ini bersifat pribadi — hanya Anda dan agen yang bersangkutan dapat melihatnya."}
+        </span>
+      </div>
+
+      {/* PENCARIAN */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder="Cari properti, kode listing, atau nama..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="pl-9 h-9 text-xs rounded-xl"
+        />
+      </div>
+
+      {loading ? (
+        <div className="space-y-3">
+          {[...Array(3)].map((_, i) => (
+            <Skeleton key={i} className="h-32 w-full rounded-2xl" />
+          ))}
         </div>
-        <Select value={statusFilter} onValueChange={(val) => setStatusFilter(val || "all")}>
-          <SelectTrigger className="w-full sm:w-[180px] h-9 text-xs rounded-xl">
-            <SelectValue placeholder="Filter Status" />
-          </SelectTrigger>
-          <SelectContent className="rounded-xl">
-            <SelectItem value="all">Semua Status</SelectItem>
-            <SelectItem value="scheduled">Terjadwal</SelectItem>
-            <SelectItem value="completed">Selesai</SelectItem>
-            <SelectItem value="pending">Menunggu</SelectItem>
-            <SelectItem value="cancelled">Dibatalkan</SelectItem>
-          </SelectContent>
-        </Select>
-        <Button variant="outline" size="sm" onClick={fetchSurveys} className="h-9 gap-1.5 text-xs rounded-xl cursor-pointer">
-          <RefreshCw className="h-3.5 w-3.5" /> Refresh
-        </Button>
-      </div>
-
-      {/* ============================================================ */}
-      {/* 📱 MOBILE AGENDA LIST VIEW (md:hidden)                       */}
-      {/* ============================================================ */}
-      <div className="block md:hidden space-y-3">
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <span className="font-bold uppercase tracking-wider text-foreground">Agenda Survei Mendatang</span>
-          <span>{filteredSurveys.length} Janji Temu</span>
-        </div>
-
-        {loading ? (
-          <div className="space-y-2">
-            {[...Array(3)].map((_, i) => (
-              <Skeleton key={i} className="h-28 w-full rounded-2xl" />
-            ))}
-          </div>
-        ) : filteredSurveys.length === 0 ? (
-          <Card className="p-8 text-center text-xs text-muted-foreground rounded-2xl">
-            Tidak ada jadwal survei ditemukan.
-          </Card>
-        ) : (
-          filteredSurveys.map((survey) => {
-            const st = statusConfig[survey.status] || statusConfig.pending;
-
-            return (
-              <Card
-                key={survey.id}
-                className="border shadow-2xs p-3.5 space-y-3 hover:border-emerald-500/40 transition rounded-2xl bg-card"
-              >
-                {/* Header Time & Status */}
-                <div className="flex items-center justify-between border-b border-border/40 pb-2">
-                  <div className="flex items-center gap-2">
-                    <Badge variant="outline" className="font-mono text-[10px] bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 rounded-lg">
-                      <Clock className="w-3 h-3 mr-1" /> {survey.time} WIB
-                    </Badge>
-                    <span className="text-xs font-bold text-foreground font-mono">{survey.date}</span>
-                  </div>
-                  <Badge variant="outline" className={cn("text-[10px] font-semibold border px-2 py-0.5 rounded-lg", st.bg, st.color)}>
-                    {st.label}
-                  </Badge>
-                </div>
-
-                {/* Property & Address */}
-                <div
-                  onClick={() => setSelectedSurvey(survey)}
-                  className="space-y-1 cursor-pointer"
-                >
-                  <h4 className="font-bold text-xs text-foreground line-clamp-1">{survey.property}</h4>
-                  <p className="text-[11px] text-muted-foreground line-clamp-2 flex items-start gap-1">
-                    <MapPin className="w-3 h-3 text-rose-500 shrink-0 mt-0.5" />
-                    {survey.address}
-                  </p>
-                </div>
-
-                {/* Mobile Actions */}
-                <div className="flex items-center justify-between pt-1 border-t border-border/40 text-xs">
-                  <span className="text-[10px] text-muted-foreground flex items-center gap-1">
-                    <User className="w-3 h-3" /> {survey.surveyor}
-                  </span>
-
-                  <div className="flex items-center gap-1.5">
-                    <Button
-                      size="sm"
-                      onClick={() => openGoogleMaps(survey.address, survey.property)}
-                      className="h-7 text-[10px] px-2.5 gap-1 bg-blue-600 hover:bg-blue-700 text-white shadow-2xs rounded-xl cursor-pointer"
-                    >
-                      <Navigation className="w-3 h-3" /> Navigasi
-                    </Button>
-
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setSelectedSurvey(survey)}
-                      className="h-7 text-[10px] px-2.5 gap-1 rounded-xl cursor-pointer"
-                    >
-                      <Eye className="w-3 h-3" /> Detail
-                    </Button>
-                  </div>
-                </div>
-              </Card>
-            );
-          })
-        )}
-      </div>
-
-      {/* ============================================================ */}
-      {/* 💻 DESKTOP TABLE VIEW (hidden md:block)                      */}
-      {/* ============================================================ */}
-      <div className="hidden md:block">
-        <Card className="border shadow-2xs rounded-2xl bg-card">
-          <CardHeader className="p-4 pb-3 border-b flex flex-row items-center justify-between">
-            <div>
-              <CardTitle className="text-sm font-bold flex items-center gap-2">
-                <CalendarIcon className="w-4 h-4 text-emerald-600" /> Daftar Jadwal Survei Properti
-              </CardTitle>
-              <CardDescription className="text-xs">
-                Jadwal inspeksi fisik dan pertemuan virtual calon pembeli di lokasi.
-              </CardDescription>
-            </div>
-          </CardHeader>
-
-          <CardContent className="p-0">
-            {loading ? (
-              <div className="p-6 space-y-3">
-                {[...Array(4)].map((_, i) => (
-                  <Skeleton key={i} className="h-10 w-full" />
-                ))}
-              </div>
-            ) : (
-              <Table>
-                <TableHeader className="bg-muted/50">
-                  <TableRow>
-                    <TableHead className="text-xs font-semibold">Properti & Alamat</TableHead>
-                    <TableHead className="text-xs font-semibold">Tanggal & Jam</TableHead>
-                    <TableHead className="text-xs font-semibold">Surveyor</TableHead>
-                    <TableHead className="text-xs font-semibold">Metode</TableHead>
-                    <TableHead className="text-xs font-semibold">Status</TableHead>
-                    <TableHead className="text-xs font-semibold text-right">Aksi</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredSurveys.map((survey) => {
-                    const st = statusConfig[survey.status] || statusConfig.pending;
-                    const canManage = canManageSurvey(survey);
-
-                    return (
-                      <TableRow key={survey.id} className="hover:bg-muted/30">
-                        <TableCell className="p-3">
-                          <p className="font-bold text-xs text-foreground">{survey.property}</p>
-                          <p className="text-[11px] text-muted-foreground line-clamp-1 flex items-center gap-1 mt-0.5">
-                            <MapPin className="w-3 h-3 text-rose-500 shrink-0" /> {survey.address}
-                          </p>
-                        </TableCell>
-                        <TableCell className="p-3">
-                          <div className="flex items-center gap-1.5 text-xs font-mono font-semibold">
-                            <CalendarIcon className="w-3.5 h-3.5 text-emerald-600" /> {survey.date}
-                            <span className="text-muted-foreground">•</span>
-                            <Clock className="w-3.5 h-3.5 text-amber-600" /> {survey.time}
-                          </div>
-                        </TableCell>
-                        <TableCell className="p-3">
-                          <div className="flex items-center gap-1.5 text-xs">
-                            <div className="w-6 h-6 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 flex items-center justify-center font-bold text-[10px]">
-                              {survey.surveyor?.charAt(0) || "S"}
-                            </div>
-                            <span className="font-medium text-foreground">{survey.surveyor}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell className="p-3">
-                          <Badge variant="outline" className="text-[10px] rounded-lg">
-                            {survey.type}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="p-3">
-                          <Badge variant="outline" className={cn("text-[10px] font-semibold border px-2 py-0.5 rounded-lg", st.bg, st.color)}>
-                            {st.label}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="p-3 text-right">
-                          <div className="flex items-center justify-end gap-1">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => openGoogleMaps(survey.address, survey.property)}
-                              title="Buka Navigasi Google Maps"
-                              className="h-8 text-xs text-blue-600 hover:bg-blue-50 gap-1 rounded-xl cursor-pointer"
-                            >
-                              <Navigation className="w-3.5 h-3.5" /> Maps
-                            </Button>
-
-                            <DropdownMenu>
-                              <DropdownMenuTrigger className="inline-flex h-8 w-8 items-center justify-center rounded-xl text-muted-foreground hover:bg-muted hover:text-foreground transition-colors focus:outline-none cursor-pointer">
-                                <MoreHorizontal className="w-4 h-4" />
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end" className="w-48 rounded-xl p-1 shadow-md">
-                                <DropdownMenuItem onClick={() => setSelectedSurvey(survey)} className="text-xs gap-2 rounded-lg cursor-pointer">
-                                  <Eye className="w-3.5 h-3.5" /> Detail Survey
-                                </DropdownMenuItem>
-
-                                {canManage ? (
-                                  <>
-                                    <DropdownMenuItem onClick={() => handleUpdateStatus(survey, "completed")} className="text-xs gap-2 rounded-lg cursor-pointer">
-                                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Tandai Selesai
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem onClick={() => handleDelete(survey)} className="text-xs gap-2 text-rose-600 rounded-lg cursor-pointer">
-                                      <Trash2 className="w-3.5 h-3.5" /> Hapus Jadwal
-                                    </DropdownMenuItem>
-                                  </>
-                                ) : (
-                                  <div className="px-2 py-1.5 text-[10px] text-muted-foreground italic flex items-center gap-1 border-t mt-1">
-                                    <Lock className="w-3 h-3 text-amber-600" /> Mode Hanya Baca
-                                  </div>
-                                )}
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* ============================================================ */}
-      {/* 🎯 DETAIL WORKFLOW SHEET                                     */}
-      {/* ============================================================ */}
-      <Sheet open={!!selectedSurvey} onOpenChange={() => setSelectedSurvey(null)}>
-        <SheetContent side="bottom" className="rounded-t-3xl max-h-[88vh] p-6">
-          <SheetHeader className="text-left">
-            <div className="flex items-center justify-between">
-              <Badge variant="outline" className="text-[10px] uppercase rounded-lg">
-                Tipe: {selectedSurvey?.type}
-              </Badge>
-              {selectedSurvey && (
-                <Badge variant="outline" className={cn("text-[10px] rounded-lg", statusConfig[selectedSurvey.status]?.bg, statusConfig[selectedSurvey.status]?.color)}>
-                  {statusConfig[selectedSurvey.status]?.label}
+      ) : isStaff ? (
+        // ============================================================
+        // TAMPILAN AGEN / ADMIN — dua tab
+        // ============================================================
+        <Tabs defaultValue="requests" className="w-full">
+          <TabsList className="w-full grid grid-cols-2 rounded-xl h-10">
+            <TabsTrigger value="requests" className="text-xs gap-1.5 rounded-lg cursor-pointer">
+              Request Masuk
+              {pendingCount > 0 && (
+                <Badge className="h-4 min-w-4 px-1 text-[10px] bg-rose-600 text-white rounded-full">
+                  {pendingCount}
                 </Badge>
               )}
-            </div>
-            <SheetTitle className="text-base font-bold mt-2">
-              {selectedSurvey?.property}
-            </SheetTitle>
-            <SheetDescription className="text-xs flex items-center gap-1">
-              <MapPin className="w-3.5 h-3.5 text-rose-500 shrink-0" /> {selectedSurvey?.address}
-            </SheetDescription>
-          </SheetHeader>
+            </TabsTrigger>
+            <TabsTrigger value="schedule" className="text-xs rounded-lg cursor-pointer">
+              Jadwal Survei ({filteredSurveys.length})
+            </TabsTrigger>
+          </TabsList>
 
-          <div className="space-y-4 py-4 text-xs">
-            {/* Waktu & Petugas */}
-            <div className="p-3 bg-muted/60 rounded-2xl space-y-2 border border-border/50">
-              <div className="flex justify-between border-b pb-1.5">
-                <span className="text-muted-foreground flex items-center gap-1">
-                  <CalendarIcon className="w-3.5 h-3.5 text-emerald-600" /> Waktu Survei:
-                </span>
-                <span className="font-bold text-foreground font-mono">{selectedSurvey?.date} ({selectedSurvey?.time} WIB)</span>
-              </div>
-              <div className="flex justify-between border-b pb-1.5">
-                <span className="text-muted-foreground flex items-center gap-1">
-                  <User className="w-3.5 h-3.5 text-muted-foreground" /> Surveyor Penanggung Jawab:
-                </span>
-                <span className="font-semibold text-foreground">{selectedSurvey?.surveyor}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Nama Calon Pembeli:</span>
-                <span className="font-semibold text-foreground">{selectedSurvey?.client_name || "Klien Umum"}</span>
-              </div>
-            </div>
+          {/* TAB: REQUEST MASUK */}
+          <TabsContent value="requests" className="mt-4 space-y-3">
+            {openRequests.length === 0 ? (
+              <EmptyState
+                icon={<MessageCircle className="w-8 h-8 text-muted-foreground/50" />}
+                title="Belum ada pengajuan yang perlu ditangani"
+                description="Pengajuan survei dari client atas properti yang Anda pegang akan muncul di sini."
+              />
+            ) : (
+              openRequests.map((req) => (
+                <RequestCard
+                  key={req.id}
+                  request={req}
+                  onContact={() =>
+                    contactViaWhatsApp(
+                      req.requester_phone,
+                      `Halo ${req.requester_name}, saya agen untuk properti ${
+                        req.property?.listing_code || req.property?.title || ""
+                      }. Terkait pengajuan survei Anda, kapan waktu yang cocok untuk kita bertemu?`
+                    )
+                  }
+                  onMarkContacted={() => handleMarkContacted(req)}
+                  onSchedule={() => openScheduleDialog(req)}
+                  onReject={() => {
+                    setRejectTarget(req);
+                    setRejectReason("");
+                  }}
+                />
+              ))
+            )}
 
-            {/* Catatan Survey */}
-            {selectedSurvey?.notes && (
-              <div className="space-y-1">
-                <p className="font-bold text-foreground">Catatan Petugas:</p>
-                <p className="p-3 bg-background border rounded-xl text-muted-foreground leading-relaxed text-[11px]">
-                  {selectedSurvey.notes}
+            {/* Riwayat pengajuan yang sudah selesai/ditolak */}
+            {filteredRequests.some((r) => !openRequests.includes(r)) && (
+              <div className="pt-4">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-2">
+                  Riwayat Pengajuan
                 </p>
+                <div className="space-y-2">
+                  {filteredRequests
+                    .filter((r) => !openRequests.includes(r))
+                    .map((req) => {
+                      const cfg = requestStatusConfig[req.status];
+                      return (
+                        <Card key={req.id} className="p-3 rounded-xl bg-muted/30">
+                          <div className="flex items-center justify-between gap-3 text-xs">
+                            <div className="min-w-0">
+                              <p className="font-semibold truncate">
+                                {req.property?.title || "Properti"}
+                              </p>
+                              <p className="text-[11px] text-muted-foreground truncate">
+                                {req.requester_name}
+                                {req.reject_reason ? ` — ${req.reject_reason}` : ""}
+                              </p>
+                            </div>
+                            <Badge variant="outline" className={`text-[10px] rounded-lg shrink-0 ${cfg?.color}`}>
+                              {cfg?.label || req.status}
+                            </Badge>
+                          </div>
+                        </Card>
+                      );
+                    })}
+                </div>
+              </div>
+            )}
+          </TabsContent>
+
+          {/* TAB: JADWAL SURVEI */}
+          <TabsContent value="schedule" className="mt-4 space-y-3">
+            {filteredSurveys.length === 0 ? (
+              <EmptyState
+                icon={<CalendarIcon className="w-8 h-8 text-muted-foreground/50" />}
+                title="Belum ada jadwal survei"
+                description="Jadwal terbentuk setelah Anda menyetujui pengajuan dan menentukan waktu bersama client."
+              />
+            ) : (
+              filteredSurveys.map((survey) => (
+                <SurveyCard
+                  key={survey.id}
+                  survey={survey}
+                  viewerIsAgent={survey.agent_id === userId || isAdmin}
+                  onContact={() =>
+                    contactViaWhatsApp(
+                      survey.client_phone,
+                      `Halo ${survey.client_name}, mengenai jadwal survei properti ${
+                        survey.property?.listing_code || survey.property?.title || ""
+                      }...`
+                    )
+                  }
+                  onComplete={() => handleUpdateSurveyStatus(survey, "completed")}
+                  onNoShow={() => handleUpdateSurveyStatus(survey, "no_show")}
+                  onCancel={() => handleUpdateSurveyStatus(survey, "cancelled")}
+                  onEdit={() => openEditDialog(survey)}
+                />
+              ))
+            )}
+          </TabsContent>
+        </Tabs>
+      ) : (
+        // ============================================================
+        // TAMPILAN CLIENT — pengajuan sendiri + jadwal sendiri
+        // ============================================================
+        <div className="space-y-6">
+          {/* Jadwal saya */}
+          <section className="space-y-3">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+              Jadwal Survei Saya
+            </p>
+            {filteredSurveys.length === 0 ? (
+              <EmptyState
+                icon={<CalendarIcon className="w-8 h-8 text-muted-foreground/50" />}
+                title="Belum ada jadwal survei"
+                description="Ajukan survei atas properti yang Anda minati. Agen akan menghubungi Anda untuk menentukan waktu."
+              />
+            ) : (
+              filteredSurveys.map((survey) => (
+                <SurveyCard
+                  key={survey.id}
+                  survey={survey}
+                  viewerIsAgent={false}
+                  onContact={() =>
+                    contactViaWhatsApp(
+                      survey.agent?.phone,
+                      `Halo, saya ${survey.client_name}. Mengenai jadwal survei properti ${
+                        survey.property?.listing_code || survey.property?.title || ""
+                      }...`
+                    )
+                  }
+                />
+              ))
+            )}
+          </section>
+
+          {/* Pengajuan saya */}
+          {filteredRequests.length > 0 && (
+            <section className="space-y-2">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                Pengajuan Saya
+              </p>
+              {filteredRequests.map((req) => {
+                const cfg = requestStatusConfig[req.status];
+                return (
+                  <Card key={req.id} className="p-3.5 rounded-2xl">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 space-y-1">
+                        <p className="font-bold text-xs truncate">
+                          {req.property?.title || "Properti"}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground flex items-center gap-1">
+                          <Clock className="w-3 h-3" />
+                          Diajukan{" "}
+                          {new Date(req.created_at).toLocaleDateString("id-ID", {
+                            day: "numeric",
+                            month: "short",
+                            year: "numeric",
+                          })}
+                        </p>
+                        {req.status === "rejected" && req.reject_reason && (
+                          <p className="text-[11px] text-rose-600">
+                            Alasan: {req.reject_reason}
+                          </p>
+                        )}
+                        {req.status === "pending" && (
+                          <p className="text-[11px] text-muted-foreground">
+                            Agen akan menghubungi Anda melalui WhatsApp.
+                          </p>
+                        )}
+                      </div>
+                      <Badge
+                        variant="outline"
+                        className={`text-[10px] rounded-lg shrink-0 ${cfg?.color}`}
+                      >
+                        {cfg?.label || req.status}
+                      </Badge>
+                    </div>
+
+                    {req.agent?.phone && req.status !== "rejected" && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() =>
+                          contactViaWhatsApp(
+                            req.agent?.phone,
+                            `Halo, saya ${req.requester_name}. Saya mengajukan survei untuk ${
+                              req.property?.listing_code || req.property?.title || "properti Anda"
+                            }.`
+                          )
+                        }
+                        className="mt-3 h-8 w-full text-[11px] gap-1.5 rounded-xl cursor-pointer text-emerald-700 border-emerald-300"
+                      >
+                        <MessageCircle className="w-3.5 h-3.5" /> Hubungi Agen
+                      </Button>
+                    )}
+                  </Card>
+                );
+              })}
+            </section>
+          )}
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* DIALOG: AJUKAN SURVEI (client)                               */}
+      {/* ============================================================ */}
+      <Dialog open={isRequestOpen} onOpenChange={setIsRequestOpen}>
+        <DialogContent className="max-w-md rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold">Ajukan Survei Properti</DialogTitle>
+            <DialogDescription className="text-xs">
+              Agen properti akan menghubungi Anda via WhatsApp untuk menyepakati waktu.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2 text-xs">
+            <div>
+              <Label className="text-[11px] font-medium">Properti *</Label>
+              <Select
+                value={requestForm.property_id}
+                onValueChange={(v) => setRequestForm({ ...requestForm, property_id: v || "" })}
+              >
+                <SelectTrigger className="h-9 text-xs rounded-xl mt-1">
+                  {/* Base UI menampilkan NILAI mentah bila anak SelectValue kosong —
+                      untuk properti itu berarti UUID yang tidak berarti apa-apa bagi
+                      pengguna. Labelnya dicari sendiri, sepola StepContact.tsx:119-127.
+                      Saat tautan datang dari halaman detail properti, daftar dropdown
+                      mungkin belum termuat; teks sementara lebih baik daripada UUID. */}
+                  <SelectValue placeholder="Pilih properti">
+                    {(() => {
+                      if (!requestForm.property_id) return undefined;
+                      const picked = properties.find((p) => p.id === requestForm.property_id);
+                      if (!picked) return "Memuat properti...";
+                      return `${picked.listing_code ? `[${picked.listing_code}] ` : ""}${picked.title}`;
+                    })()}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent className="rounded-xl max-h-64">
+                  {properties.length === 0 ? (
+                    <div className="p-3 text-[11px] text-muted-foreground text-center">
+                      Memuat properti...
+                    </div>
+                  ) : (
+                    properties.map((p) => (
+                      <SelectItem key={p.id} value={p.id} className="text-xs">
+                        {p.listing_code ? `[${p.listing_code}] ` : ""}
+                        {p.title}
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label className="text-[11px] font-medium">Nama Anda *</Label>
+              <Input
+                value={requestForm.requester_name}
+                onChange={(e) =>
+                  setRequestForm({ ...requestForm, requester_name: e.target.value })
+                }
+                placeholder="Nama lengkap"
+                className="h-9 text-xs rounded-xl mt-1"
+              />
+            </div>
+
+            <div>
+              <Label className="text-[11px] font-medium">Nomor WhatsApp *</Label>
+              <Input
+                value={requestForm.requester_phone}
+                onChange={(e) =>
+                  setRequestForm({ ...requestForm, requester_phone: e.target.value })
+                }
+                placeholder="08xxxxxxxxxx"
+                className="h-9 text-xs rounded-xl mt-1"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label className="text-[11px] font-medium">Tanggal Diinginkan</Label>
+                <Input
+                  type="date"
+                  min={new Date().toISOString().slice(0, 10)}
+                  value={requestForm.preferred_date}
+                  onChange={(e) =>
+                    setRequestForm({ ...requestForm, preferred_date: e.target.value })
+                  }
+                  className="h-9 text-xs rounded-xl mt-1"
+                />
+              </div>
+              <div>
+                <Label className="text-[11px] font-medium">Jam Diinginkan</Label>
+                <Input
+                  type="time"
+                  value={requestForm.preferred_time}
+                  onChange={(e) =>
+                    setRequestForm({ ...requestForm, preferred_time: e.target.value })
+                  }
+                  className="h-9 text-xs rounded-xl mt-1"
+                />
+              </div>
+            </div>
+
+            <p className="text-[10px] text-muted-foreground -mt-1">
+              Waktu di atas hanya preferensi. Jadwal pasti disepakati bersama agen.
+            </p>
+
+            <div>
+              <Label className="text-[11px] font-medium">Pesan untuk Agen</Label>
+              <Textarea
+                value={requestForm.message}
+                onChange={(e) => setRequestForm({ ...requestForm, message: e.target.value })}
+                placeholder="Hal yang ingin Anda periksa saat survei..."
+                rows={3}
+                className="text-xs rounded-xl mt-1"
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsRequestOpen(false)}
+              className="text-xs rounded-xl cursor-pointer"
+            >
+              Batal
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleSubmitRequest}
+              disabled={submitting}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs rounded-xl cursor-pointer gap-1.5"
+            >
+              {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+              {submitting ? "Mengirim..." : "Kirim Pengajuan"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ============================================================ */}
+      {/* DIALOG: BUAT JADWAL (agen)                                   */}
+      {/* ============================================================ */}
+      <Dialog
+        open={!!scheduleTarget || !!editTarget}
+        onOpenChange={(o) => {
+          if (o) return;
+          setScheduleTarget(null);
+          setEditTarget(null);
+        }}
+      >
+        <DialogContent className="max-w-md rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold">
+              {editTarget ? "Ubah Jadwal Survei" : "Buat Jadwal Survei"}
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              {editTarget ? (
+                <>
+                  Untuk <strong>{editTarget.client_name}</strong> —{" "}
+                  {editTarget.property?.title}
+                </>
+              ) : (
+                <>
+                  Untuk <strong>{scheduleTarget?.requester_name}</strong> —{" "}
+                  {scheduleTarget?.property?.title}
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2 text-xs">
+            {scheduleTarget?.preferred_date && (
+              <div className="p-2.5 bg-amber-500/10 border border-amber-500/20 rounded-xl text-[11px] text-amber-800 dark:text-amber-300">
+                Preferensi client: {scheduleTarget.preferred_date}
+                {scheduleTarget.preferred_time ? ` pukul ${scheduleTarget.preferred_time}` : ""}
               </div>
             )}
 
-            {/* Quick Actions */}
-            <div className="space-y-2 pt-2">
-              <Button
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white text-xs gap-1.5 shadow-md shadow-blue-600/20 rounded-xl cursor-pointer"
-                onClick={() => {
-                  if (selectedSurvey) openGoogleMaps(selectedSurvey.address, selectedSurvey.property);
-                }}
-              >
-                <Navigation className="w-3.5 h-3.5" /> Buka Navigasi Google Maps GPS
-              </Button>
-
-              <div className="grid grid-cols-2 gap-2">
-                <Button
-                  variant="outline"
-                  className="w-full text-xs gap-1 text-emerald-700 border-emerald-300 rounded-xl cursor-pointer"
-                  onClick={() => {
-                    if (selectedSurvey) openWhatsApp(selectedSurvey.client_phone || selectedSurvey.surveyor_phone);
-                  }}
-                >
-                  <MessageCircle className="w-3.5 h-3.5 text-emerald-600" /> Hubungi WA
-                </Button>
-
-                {canManageSurvey(selectedSurvey) ? (
-                  <Button
-                    variant="outline"
-                    className="w-full text-xs gap-1 rounded-xl cursor-pointer"
-                    onClick={() => {
-                      if (selectedSurvey) handleUpdateStatus(selectedSurvey, "completed");
-                    }}
-                  >
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Set Selesai
-                  </Button>
-                ) : (
-                  <Button variant="outline" disabled className="w-full text-xs gap-1 opacity-50 rounded-xl">
-                    <Lock className="w-3.5 h-3.5" /> Terkunci
-                  </Button>
-                )}
+            {editTarget && (
+              <div className="p-2.5 bg-blue-500/10 border border-blue-500/20 rounded-xl text-[11px] text-blue-800 dark:text-blue-300">
+                Mengubah waktu akan mengirim notifikasi ke client dan menjadwalkan
+                ulang pengingat H-1 jam.
               </div>
+            )}
+
+            <div>
+              <Label className="text-[11px] font-medium">Waktu Survei *</Label>
+              <Input
+                type="datetime-local"
+                min={nowLocalInputValue()}
+                value={scheduleForm.scheduled_at}
+                onChange={(e) =>
+                  setScheduleForm({ ...scheduleForm, scheduled_at: e.target.value })
+                }
+                className="h-9 text-xs rounded-xl mt-1"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label className="text-[11px] font-medium">Durasi (menit)</Label>
+                <Input
+                  type="number"
+                  min={15}
+                  max={480}
+                  step={15}
+                  value={scheduleForm.duration_min}
+                  onChange={(e) =>
+                    setScheduleForm({ ...scheduleForm, duration_min: e.target.value })
+                  }
+                  className="h-9 text-xs rounded-xl mt-1"
+                />
+              </div>
+              <div>
+                <Label className="text-[11px] font-medium">Metode</Label>
+                <Select
+                  value={scheduleForm.type}
+                  onValueChange={(v) => setScheduleForm({ ...scheduleForm, type: v || "lapangan" })}
+                >
+                  <SelectTrigger className="h-9 text-xs rounded-xl mt-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl">
+                    <SelectItem value="lapangan" className="text-xs">
+                      Lapangan
+                    </SelectItem>
+                    <SelectItem value="virtual" className="text-xs">
+                      Virtual
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {scheduleForm.type === "virtual" ? (
+              <div>
+                <Label className="text-[11px] font-medium">URL Meeting *</Label>
+                <Input
+                  value={scheduleForm.meeting_url}
+                  onChange={(e) =>
+                    setScheduleForm({ ...scheduleForm, meeting_url: e.target.value })
+                  }
+                  placeholder="https://meet.google.com/..."
+                  className="h-9 text-xs rounded-xl mt-1"
+                />
+              </div>
+            ) : (
+              <div>
+                <Label className="text-[11px] font-medium">Titik Temu</Label>
+                <Input
+                  value={scheduleForm.location_note}
+                  onChange={(e) =>
+                    setScheduleForm({ ...scheduleForm, location_note: e.target.value })
+                  }
+                  placeholder="Contoh: Pos security cluster depan"
+                  className="h-9 text-xs rounded-xl mt-1"
+                />
+              </div>
+            )}
+
+            <div>
+              <Label className="text-[11px] font-medium">Catatan</Label>
+              <Textarea
+                value={scheduleForm.notes}
+                onChange={(e) => setScheduleForm({ ...scheduleForm, notes: e.target.value })}
+                rows={2}
+                className="text-xs rounded-xl mt-1"
+              />
             </div>
           </div>
-        </SheetContent>
-      </Sheet>
+
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setScheduleTarget(null);
+                setEditTarget(null);
+              }}
+              className="text-xs rounded-xl cursor-pointer"
+            >
+              Batal
+            </Button>
+            <Button
+              size="sm"
+              onClick={editTarget ? handleUpdateSchedule : handleCreateSchedule}
+              disabled={submitting}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs rounded-xl cursor-pointer gap-1.5"
+            >
+              {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+              {submitting
+                ? "Menyimpan..."
+                : editTarget
+                  ? "Simpan Perubahan"
+                  : "Simpan & Beri Tahu Client"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* ============================================================ */}
-      {/* ➕ CREATE SURVEY DIALOG MODAL                                 */}
+      {/* DIALOG: TOLAK PENGAJUAN (agen)                               */}
       {/* ============================================================ */}
-      {canCreate && (
-        <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-          <DialogContent className="max-w-md rounded-2xl">
-            <DialogHeader>
-              <DialogTitle className="text-base font-bold">➕ Buat Jadwal Survei Baru</DialogTitle>
-              <DialogDescription className="text-xs">
-                Atur janji inspeksi fisik lokasi bersama calon pembeli.
-              </DialogDescription>
-            </DialogHeader>
+      <Dialog open={!!rejectTarget} onOpenChange={(o) => !o && setRejectTarget(null)}>
+        <DialogContent className="max-w-sm rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold">Tolak Pengajuan</DialogTitle>
+            <DialogDescription className="text-xs">
+              Alasan ini dikirim ke client sebagai notifikasi, jadi tuliskan dengan jelas.
+            </DialogDescription>
+          </DialogHeader>
 
-            <div className="space-y-3 py-2 text-xs">
-              <div>
-                <Label className="text-[11px] font-medium">Nama Properti *</Label>
-                <Input
-                  value={formData.property}
-                  onChange={(e) => setFormData({ ...formData, property: e.target.value })}
-                  placeholder="Contoh: Villa Green Valley Puncak"
-                  className="h-9 text-xs rounded-xl mt-1"
-                />
-              </div>
-              <div>
-                <Label className="text-[11px] font-medium">Alamat / Lokasi Properti</Label>
-                <Input
-                  value={formData.address}
-                  onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                  placeholder="Alamat lengkap lokasi survei"
-                  className="h-9 text-xs rounded-xl mt-1"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <Label className="text-[11px] font-medium">Tanggal *</Label>
-                  <Input
-                    type="date"
-                    value={formData.date}
-                    onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                    className="h-9 text-xs rounded-xl mt-1"
-                  />
-                </div>
-                <div>
-                  <Label className="text-[11px] font-medium">Jam *</Label>
-                  <Input
-                    type="time"
-                    value={formData.time}
-                    onChange={(e) => setFormData({ ...formData, time: e.target.value })}
-                    className="h-9 text-xs rounded-xl mt-1"
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <Label className="text-[11px] font-medium">Surveyor Jawab</Label>
-                  <Input
-                    value={formData.surveyor}
-                    onChange={(e) => setFormData({ ...formData, surveyor: e.target.value })}
-                    placeholder="Nama Agen"
-                    className="h-9 text-xs rounded-xl mt-1"
-                  />
-                </div>
-                <div>
-                  <Label className="text-[11px] font-medium">Metode</Label>
-                  <Select value={formData.type} onValueChange={(v) => setFormData({ ...formData, type: v || "" })}>
-                    <SelectTrigger className="h-9 text-xs rounded-xl mt-1">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="rounded-xl">
-                      <SelectItem value="Lapangan">Lapangan</SelectItem>
-                      <SelectItem value="Virtual">Virtual</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <div>
-                <Label className="text-[11px] font-medium">Nama Calon Pembeli (Klien)</Label>
-                <Input
-                  value={formData.client_name}
-                  onChange={(e) => setFormData({ ...formData, client_name: e.target.value })}
-                  placeholder="Nama Klien"
-                  className="h-9 text-xs rounded-xl mt-1"
-                />
-              </div>
-              <div>
-                <Label className="text-[11px] font-medium">Catatan Khusus</Label>
-                <Textarea
-                  value={formData.notes}
-                  onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                  placeholder="Klien ingin fokus cek daya listrik & garasi..."
-                  rows={2}
-                  className="text-xs rounded-xl mt-1"
-                />
-              </div>
+          <div className="py-2">
+            <Label className="text-[11px] font-medium">Alasan Penolakan *</Label>
+            <Textarea
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              placeholder="Contoh: Properti sudah terjual / sedang dalam proses akad."
+              rows={3}
+              className="text-xs rounded-xl mt-1"
+            />
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setRejectTarget(null)}
+              className="text-xs rounded-xl cursor-pointer"
+            >
+              Batal
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleReject}
+              disabled={submitting}
+              className="bg-rose-600 hover:bg-rose-700 text-white text-xs rounded-xl cursor-pointer gap-1.5"
+            >
+              {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+              Tolak Pengajuan
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// ============================================================
+// SUB-KOMPONEN
+// ============================================================
+
+function EmptyState({
+  icon,
+  title,
+  description,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+}) {
+  return (
+    <Card className="p-8 rounded-2xl">
+      <div className="flex flex-col items-center text-center gap-2">
+        {icon}
+        <p className="text-xs font-bold text-foreground">{title}</p>
+        <p className="text-[11px] text-muted-foreground max-w-xs">{description}</p>
+      </div>
+    </Card>
+  );
+}
+
+function RequestCard({
+  request,
+  onContact,
+  onMarkContacted,
+  onSchedule,
+  onReject,
+}: {
+  request: SurveyRequest;
+  onContact: () => void;
+  onMarkContacted: () => void;
+  onSchedule: () => void;
+  onReject: () => void;
+}) {
+  const cfg = requestStatusConfig[request.status];
+
+  return (
+    <Card className="rounded-2xl border shadow-2xs overflow-hidden">
+      <CardHeader className="p-3.5 pb-2.5 border-b bg-muted/30">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <CardTitle className="text-xs font-bold truncate flex items-center gap-1.5">
+              <Building2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+              {request.property?.title || "Properti"}
+            </CardTitle>
+            <p className="text-[11px] text-muted-foreground mt-1 flex items-start gap-1">
+              <MapPin className="w-3 h-3 text-rose-500 shrink-0 mt-0.5" />
+              {formatAddress(request.property)}
+            </p>
+          </div>
+          <Badge variant="outline" className={`text-[10px] rounded-lg shrink-0 ${cfg?.color}`}>
+            {cfg?.label || request.status}
+          </Badge>
+        </div>
+      </CardHeader>
+
+      <CardContent className="p-3.5 space-y-2.5 text-xs">
+        <div className="space-y-1.5">
+          <p className="flex items-center gap-1.5">
+            <User className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+            <span className="font-semibold">{request.requester_name}</span>
+          </p>
+          <p className="flex items-center gap-1.5 text-muted-foreground text-[11px]">
+            <Phone className="w-3.5 h-3.5 shrink-0" />
+            {request.requester_phone}
+          </p>
+          {request.preferred_date && (
+            <p className="flex items-center gap-1.5 text-muted-foreground text-[11px]">
+              <CalendarIcon className="w-3.5 h-3.5 shrink-0" />
+              Preferensi: {request.preferred_date}
+              {request.preferred_time ? ` • ${request.preferred_time}` : ""}
+            </p>
+          )}
+        </div>
+
+        {request.message && (
+          <p className="p-2.5 bg-muted/50 rounded-xl text-[11px] text-muted-foreground leading-relaxed">
+            {request.message}
+          </p>
+        )}
+
+        <Separator />
+
+        <div className="grid grid-cols-2 gap-2">
+          <Button
+            size="sm"
+            onClick={onContact}
+            className="h-8 text-[11px] gap-1.5 rounded-xl cursor-pointer bg-emerald-600 hover:bg-emerald-700 text-white"
+          >
+            <MessageCircle className="w-3.5 h-3.5" /> Hubungi via WA
+          </Button>
+          <Button
+            size="sm"
+            onClick={onSchedule}
+            className="h-8 text-[11px] gap-1.5 rounded-xl cursor-pointer bg-blue-600 hover:bg-blue-700 text-white"
+          >
+            <CalendarIcon className="w-3.5 h-3.5" /> Buat Jadwal
+          </Button>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          {request.status === "pending" ? (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={onMarkContacted}
+              className="h-8 text-[11px] gap-1.5 rounded-xl cursor-pointer"
+            >
+              <CheckCircle2 className="w-3.5 h-3.5" /> Sudah Dihubungi
+            </Button>
+          ) : (
+            <div />
+          )}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onReject}
+            className="h-8 text-[11px] gap-1.5 rounded-xl cursor-pointer text-rose-600 border-rose-200 hover:bg-rose-50"
+          >
+            <XCircle className="w-3.5 h-3.5" /> Tolak
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function SurveyCard({
+  survey,
+  viewerIsAgent,
+  onContact,
+  onComplete,
+  onNoShow,
+  onCancel,
+  onEdit,
+}: {
+  survey: Survey;
+  viewerIsAgent: boolean;
+  onContact: () => void;
+  onComplete?: () => void;
+  onNoShow?: () => void;
+  onCancel?: () => void;
+  onEdit?: () => void;
+}) {
+  const cfg = surveyStatusConfig[survey.status] || surveyStatusConfig.scheduled;
+  const { date, time } = formatDateTime(survey.scheduled_at);
+  const address = formatAddress(survey.property);
+  const isActive = survey.status === "scheduled";
+
+  return (
+    <Card className="rounded-2xl border shadow-2xs overflow-hidden">
+      <CardHeader className="p-3.5 pb-2.5 border-b bg-muted/30">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 mb-1.5">
+              <Badge
+                variant="outline"
+                className="font-mono text-[10px] bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 rounded-lg"
+              >
+                <Clock className="w-3 h-3 mr-1" /> {time}
+              </Badge>
+              <span className="text-[11px] font-bold text-foreground">{date}</span>
             </div>
+            <CardTitle className="text-xs font-bold truncate">
+              {survey.property?.title || "Properti"}
+            </CardTitle>
+            <p className="text-[11px] text-muted-foreground mt-1 flex items-start gap-1">
+              <MapPin className="w-3 h-3 text-rose-500 shrink-0 mt-0.5" />
+              {address}
+            </p>
+          </div>
+          <Badge
+            variant="outline"
+            className={`text-[10px] font-semibold border px-2 py-0.5 rounded-lg shrink-0 ${cfg.bg} ${cfg.color}`}
+          >
+            {cfg.label}
+          </Badge>
+        </div>
+      </CardHeader>
 
-            <DialogFooter className="gap-2">
-              <Button variant="outline" size="sm" onClick={() => setIsCreateOpen(false)} className="text-xs rounded-xl cursor-pointer">
-                Batal
+      <CardContent className="p-3.5 space-y-2.5 text-xs">
+        <div className="flex items-center justify-between">
+          <span className="flex items-center gap-1.5 text-muted-foreground text-[11px]">
+            <User className="w-3.5 h-3.5 shrink-0" />
+            {viewerIsAgent
+              ? `Client: ${survey.client_name}`
+              : `Agen: ${survey.agent?.full_name || "Agen properti"}`}
+          </span>
+          <Badge variant="outline" className="text-[10px] rounded-lg capitalize">
+            {survey.type}
+          </Badge>
+        </div>
+
+        {survey.location_note && (
+          <p className="text-[11px] text-muted-foreground">
+            <span className="font-semibold text-foreground">Titik temu:</span>{" "}
+            {survey.location_note}
+          </p>
+        )}
+
+        {survey.notes && (
+          <p className="p-2.5 bg-muted/50 rounded-xl text-[11px] text-muted-foreground leading-relaxed">
+            {survey.notes}
+          </p>
+        )}
+
+        <Separator />
+
+        <div className="grid grid-cols-2 gap-2">
+          {survey.type === "virtual" && survey.meeting_url ? (
+            <Button
+              size="sm"
+              onClick={() => window.open(survey.meeting_url!, "_blank")}
+              className="h-8 text-[11px] gap-1.5 rounded-xl cursor-pointer bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              <ExternalLink className="w-3.5 h-3.5" /> Buka Meeting
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              onClick={() => openGoogleMaps(survey.property?.title || "Properti", address)}
+              className="h-8 text-[11px] gap-1.5 rounded-xl cursor-pointer bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              <MapPin className="w-3.5 h-3.5" /> Navigasi
+            </Button>
+          )}
+
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onContact}
+            className="h-8 text-[11px] gap-1.5 rounded-xl cursor-pointer text-emerald-700 border-emerald-300"
+          >
+            <MessageCircle className="w-3.5 h-3.5" /> Hubungi
+          </Button>
+        </div>
+
+        {/* Aksi status — hanya agen pemilik jadwal (atau admin) yang boleh */}
+        {viewerIsAgent && isActive && (
+          <div className="space-y-2 pt-1">
+            <div className="grid grid-cols-3 gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={onComplete}
+                className="h-8 text-[10px] gap-1 rounded-xl cursor-pointer text-emerald-700"
+              >
+                <CheckCircle2 className="w-3 h-3" /> Selesai
               </Button>
               <Button
                 size="sm"
-                onClick={handleCreateSurvey}
-                disabled={submitting}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs rounded-xl cursor-pointer"
+                variant="outline"
+                onClick={onNoShow}
+                className="h-8 text-[10px] gap-1 rounded-xl cursor-pointer text-amber-700"
               >
-                {submitting ? "Menyimpan..." : "Simpan Jadwal"}
+                <Ban className="w-3 h-3" /> Absen
               </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      )}
-    </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={onCancel}
+                className="h-8 text-[10px] gap-1 rounded-xl cursor-pointer text-rose-600"
+              >
+                <XCircle className="w-3 h-3" /> Batal
+              </Button>
+            </div>
+
+            {onEdit && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={onEdit}
+                className="h-8 w-full text-[10px] gap-1 rounded-xl cursor-pointer text-blue-700 border-blue-300"
+              >
+                <Pencil className="w-3 h-3" /> Ubah Jadwal
+              </Button>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

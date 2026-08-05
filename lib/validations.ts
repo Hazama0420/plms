@@ -100,6 +100,22 @@ function emptyToUndefined<S extends z.ZodType>(schema: S) {
   );
 }
 
+/**
+ * Waktu ISO yang wajib berada di masa depan.
+ *
+ * Pemeriksaan validitas dipisah dari pemeriksaan masa depan supaya string
+ * ngawur ("besok pagi") tidak dilaporkan sebagai "harus di masa depan" —
+ * pesan itu menyesatkan dan membuat pengirim mengubah tanggal, bukan formatnya.
+ */
+const futureDateTimeSchema = z
+  .string({ error: "Waktu jadwal wajib diisi." })
+  .refine((v) => !Number.isNaN(new Date(v).getTime()), {
+    error: "Format waktu tidak valid.",
+  })
+  .refine((v) => new Date(v).getTime() > Date.now(), {
+    error: "Waktu jadwal harus di masa depan.",
+  });
+
 // ---------------------------------------------------------------------------
 // Skema per endpoint
 // ---------------------------------------------------------------------------
@@ -277,3 +293,113 @@ export const propertyInsertSchema = z
     youtube_url: z.string().max(300).optional(),
   })
   .loose();
+
+// --- /api/surveys/requests (POST, viewer ke atas) ---
+//
+// Pengajuan survei properti oleh client. `requester_id` diisi server dari
+// auth.uid(), bukan dari body; `agent_id` ditentukan server dari pemilik
+// properti (assigned_to → created_by → user_id). Tanggal & jam preferensi
+// opsional karena itu hanya permintaan awal — waktu final disepakati lewat WA.
+export const surveyRequestSchema = z.object({
+  property_id: uuidSchema,
+  requester_name: z
+    .string({ error: "Nama wajib diisi." })
+    .trim()
+    .min(2, "Nama minimal 2 karakter.")
+    .max(120, "Nama maksimal 120 karakter."),
+  requester_phone: phoneSchema,
+  preferred_date: emptyToUndefined(z.string().max(20)),
+  preferred_time: emptyToUndefined(z.string().max(10)),
+  message: emptyToUndefined(z.string().max(2000, "Pesan maksimal 2000 karakter.")),
+});
+
+// --- /api/surveys/requests/[id] (PATCH, agen ke atas atau pengaju sendiri) ---
+//
+// Agen menandai pengajuan sebagai sudah dihubungi atau menolaknya; pengaju
+// hanya boleh membatalkan miliknya sendiri (pemeriksaan itu di route, bukan
+// di sini). Status 'scheduled' sengaja tidak diterima: nilai itu hanya boleh
+// ditulis oleh POST /api/surveys saat jadwalnya benar-benar terbentuk.
+export const surveyRequestUpdateSchema = z
+  .object({
+    status: z.enum(["contacted", "rejected", "cancelled"], {
+      error: "Status harus salah satu dari: contacted, rejected, cancelled.",
+    }),
+    reject_reason: emptyToUndefined(z.string().max(500, "Alasan maksimal 500 karakter.")),
+  })
+  .refine(
+    (v) => v.status !== "rejected" || (v.reject_reason && v.reject_reason.length > 0),
+    { error: "Alasan penolakan wajib diisi.", path: ["reject_reason"] }
+  );
+
+// --- /api/surveys (POST, agen ke atas) ---
+//
+// Pembuatan jadwal survei. `scheduled_at` wajib di masa depan; bila dibuatkan
+// dari request, route akan menyalin `client_id` dan `property_id` dari request
+// tersebut. `meeting_url` wajib bila tipe survei virtual.
+export const surveyCreateSchema = z
+  .object({
+    property_id: uuidSchema,
+    request_id: emptyToUndefined(uuidSchema),
+    client_id: emptyToUndefined(uuidSchema),
+    client_name: z
+      .string({ error: "Nama klien wajib diisi." })
+      .trim()
+      .min(2, "Nama klien minimal 2 karakter.")
+      .max(120, "Nama klien maksimal 120 karakter."),
+    client_phone: emptyToUndefined(phoneSchema),
+    scheduled_at: futureDateTimeSchema,
+    duration_min: z
+      .number({ error: "Durasi harus berupa angka." })
+      .int("Durasi harus bilangan bulat.")
+      .min(15, "Durasi minimal 15 menit.")
+      .max(480, "Durasi maksimal 480 menit (8 jam).")
+      .default(60),
+    type: z.enum(["lapangan", "virtual"], { error: "Tipe harus 'lapangan' atau 'virtual'." }).default("lapangan"),
+    status: z
+      .enum(["scheduled", "completed", "cancelled", "no_show"], {
+        error: "Status tidak valid.",
+      })
+      .default("scheduled"),
+    location_note: emptyToUndefined(z.string().max(500, "Catatan lokasi maksimal 500 karakter.")),
+    meeting_url: emptyToUndefined(z.string().max(300, "URL meeting maksimal 300 karakter.")),
+    notes: emptyToUndefined(z.string().max(2000, "Catatan maksimal 2000 karakter.")),
+  })
+  .refine(
+    (v) => v.type !== "virtual" || (v.meeting_url && v.meeting_url.length > 0),
+    { error: "URL meeting wajib diisi untuk survei virtual.", path: ["meeting_url"] }
+  );
+
+// --- /api/surveys/[id] (PATCH, agen ke atas) ---
+//
+// Pembaruan jadwal survei. Bila `scheduled_at` diubah, route akan mengosongkan
+// `reminder_sent_at` supaya pengingat terkirim lagi di waktu yang baru.
+export const surveyUpdateSchema = z
+  .object({
+    scheduled_at: futureDateTimeSchema.optional(),
+    duration_min: z
+      .number({ error: "Durasi harus berupa angka." })
+      .int("Durasi harus bilangan bulat.")
+      .min(15, "Durasi minimal 15 menit.")
+      .max(480, "Durasi maksimal 480 menit (8 jam).")
+      .optional(),
+    type: z.enum(["lapangan", "virtual"], { error: "Tipe harus 'lapangan' atau 'virtual'." }).optional(),
+    status: z
+      .enum(["scheduled", "completed", "cancelled", "no_show"], {
+        error: "Status tidak valid.",
+      })
+      .optional(),
+    location_note: emptyToUndefined(z.string().max(500, "Catatan lokasi maksimal 500 karakter.")),
+    meeting_url: emptyToUndefined(z.string().max(300, "URL meeting maksimal 300 karakter.")),
+    notes: emptyToUndefined(z.string().max(2000, "Catatan maksimal 2000 karakter.")),
+  })
+  .refine(
+    (v) => {
+      // Hanya periksa bila `type` diubah menjadi 'virtual'; bila `type` tidak
+      // dikirim (undefined), biarkan saja — nilai lama di basis data tetap berlaku.
+      if (v.type === "virtual") {
+        return v.meeting_url && v.meeting_url.length > 0;
+      }
+      return true;
+    },
+    { error: "URL meeting wajib diisi untuk survei virtual.", path: ["meeting_url"] }
+  );

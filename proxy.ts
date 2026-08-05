@@ -23,9 +23,20 @@ const AUTH_PAGES = ["/login", "/register", "/forgot-password"];
  * Jadi URL nyatanya "/crm", bukan "/dashboard/crm". Inilah sumber celah pada
  * versi sebelumnya: seluruh pencocokan path meleset sehingga tidak ada satu pun
  * halaman internal yang benar-benar terkunci.
+ *
+ * TIGA RUTE SENGAJA TIDAK ADA DI SINI
+ * ===================================
+ * `/dashboard`, `/properties`, dan `/kpr-calculator` terbuka untuk tamu — itu
+ * etalase publiknya. Dashboard punya banner "Selamat Datang" beserta tombol
+ * Masuk/Daftar khusus tamu (dashboard/page.tsx:441), dan tombol "Jelajahi
+ * Dashboard (Mode Tamu)" di halaman login (login/page.tsx:301) mengarah ke
+ * sana. Sempat ikut terkunci saat berkas ini menggantikan middleware.ts:
+ * tamu terlempar ke /login, menekan tombol itu, dan terlempar kembali.
+ *
+ * Yang membatasi tamu bukan rutenya melainkan isinya — hubungi agen, ajukan
+ * survei, dan seluruh menu CRM tetap menuntut akun.
  */
 const PROTECTED_SECTIONS = [
-  "/dashboard",
   "/crm",
   "/admin",
   "/reports",
@@ -35,7 +46,6 @@ const PROTECTED_SECTIONS = [
   "/notifications",
   "/profile",
   "/settings",
-  "/kpr-calculator",
 ];
 
 function isAuthPage(path: string): boolean {
@@ -141,8 +151,10 @@ export const config = {
     "/login",
     "/register/:path*",
     "/forgot-password",
-    // Seluruh halaman internal (URL tanpa awalan /dashboard karena route group)
-    "/dashboard/:path*",
+    // Halaman internal yang wajib login (URL tanpa awalan /dashboard karena
+    // route group). Rute tamu — /dashboard, /properties, /kpr-calculator —
+    // sengaja tidak didaftarkan: tanpa entri di sini proxy tidak dijalankan
+    // sama sekali, jadi tamu tidak menanggung satu pun panggilan getUser().
     "/crm/:path*",
     "/admin/:path*",
     "/reports/:path*",
@@ -152,6 +164,5 @@ export const config = {
     "/notifications/:path*",
     "/profile/:path*",
     "/settings/:path*",
-    "/kpr-calculator/:path*",
   ],
 };

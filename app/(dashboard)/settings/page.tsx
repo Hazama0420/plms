@@ -51,6 +51,7 @@ interface UserPreferences {
   property_updates: boolean;
   lead_alerts: boolean;
   reminder_alerts: boolean;
+  survey_alerts: boolean;
   compact_view: boolean;
   currency: string;
   timezone: string;
@@ -238,6 +239,7 @@ export default function SettingsPage() {
     property_updates: true,
     lead_alerts: true,
     reminder_alerts: true,
+    survey_alerts: true,
     compact_view: false,
     currency: "IDR",
     timezone: "Asia/Jakarta",
@@ -382,6 +384,7 @@ export default function SettingsPage() {
             property_updates: data.preferences.property_updates ?? true,
             lead_alerts: data.preferences.lead_alerts ?? true,
             reminder_alerts: data.preferences.reminder_alerts ?? true,
+            survey_alerts: data.preferences.survey_alerts ?? true,
             compact_view: data.preferences.compact_view ?? false,
             currency: data.preferences.currency || "IDR",
             timezone: data.preferences.timezone || "Asia/Jakarta",

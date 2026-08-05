@@ -141,18 +141,6 @@ export function StepPrice({ formData, updateFormData, nextStep, prevStep }: Step
           Harga Bisa Nego
         </Label>
       </div>
-
-      <div className="flex justify-between pt-4">
-        <Button variant="outline" onClick={prevStep}>
-          ← Kembali
-        </Button>
-        <Button
-          onClick={nextStep}
-          className="gap-2 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
-        >
-          Lanjut ke Lokasi →
-        </Button>
-      </div>
     </div>
   );
 }

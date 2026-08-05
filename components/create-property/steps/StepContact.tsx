@@ -221,18 +221,6 @@ export function StepContact({ formData, updateFormData, nextStep, prevStep }: St
           />
         </div>
       </div>
-
-      <div className="flex justify-between pt-4 border-t">
-        <Button variant="outline" onClick={prevStep} className="text-xs h-9 cursor-pointer">
-          ← Kembali
-        </Button>
-        <Button
-          onClick={nextStep}
-          className="gap-2 text-xs h-9 bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20 cursor-pointer"
-        >
-          Preview & Publish →
-        </Button>
-      </div>
     </div>
   );
 }

@@ -202,7 +202,7 @@ export interface AdvancedFilter {
   priceMin?: number | null;
   priceMax?: number | null;
 
-  // Spesifikasi
+  // Spesifikasi — diperlakukan sebagai batas minimum ("3+"), bukan sama dengan.
   bedroom?: number | null;
   bathroom?: number | null;
 
@@ -216,6 +216,13 @@ export interface AdvancedFilter {
   city_id?: string | null;
   property_type?: string | null;
 
+  /** Nama provinsi (pencarian sebagian, tidak peka huruf besar/kecil). */
+  province_name?: string | null;
+  /** Nama kota/kabupaten (pencarian sebagian, tidak peka huruf besar/kecil). */
+  city_name?: string | null;
+  /** Nama kecamatan (pencarian sebagian, tidak peka huruf besar/kecil). */
+  district_name?: string | null;
+
   // Lainnya
   year_built?: number | null;
   certificate?: string | null;
@@ -228,12 +235,22 @@ export interface AdvancedFilter {
 
 export interface PropertyFilter {
   search?: string;
-  status?: PropertyStatus | "all";
-  listing_type?: ListingType | "all";
+  /** Boleh satu status atau beberapa sekaligus (mis. publik: published + available). */
+  status?: PropertyStatus | "all" | string[];
+  listing_type?: ListingType | "all" | string;
   property_type?: string;
   page?: number;
   limit?: number;
-  sort_by?: "created_at" | "title" | "listing_code" | "updated_at";
+  /**
+   * "price" mengurutkan lewat tabel `property_price`. PostgREST hanya bisa
+   * mengurutkan induk berdasarkan kolom relasi bila relasinya di-join `!inner`,
+   * dan itu ditangani otomatis di property.service.ts.
+   */
+  sort_by?: "created_at" | "title" | "listing_code" | "updated_at" | "price";
   sort_order?: "asc" | "desc";
+  /** Batasi ke properti yang dibuat oleh atau ditugaskan ke user ini. */
+  owner_id?: string | null;
+  /** Hanya properti bertanda unggulan. */
+  is_featured?: boolean | null;
   advanced?: AdvancedFilter;
 }

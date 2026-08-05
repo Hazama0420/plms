@@ -1,7 +1,7 @@
 // app/(dashboard)/dashboard/page.tsx
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -33,6 +33,7 @@ import {
 } from "lucide-react";
 
 import { supabase } from "@/lib/supabase/client";
+import { formatLocationShort } from "@/lib/property-address";
 import { dashboardService, type DashboardStats } from "@/services/dashboard.service";
 import { DashboardPropertySearch } from "@/components/dashboard/DashboardPropertySearch";
 import { WatermarkedImage } from "@/components/ui/WatermarkedImage";
@@ -137,15 +138,7 @@ const formatPropertyItem = (p: any): PropertyItem => {
       null;
   }
 
-  let locationText = p.location || "";
-  let district = addrObj?.district_name || addrObj?.district || "";
-  let city = addrObj?.city_name || addrObj?.city || addrObj?.province_name || "";
-  if (district || city) {
-    locationText = `${district ? district + ", " : ""}${city}`;
-  } else if (addrObj?.address) {
-    locationText = addrObj.address;
-  }
-  if (!locationText) locationText = "Lokasi Terverifikasi";
+  let locationText = formatLocationShort(addrObj) || p.location || "Lokasi Terverifikasi";
 
   const bedroom = specObj?.bedroom ?? specObj?.bedrooms ?? p.bedrooms ?? p.bedroom ?? 0;
   const bathroom = specObj?.bathroom ?? specObj?.bathrooms ?? p.bathrooms ?? p.bathroom ?? 0;
@@ -504,7 +497,11 @@ export default function DashboardPage() {
           </div>
 
           <div className="pt-0.5 w-full max-w-full sm:max-w-xl">
-            <DashboardPropertySearch />
+            {/* Suspense wajib: komponen ini membaca useSearchParams(), dan tanpa
+                batas Suspense Next.js menggagalkan prerender halaman ini. */}
+            <Suspense fallback={<div className="h-14 rounded-2xl bg-white/10 animate-pulse" />}>
+              <DashboardPropertySearch />
+            </Suspense>
           </div>
         </div>
       </section>

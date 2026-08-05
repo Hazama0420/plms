@@ -4,6 +4,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
+import { formatLocationShort } from "@/lib/property-address";
 import { cn } from "@/lib/utils";
 import {
   Heart,
@@ -95,8 +96,14 @@ export default function PropertyCard({ property, onRefetch }: PropertyCardProps)
         return;
       }
       if (action === "publish") {
-        await propertyService.updateStatus(property.id, "published");
-        toast.success("Properti dipublikasikan");
+        const result = await propertyService.updateStatus(property.id, "published");
+        // Server menurunkan permintaan ini menjadi draf bila listing belum punya
+        // agen penanggung jawab — pesannya harus mengikuti apa yang tersimpan.
+        if (result.downgraded) {
+          toast.warning("Listing disimpan sebagai draf", { description: result.message || undefined });
+        } else {
+          toast.success("Properti dipublikasikan");
+        }
         onRefetch();
         return;
       }
@@ -229,7 +236,7 @@ export default function PropertyCard({ property, onRefetch }: PropertyCardProps)
           <div className="flex items-start gap-1 mt-0.5 text-xs text-slate-500 dark:text-slate-400">
             <MapPin className="h-3 w-3 flex-shrink-0 mt-0.5" />
             <span className="line-clamp-1">
-              {property.address?.address || "Lokasi belum diisi"}
+              {formatLocationShort(property.address) || "Lokasi belum diisi"}
             </span>
           </div>
         </div>

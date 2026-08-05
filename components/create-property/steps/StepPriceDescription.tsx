@@ -573,28 +573,6 @@ export function StepPriceDescription({
           ) : null}
         </DialogContent>
       </Dialog>
-
-      {/* FOOTER NAVIGASI WIZARD */}
-      <div className="flex items-center justify-between pt-4 border-t">
-        <Button
-          type="button"
-          variant="outline"
-          onClick={prevStep}
-          className="gap-2 text-xs h-9 border-slate-300 dark:border-slate-700"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span>Kembali</span>
-        </Button>
-
-        <Button
-          type="button"
-          onClick={nextStep}
-          className="gap-2 text-xs h-9 bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20 font-semibold"
-        >
-          <span>Lanjut ke Informasi Pemilik & Kontak</span>
-          <ArrowRight className="w-4 h-4" />
-        </Button>
-      </div>
     </div>
   );
 }

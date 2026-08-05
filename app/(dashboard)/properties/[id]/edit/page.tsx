@@ -206,31 +206,12 @@ export default function EditPropertyPage({ params }: EditPropertyPageProps) {
     const distId = addr.district_id || data.district_id || "";
     const villId = addr.village_id || data.village_id || "";
 
+    // Nama wilayah dibaca langsung dari `property_address`. Empat query lookup
+    // ke tabel master (provinces/cities/districts/villages) tidak lagi diperlukan.
     let provName = addr.province_name || addr.provinces?.name || data.province_name || data.provinces?.name || "";
     let cityName = addr.city_name || addr.cities?.name || data.city_name || data.cities?.name || "";
     let distName = addr.district_name || addr.districts?.name || data.district_name || data.districts?.name || "";
     let villName = addr.village_name || addr.villages?.name || data.village_name || data.villages?.name || "";
-
-    try {
-      if (provId && !provName) {
-        const { data: p } = await supabase.from("provinces").select("name").eq("id", provId).maybeSingle();
-        if (p?.name) provName = p.name;
-      }
-      if (cityId && !cityName) {
-        const { data: c } = await supabase.from("cities").select("name").eq("id", cityId).maybeSingle();
-        if (c?.name) cityName = c.name;
-      }
-      if (distId && !distName) {
-        const { data: d } = await supabase.from("districts").select("name").eq("id", distId).maybeSingle();
-        if (d?.name) distName = d.name;
-      }
-      if (villId && !villName) {
-        const { data: v } = await supabase.from("villages").select("name").eq("id", villId).maybeSingle();
-        if (v?.name) villName = v.name;
-      }
-    } catch (err) {
-      console.warn("Gagal auto-fetch nama lokasi:", err);
-    }
 
     return {
       title: data.title || "",

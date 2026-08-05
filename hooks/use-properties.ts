@@ -1,28 +1,10 @@
 // hooks/use-properties.ts
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import propertyService, { type PropertyFilter } from "@/services/property.service";
 import { supabase } from "@/lib/supabase/client";
-
-// ============================================================
-// TIPE LOKAL
-// ============================================================
-interface AdvancedFilter {
-  priceMin?: number | null;
-  priceMax?: number | null;
-  landAreaMin?: number | null;
-  landAreaMax?: number | null;
-  buildingAreaMin?: number | null;
-  buildingAreaMax?: number | null;
-  bedroom?: number | null;
-  bathroom?: number | null;
-  city_id?: string | null;
-  property_type?: string | null;
-  year_built?: number | null;
-  certificate?: string | null;
-  furnishing?: string | null;
-}
+import type { AdvancedFilter } from "@/types/property.types";
 
 type Property = any;
 
@@ -39,6 +21,12 @@ const DEFAULT_FILTERS: PropertyFilter = {
 };
 
 export function useProperties(initialFilters: PropertyFilter = {}) {
+  // Filter dari pemanggil ikut berubah saat URL berubah. Dibandingkan lewat
+  // bentuk JSON-nya, bukan identitas objek, supaya objek baru yang isinya sama
+  // tidak memicu pengambilan ulang setiap render.
+  const incoming = JSON.stringify(initialFilters);
+  const lastIncoming = useRef(incoming);
+
   const [filters, setFilters] = useState<PropertyFilter>({
     ...DEFAULT_FILTERS,
     ...initialFilters,
@@ -50,29 +38,38 @@ export function useProperties(initialFilters: PropertyFilter = {}) {
   const [totalItems, setTotalItems] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
 
+  // ===== IKUTI PERUBAHAN FILTER DARI PEMANGGIL =====
+  useEffect(() => {
+    if (lastIncoming.current === incoming) return;
+    lastIncoming.current = incoming;
+    // Kembali ke halaman 1: hasil filter yang baru hampir pasti punya jumlah
+    // halaman berbeda, dan bertahan di halaman 5 akan tampak kosong.
+    setFilters({ ...DEFAULT_FILTERS, ...(JSON.parse(incoming) as PropertyFilter), page: 1 });
+  }, [incoming]);
+
   // 🔹 DETEKSI ROLE USER SECARA OTOMATIS UNTUK KEAMANAN DATA VIEWER
   useEffect(() => {
     async function checkUserRoleAndAdjustFilters() {
       try {
         const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          const { data: profile } = await supabase
-            .from("users")
-            .select("role")
-            .eq("id", user.id)
-            .maybeSingle();
+        if (!user) return;
 
-          const role = (profile?.role || user.user_metadata?.role || "").toLowerCase();
-          
-          // Jika yang login adalah VIEWER, kunci status default hanya "published" / "available"
-          if (role === "viewer") {
-            setFilters((prev) => {
-              if (prev.status === "all" || !prev.status) {
-                return { ...prev, status: "published" };
-              }
-              return prev;
-            });
-          }
+        const { data: profile } = await supabase
+          .from("users")
+          .select("role")
+          .eq("id", user.id)
+          .maybeSingle();
+
+        const role = (profile?.role || user.user_metadata?.role || "").toLowerCase();
+
+        // Jika yang login adalah VIEWER, kunci status default hanya "published"
+        if (role === "viewer") {
+          setFilters((prev) => {
+            if (prev.status === "all" || !prev.status) {
+              return { ...prev, status: "published" };
+            }
+            return prev;
+          });
         }
       } catch (err) {
         console.error("Gagal mendeteksi role di useProperties:", err);
@@ -91,15 +88,16 @@ export function useProperties(initialFilters: PropertyFilter = {}) {
 
   // ===== CHECK IF ANY FILTER IS ACTIVE =====
   const hasActiveFilters = useMemo(() => {
-    const { search, status, listing_type, advanced } = filters;
+    const { search, status, listing_type, property_type, advanced } = filters;
     const hasBasicFilters =
       (search && search.trim() !== "") ||
-      (status && status !== "all") ||
-      (listing_type && listing_type !== "all");
+      (typeof status === "string" && status !== "all") ||
+      (listing_type && listing_type !== "all") ||
+      (property_type && property_type !== "all");
     const hasAdvancedFilters = Object.values(advanced || {}).some(
       (v) => v !== null && v !== undefined && v !== "" && v !== 0
     );
-    return hasBasicFilters || hasAdvancedFilters;
+    return Boolean(hasBasicFilters || hasAdvancedFilters);
   }, [filters]);
 
   // ===== FETCH PROPERTIES =====
@@ -150,7 +148,7 @@ export function useProperties(initialFilters: PropertyFilter = {}) {
 
   // ===== GO TO SPECIFIC PAGE =====
   const goToPage = useCallback((page: number) => {
-    const targetPage = Math.max(1, Math.min(page, totalPages));
+    const targetPage = Math.max(1, Math.min(page, totalPages || 1));
     if (targetPage !== filters.page) {
       setFilters((prev: PropertyFilter) => ({ ...prev, page: targetPage }));
     }
@@ -195,6 +193,7 @@ export function useProperties(initialFilters: PropertyFilter = {}) {
     totalItems,
     totalPages,
     filters,
+    page: filters.page ?? 1,
     activeFilterCount,
     hasActiveFilters,
     goToPage,

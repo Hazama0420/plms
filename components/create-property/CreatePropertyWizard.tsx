@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
-import { Save, Sparkles, ArrowLeft, ArrowRight, CheckCircle2 } from "lucide-react";
+import { Save, ArrowLeft, ArrowRight, CheckCircle2 } from "lucide-react";
 
 import { SidebarStepper } from "./SidebarStepper";
 import { PropertyScoreCard } from "./PropertyScoreCard";
@@ -18,6 +18,7 @@ import { StepReview } from "./steps/StepReview";
 
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { hasRegion } from "@/lib/property-address";
 
 // STEP DEFINITION
 export const steps = [
@@ -73,11 +74,11 @@ const defaultFormData = {
   selling_point: "",
 
   // Location
-  country_id: "",
-  province_id: "",
-  city_id: "",
-  district_id: "",
-  village_id: "",
+  region_id: null as number | null,
+  province_name: "",
+  city_name: "",
+  district_name: "",
+  village_name: "",
   address: "",
   postal_code: "",
   latitude: "",
@@ -129,7 +130,9 @@ export function CreatePropertyWizard({
     if (data.listing_type) total += 5;
     if (data.property_status) total += 5;
     if (data.selling_price || data.rental_price) total += 10;
-    if (data.address) total += 10;
+    // Yang menandai lokasi lengkap adalah wilayah hasil pencarian, bukan nama
+    // jalan — nama jalan sekarang opsional.
+    if (hasRegion(data)) total += 10;
     if (Array.isArray(data.photos) && data.photos.length >= 3) total += 20;
     else if (Array.isArray(data.photos) && data.photos.length > 0) total += 10;
     if (data.description && data.description.length > 50) total += 15;
@@ -185,6 +188,8 @@ export function CreatePropertyWizard({
   const stepProgressPercentage = useMemo(() => {
     return Math.round(((currentStep + 1) / steps.length) * 100);
   }, [currentStep]);
+
+  const isLastStep = currentStep === steps.length - 1;
 
   // RENDER ACTIVE STEP
   const renderStep = () => {
@@ -249,13 +254,20 @@ export function CreatePropertyWizard({
 
       {/* 📱 MOBILE STEP PROGRESS BAR (KHUSUS HP) */}
       <div className="lg:hidden bg-card border rounded-2xl p-3.5 shadow-xs space-y-2">
-        <div className="flex items-center justify-between text-xs font-semibold">
-          <span className="text-emerald-600 font-bold flex items-center gap-1.5">
-            <CheckCircle2 className="w-4 h-4" /> Langkah {currentStep + 1} dari {steps.length}
+        <div className="flex items-center justify-between gap-2 text-xs font-semibold">
+          <span className="text-emerald-600 font-bold flex items-center gap-1.5 shrink-0">
+            <CheckCircle2 className="w-4 h-4" /> Langkah {currentStep + 1}/{steps.length}
           </span>
-          <span className="text-muted-foreground font-mono">{steps[currentStep].label}</span>
+          <span className="text-foreground truncate text-right">{steps[currentStep].label}</span>
         </div>
         <Progress value={stepProgressPercentage} className="h-2 bg-muted" />
+        {/* Langkah berikutnya ditampilkan agar terlihat apa yang menanti setelah
+            menekan "Lanjutkan" — di HP daftar langkah samping tidak tampak. */}
+        {!isLastStep && (
+          <p className="text-[11px] text-muted-foreground truncate">
+            Berikutnya: {steps[currentStep + 1].label}
+          </p>
+        )}
       </div>
 
       {/* 💻 DESKTOP & MOBILE GRID LAYOUT */}
@@ -287,14 +299,16 @@ export function CreatePropertyWizard({
               </motion.div>
             </AnimatePresence>
 
-            {/* NAVIGASI BOTTOM ACTION BUTTONS */}
-            <div className="mt-8 sm:mt-12 pt-6 border-t border-border/80 flex flex-col sm:flex-row justify-between items-center gap-3 sm:gap-4">
+            {/* NAVIGASI BOTTOM ACTION BUTTONS
+                Sticky di HP supaya "Lanjutkan" selalu terjangkau tanpa harus
+                menggulir sampai dasar formulir yang panjang. */}
+            <div className="sticky bottom-0 z-20 -mx-4 sm:mx-0 mt-8 sm:mt-12 px-4 sm:px-0 py-3 sm:py-0 sm:pt-6 border-t border-border/80 bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80 sm:bg-transparent sm:backdrop-blur-none flex flex-col sm:flex-row justify-between items-center gap-2.5 sm:gap-4">
               <Button
                 type="button"
                 variant="outline"
                 onClick={prevStep}
                 disabled={currentStep === 0}
-                className="w-full sm:w-auto text-xs h-10 px-5 gap-2 order-2 sm:order-1 font-medium"
+                className="w-full sm:w-auto text-xs h-11 sm:h-10 px-5 gap-2 order-2 sm:order-1 font-medium"
               >
                 <ArrowLeft className="h-4 w-4" /> Langkah Sebelumnya
               </Button>
@@ -305,29 +319,23 @@ export function CreatePropertyWizard({
                   variant="secondary"
                   onClick={handleSaveDraft}
                   disabled={isSavingDraft}
-                  className="w-full sm:w-auto text-xs h-10 px-4 gap-2 border shadow-2xs"
+                  className="w-full sm:w-auto text-xs h-11 sm:h-10 px-4 gap-2 border shadow-2xs"
                 >
                   <Save className="h-4 w-4 text-muted-foreground" />
                   {isSavingDraft ? "Menyimpan..." : "Simpan Draft"}
                 </Button>
 
-                <Button
-                  type="button"
-                  onClick={nextStep}
-                  disabled={currentStep === steps.length - 1}
-                  className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20 text-xs h-10 gap-2 px-7 font-bold tracking-wide"
-                >
-                  {currentStep === steps.length - 1 ? (
-                    <>
-                      <Sparkles className="h-4 w-4" />
-                      {mode === "edit" ? "Update Properti" : "Publikasikan Properti"}
-                    </>
-                  ) : (
-                    <>
-                      Lanjutkan <ArrowRight className="h-4 w-4" />
-                    </>
-                  )}
-                </Button>
+                {/* Di langkah terakhir tombol ini disembunyikan: StepReview sudah
+                    punya tombol "Publikasikan" sendiri yang memicu handlePublish. */}
+                {!isLastStep && (
+                  <Button
+                    type="button"
+                    onClick={nextStep}
+                    className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20 text-xs h-11 sm:h-10 gap-2 px-7 font-bold tracking-wide"
+                  >
+                    Lanjutkan <ArrowRight className="h-4 w-4" />
+                  </Button>
+                )}
               </div>
             </div>
           </div>

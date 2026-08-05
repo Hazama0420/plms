@@ -137,14 +137,6 @@ const statusConfig: Record<string, { label: string; color: string; bg: string }>
   archived: { label: "Diarsip", color: "text-rose-600 dark:text-rose-400", bg: "bg-rose-500/10 border-rose-500/20" },
 };
 
-interface LocationData {
-  countries: { id: string | number; name: string }[];
-  provinces: { id: string | number; name: string }[];
-  cities: { id: string | number; name: string }[];
-  districts: { id: string | number; name: string }[];
-  villages: { id: string | number; name: string }[];
-}
-
 const DEFAULT_FALLBACK_IMAGE =
   "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=1600&q=80";
 
@@ -272,6 +264,9 @@ export default function PropertyDetailPage() {
 
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [userRole, setUserRole] = useState<string>("agent");
+  // Peran awalnya ditebak "agent", jadi tanpa penanda ini halaman akan sempat
+  // merender isi draf sebelum peran sebenarnya (tamu/viewer) selesai dibaca.
+  const [roleResolved, setRoleResolved] = useState(false);
 
   const [agents, setAgents] = useState<any[]>([]);
   const [fetchedAssignedAgent, setFetchedAssignedAgent] = useState<any>(null);
@@ -296,13 +291,9 @@ export default function PropertyDetailPage() {
   const [leadMessage, setLeadMessage] = useState("");
   const [submittingLead, setSubmittingLead] = useState(false);
 
-  const [locationData, setLocationData] = useState<LocationData>({
-    countries: [],
-    provinces: [],
-    cities: [],
-    districts: [],
-    villages: [],
-  });
+  // Nama wilayah kini tersimpan langsung di `property_address`
+  // (province_name/city_name/district_name/village_name), jadi halaman ini
+  // tidak lagi menarik isi penuh lima tabel master setiap kali dibuka.
 
   const getImagesList = (data: PropertyDetail | null): string[] => {
     if (!data) return [];
@@ -358,6 +349,8 @@ export default function PropertyDetailPage() {
       } catch (err) {
         console.error("Gagal mengambil peran pengguna:", err);
         setUserRole("guest");
+      } finally {
+        setRoleResolved(true);
       }
     };
     fetchUserAndRole();
@@ -395,31 +388,8 @@ export default function PropertyDetailPage() {
       }
     };
 
-    const fetchLocationData = async () => {
-      try {
-        const [countries, provinces, cities, districts, villages] = await Promise.all([
-          supabase.from("countries").select("id, name").order("name"),
-          supabase.from("provinces").select("id, name").order("name"),
-          supabase.from("cities").select("id, name").order("name"),
-          supabase.from("districts").select("id, name").order("name"),
-          supabase.from("villages").select("id, name").order("name"),
-        ]);
-
-        setLocationData({
-          countries: countries.data || [],
-          provinces: provinces.data || [],
-          cities: cities.data || [],
-          districts: districts.data || [],
-          villages: villages.data || [],
-        });
-      } catch (error) {
-        console.error("Gagal memuat master data wilayah:", error);
-      }
-    };
-
     if (propertyId) {
       fetchProperty();
-      fetchLocationData();
     }
   }, [propertyId]);
 
@@ -455,6 +425,19 @@ export default function PropertyDetailPage() {
 
   const isSuperAdmin = userRole === "super_admin" || userRole === "superadmin";
 
+  // Tamu dan viewer hanya boleh melihat listing yang sudah dipublikasikan.
+  // Draf, peninjauan, dan arsip diperlakukan seolah tidak ada — bukan "akses
+  // ditolak" — supaya keberadaan listing internal pun tidak ikut bocor.
+  //
+  // Catatan: ini penjagaan di sisi klien. Pertahanan sebenarnya adalah kebijakan
+  // RLS pada tabel `properties`, yang berada di luar repo ini.
+  const hiddenFromPublic = useMemo(() => {
+    if (!property) return false;
+    const role = userRole.toLowerCase();
+    if (role !== "guest" && role !== "viewer") return false;
+    return property.status !== "published";
+  }, [property, userRole]);
+
   const canEdit = useMemo(() => {
     if (!currentUser?.id || !property) return false;
     const role = userRole.toLowerCase();
@@ -474,30 +457,20 @@ export default function PropertyDetailPage() {
     return isCreator || isUserOwner || isAssigned;
   }, [currentUser, property, userRole]);
 
-  // Helper resolver nama lokasi serbaguna
-  const resolveLocationName = (
-    addressObj: any,
-    idKey: string,
-    nameKeys: string[],
-    lookupList: { id: string | number; name: string }[]
-  ): string => {
+  // Nama wilayah dibaca langsung dari `property_address`. Sebelumnya helper ini
+  // masih mencocokkan uuid ke lima tabel master; tabel itu sudah ditinggalkan
+  // dan pencocokannya justru mengosongkan lokasi.
+  const resolveLocationName = (addressObj: any, nameKeys: string[]): string => {
     if (!addressObj) return "";
-    
-    // 1. Cek jika nama sudah tersimpan langsung di objek address
-    for (const key of nameKeys) {
-      if (addressObj[key] && typeof addressObj[key] === "string" && addressObj[key].trim() !== "") {
-        return addressObj[key].trim();
-      }
-      if (addressObj[key] && typeof addressObj[key] === "object" && addressObj[key]?.name) {
-        return addressObj[key].name.trim();
-      }
-    }
 
-    // 2. Pencocokan UUID/ID ke Master Table (Districts / Cities / Provinces)
-    const targetId = addressObj[idKey];
-    if (targetId) {
-      const matched = lookupList.find((item) => String(item.id).toLowerCase() === String(targetId).toLowerCase());
-      if (matched) return matched.name.trim();
+    for (const key of nameKeys) {
+      const value = addressObj[key];
+      if (typeof value === "string" && value.trim() !== "") {
+        return value.trim();
+      }
+      if (value && typeof value === "object" && typeof value.name === "string") {
+        return value.name.trim();
+      }
     }
 
     return "";
@@ -510,9 +483,9 @@ export default function PropertyDetailPage() {
 
   // 📍 Ekstraksi Wilayah Lengkap: (Kecamatan, Kota/Kabupaten, Provinsi)
   const regionLocationText = useMemo(() => {
-    const dist = resolveLocationName(addressObj, "district_id", ["district_name", "district", "districts"], locationData.districts);
-    const city = resolveLocationName(addressObj, "city_id", ["city_name", "city", "cities"], locationData.cities);
-    const prov = resolveLocationName(addressObj, "province_id", ["province_name", "province", "provinces"], locationData.provinces);
+    const dist = resolveLocationName(addressObj, ["district_name", "district"]);
+    const city = resolveLocationName(addressObj, ["city_name", "city"]);
+    const prov = resolveLocationName(addressObj, ["province_name", "province"]);
 
     const parts = [dist, city, prov].filter((p) => p && p !== "-" && p.toLowerCase() !== "null");
 
@@ -525,7 +498,7 @@ export default function PropertyDetailPage() {
     }
 
     return "Lokasi Terverifikasi";
-  }, [addressObj, locationData, property?.location]);
+  }, [addressObj, property?.location]);
 
   const fullStreetAddress = useMemo(() => {
     const street = addressObj?.address || addressObj?.full_address || "";
@@ -580,15 +553,15 @@ export default function PropertyDetailPage() {
       if (!property?.id) return;
       setLoadingRelated(true);
       try {
-        const targetDistrictId = addressObj?.district_id;
-        const targetCityId = addressObj?.city_id;
-        const targetCityName = resolveLocationName(addressObj, "city_id", ["city_name", "city", "cities"], locationData.cities);
-        const targetDistrictName = resolveLocationName(addressObj, "district_id", ["district_name", "district", "districts"], locationData.districts);
+        // Pencocokan kini murni berbasis nama wilayah — `district_id`/`city_id`
+        // mengacu ke tabel master yang sudah tidak diisi lagi.
+        const targetCityName = resolveLocationName(addressObj, ["city_name", "city"]);
+        const targetDistrictName = resolveLocationName(addressObj, ["district_name", "district"]);
 
         let fetchedData: any[] = [];
 
         // STRATEGI 1: Filter Tipe Properti + KECAMATAN / KOTA PERSIS
-        if (targetDistrictId || targetCityId || targetCityName || targetDistrictName) {
+        if (targetCityName || targetDistrictName) {
           let query1 = supabase
             .from("properties")
             .select(`
@@ -608,14 +581,10 @@ export default function PropertyDetailPage() {
             query1 = query1.eq("property_type", property.property_type);
           }
 
-          if (targetDistrictId) {
-            query1 = query1.eq("address.district_id", targetDistrictId);
-          } else if (targetCityId) {
-            query1 = query1.eq("address.city_id", targetCityId);
+          if (targetDistrictName) {
+            query1 = query1.ilike("address.district_name", `%${targetDistrictName}%`);
           } else if (targetCityName) {
             query1 = query1.ilike("address.city_name", `%${targetCityName}%`);
-          } else if (targetDistrictName) {
-            query1 = query1.ilike("address.district_name", `%${targetDistrictName}%`);
           }
 
           const { data: data1 } = await query1.order("created_at", { ascending: false }).limit(8);
@@ -625,7 +594,7 @@ export default function PropertyDetailPage() {
         }
 
         // STRATEGI 2: Fallback jika level Kecamatan kosong, cari level KOTA SAMA
-        if (fetchedData.length === 0 && (targetCityId || targetCityName)) {
+        if (fetchedData.length === 0 && targetCityName) {
           let query2 = supabase
             .from("properties")
             .select(`
@@ -645,9 +614,7 @@ export default function PropertyDetailPage() {
             query2 = query2.eq("property_type", property.property_type);
           }
 
-          if (targetCityId) {
-            query2 = query2.eq("address.city_id", targetCityId);
-          } else if (targetCityName) {
+          if (targetCityName) {
             query2 = query2.ilike("address.city_name", `%${targetCityName}%`);
           }
 
@@ -721,7 +688,7 @@ export default function PropertyDetailPage() {
     }
 
     fetchRelated();
-  }, [property?.id, property?.property_type, addressObj, locationData]);
+  }, [property?.id, property?.property_type, addressObj]);
 
   // 🟢 PERBAIKAN AKURAT: Tombol "Lihat Semua" Kirim Param Kota & Kecamatan
   const handleSeeAllRelated = () => {
@@ -732,8 +699,8 @@ export default function PropertyDetailPage() {
       params.set("property_type", property.property_type);
     }
 
-    const cityName = resolveLocationName(addressObj, "city_id", ["city_name", "city", "cities"], locationData.cities);
-    const districtName = resolveLocationName(addressObj, "district_id", ["district_name", "district", "districts"], locationData.districts);
+    const cityName = resolveLocationName(addressObj, ["city_name", "city"]);
+    const districtName = resolveLocationName(addressObj, ["district_name", "district"]);
 
     if (cityName) {
       params.set("city_name", cityName);
@@ -747,6 +714,23 @@ export default function PropertyDetailPage() {
     router.push(`/properties?${params.toString()}`);
   };
 
+  // Inquiry pengunjung.
+  //
+  // Seluruh penulisan dilakukan lewat POST /api/leads, bukan insert langsung
+  // dari peramban. Alasannya bukan sekadar kerapian:
+  //
+  //  - Formulir ini terbuka untuk tamu yang belum login. Versi lama menulis
+  //    crm_contacts/crm_leads/crm_interests dari klien, lalu memanggil
+  //    /api/notifications/whatsapp — endpoint yang dijaga requireRole(agent…),
+  //    sehingga untuk pengunjung SELALU ditolak dan galatnya ditelan catch.
+  //    Hasilnya: tidak ada satu pun agen yang benar-benar diberi tahu,
+  //    padahal toast menyatakan sebaliknya.
+  //  - Route-nya punya rate limit per IP, memaksa status "new", dan menolak
+  //    `assigned_to` kiriman klien sehingga tamu tidak bisa menimpakan lead
+  //    ke agen mana pun.
+  //
+  // Tautan wa.me di akhir tetap dipertahankan: itu WhatsApp milik pengunjung
+  // sendiri, bukan pesan gateway berbayar.
   const handleLeadSubmit = async (e: React.FormEvent, targetPhone: string) => {
     e.preventDefault();
     if (!leadName || !leadPhone) {
@@ -756,98 +740,25 @@ export default function PropertyDetailPage() {
 
     setSubmittingLead(true);
     try {
-      const cleanLeadPhone = leadPhone.replace(/[^0-9]/g, "");
-      let contactId: string | null = null;
-      
-      const { data: existingContact } = await supabase
-        .from("crm_contacts")
-        .select("id")
-        .eq("phone", cleanLeadPhone)
-        .maybeSingle();
+      const res = await fetch("/api/leads", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: leadName,
+          phone: leadPhone,
+          property_id: property?.id ?? undefined,
+          source: "Website Property Detail",
+          notes:
+            leadMessage ||
+            `Tertarik dengan properti: ${property?.title} (${property?.listing_code})`,
+        }),
+      });
 
-      if (existingContact) {
-        contactId = existingContact.id;
-      } else {
-        const randomCode = `CNT-${Date.now().toString().slice(-6)}`;
-        const { data: newContact, error: contactErr } = await supabase
-          .from("crm_contacts")
-          .insert([
-            { 
-              contact_code: randomCode,
-              full_name: leadName, 
-              phone: cleanLeadPhone,
-              whatsapp: cleanLeadPhone 
-            }
-          ])
-          .select("id")
-          .single();
-        
-        if (contactErr) throw contactErr;
-        contactId = newContact.id;
-      }
+      const json = await res.json();
 
-      const targetAgentId = property?.assigned_to || property?.user_id || null;
-
-      const { data: newLead, error: leadErr } = await supabase
-        .from("crm_leads")
-        .insert([
-          {
-            contact_id: contactId,
-            property_id: property?.id || null,
-            assigned_to: targetAgentId,
-            source: "Website Property Detail",
-            status: "new",
-            interest_type: property?.title || property?.listing_type || "Properti Pilihan",
-            budget: calculatedPrice || null,
-            notes: leadMessage || `Tertarik dengan properti: ${property?.title} (${property?.listing_code})`,
-          },
-        ])
-        .select("id")
-        .single();
-
-      if (leadErr) throw leadErr;
-
-      if (property?.id && newLead?.id) {
-        await supabase.from("crm_interests").insert([
-          {
-            lead_id: newLead.id,
-            property_id: property.id,
-            priority: 1,
-            interest_level: "high",
-            notes: `Inquiry otomatis dari website: ${property.title}`,
-          },
-        ]);
-      }
-
-      if (targetAgentId) {
-        try {
-          await fetch("/api/notifications/whatsapp", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              agentId: targetAgentId,
-              leadName: leadName,
-              clientPhone: cleanLeadPhone || leadPhone,
-              propertyInterest: property?.title || "Properti Pilihan",
-            }),
-          });
-        } catch (waErr) {
-          console.error("Gagal pemicu WA otomatis:", waErr);
-        }
-      }
-
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        await supabase.from("crm_activities").insert([
-          {
-            lead_id: newLead.id,
-            user_id: user?.id || targetAgentId || null,
-            activity_type: "Lead Masuk (Website)",
-            notes: `Prospek baru "${leadName}" berminat pada properti "${property?.title || 'Properti'}"`
-          }
-        ]);
-      } catch (actErr) {
-        console.error("Gagal log aktivitas:", actErr);
+      if (!res.ok) {
+        // 429 datang dari rate limit per IP; pesannya sudah ramah pengguna.
+        throw new Error(json.error || "Gagal menyimpan data lead");
       }
 
       toast.success("Berhasil! Data Anda tercatat dan agen kami telah dinotifikasi.");
@@ -858,7 +769,7 @@ export default function PropertyDetailPage() {
       const text = encodeURIComponent(
         `Halo, saya *${leadName}* tertarik dengan properti *${property?.title}* (${property?.listing_code}). ${leadMessage ? `Pesan: "${leadMessage}"` : "Mohon informasi lebih lanjut."}`
       );
-      
+
       setShowLeadModal(false);
       setLeadName("");
       setLeadPhone("");
@@ -881,9 +792,17 @@ export default function PropertyDetailPage() {
 
     setAssignLoading(true);
     try {
-      const updated = await propertyService.updateAssignedTo(property.id, agentId || null);
-      setProperty(updated);
-      toast.success(agentId ? "Agen penanggung jawab berhasil ditugaskan." : "Penugasan agen dilepas.");
+      const result = await propertyService.updateAssignedTo(property.id, agentId || null);
+      setProperty(result.data);
+
+      if (result.drafted) {
+        toast.warning("Penugasan dilepas", {
+          description: result.message || "Listing dikembalikan ke draf karena tidak ada penanggung jawab.",
+          duration: 6000,
+        });
+      } else {
+        toast.success(agentId ? "Agen penanggung jawab berhasil ditugaskan." : "Penugasan agen dilepas.");
+      }
     } catch (error: any) {
       toast.error("Gagal menugaskan agen", { description: error.message });
     } finally {
@@ -900,8 +819,20 @@ export default function PropertyDetailPage() {
 
     setUpdating(true);
     try {
-      await propertyService.updateStatus(property.id, newStatus);
-      toast.success(`Status publikasi diubah menjadi ${statusConfig[newStatus]?.label || newStatus}`);
+      const result = await propertyService.updateStatus(property.id, newStatus);
+
+      // Server bisa menurunkan permintaan "Dipublikasikan" menjadi draf bila
+      // listingnya belum punya agen. Pesan sukses tidak boleh mengklaim status
+      // yang tidak jadi tersimpan.
+      if (result.downgraded) {
+        toast.warning("Listing disimpan sebagai draf", {
+          description: result.message || undefined,
+          duration: 6000,
+        });
+      } else {
+        toast.success(`Status publikasi diubah menjadi ${statusConfig[result.data.status]?.label || result.data.status}`);
+      }
+
       const updated = await propertyService.getById(property.id);
       setProperty(updated);
       setShowStatusDialog(false);
@@ -986,7 +917,9 @@ export default function PropertyDetailPage() {
     }
   };
 
-  if (loading) {
+  // `!roleResolved` ikut menahan render: tanpa itu, tamu sempat melihat kilasan
+  // isi listing draf selama peran masih dianggap "agent" (nilai awal state).
+  if (loading || !roleResolved) {
     return (
       <div className="space-y-6 max-w-7xl mx-auto px-3 sm:px-6 py-6">
         <Skeleton className="h-10 w-48 rounded-xl" />
@@ -1003,7 +936,7 @@ export default function PropertyDetailPage() {
     );
   }
 
-  if (!property) {
+  if (!property || hiddenFromPublic) {
     return (
       <div className="flex flex-col items-center justify-center h-[70vh] text-center max-w-md mx-auto space-y-4 p-4">
         <div className="w-16 h-16 rounded-2xl bg-muted/50 flex items-center justify-center text-2xl border border-border/60 shadow-xs">🏠</div>

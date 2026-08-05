@@ -4,6 +4,13 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
+import { NO_AGENT_MESSAGE, resolvePublishStatus } from "@/lib/property-publish";
+import {
+  NO_REGION_MESSAGE,
+  buildAddressPayload,
+  composeFullAddress,
+  hasRegion,
+} from "@/lib/property-address";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
@@ -20,7 +27,6 @@ import {
   Phone,
   Building2,
   Check,
-  ArrowLeft,
   Layers,
   ShieldCheck,
   ImageIcon,
@@ -56,12 +62,6 @@ export function StepReview({
     return `${baseSlug}-${timestamp}-${random}`;
   };
 
-  // Sanitasi ID
-  const cleanId = (val: any) => {
-    if (!val || val === "" || val === "null" || val === "undefined") return null;
-    return val;
-  };
-
   // Kalkulasi Skor Kualitas Listing (0 - 100%)
   const calculateQualityScore = () => {
     let score = 0;
@@ -91,7 +91,8 @@ export function StepReview({
 
       if (!formData.title) throw new Error("Judul wajib diisi.");
       if (!formData.property_type) throw new Error("Tipe properti wajib dipilih.");
-      if (!formData.address) throw new Error("Alamat wajib diisi.");
+      // Yang wajib adalah wilayah hasil pencarian `regions`; nama jalan opsional.
+      if (!hasRegion(formData)) throw new Error(NO_REGION_MESSAGE);
 
       const listingTypeMap: Record<string, string> = {
         jual: "jual",
@@ -99,17 +100,7 @@ export function StepReview({
       };
       const listingType = listingTypeMap[formData.listing_type] || "jual";
 
-      const addressPayload = {
-        address: typeof formData.address === "string" ? formData.address : formData.address?.address || "",
-        postal_code: formData.postal_code || formData.address?.postal_code || null,
-        latitude: formData.latitude && !isNaN(parseFloat(formData.latitude)) ? parseFloat(formData.latitude) : null,
-        longitude: formData.longitude && !isNaN(parseFloat(formData.longitude)) ? parseFloat(formData.longitude) : null,
-        country_id: cleanId(formData.country_id || formData.address?.country_id),
-        province_id: cleanId(formData.province_id || formData.address?.province_id),
-        city_id: cleanId(formData.city_id || formData.address?.city_id),
-        district_id: cleanId(formData.district_id || formData.address?.district_id),
-        village_id: cleanId(formData.village_id || formData.address?.village_id),
-      };
+      const addressPayload = buildAddressPayload(formData);
 
       const facilitiesPayload = Array.isArray(formData.facilities) ? formData.facilities : [];
 
@@ -191,16 +182,18 @@ export function StepReview({
         if (propertyError) throw new Error(`Gagal update properti: ${propertyError.message}`);
 
         // UPSERT ALAMAT
-        if (formData.address) {
-          await supabase.from("property_address").upsert(
-            { property_id: propertyId, ...addressPayload },
-            { onConflict: "property_id" }
-          );
-        }
+        // Selalu dijalankan: wilayah sudah divalidasi di atas, dan errornya
+        // sekarang dilempar — sebelumnya kegagalan di sini ditelan diam-diam
+        // sehingga publikasi tampak berhasil padahal alamatnya tidak tersimpan.
+        const { error: addressError } = await supabase.from("property_address").upsert(
+          { property_id: propertyId, ...addressPayload },
+          { onConflict: "property_id" }
+        );
+        if (addressError) throw new Error(`Gagal menyimpan alamat: ${addressError.message}`);
 
         // UPSERT HARGA
         if (formData.selling_price || formData.rental_price) {
-          await supabase.from("property_price").upsert(
+          const { error: priceError } = await supabase.from("property_price").upsert(
             {
               property_id: propertyId,
               selling_price: formData.selling_price ? parseFloat(formData.selling_price) : null,
@@ -211,10 +204,11 @@ export function StepReview({
             },
             { onConflict: "property_id" }
           );
+          if (priceError) throw new Error(`Gagal menyimpan harga: ${priceError.message}`);
         }
 
         // UPSERT SPESIFIKASI
-        await supabase.from("property_specifications").upsert(
+        const { error: specError } = await supabase.from("property_specifications").upsert(
           {
             property_id: propertyId,
             bedroom: formData.bedroom ? parseInt(formData.bedroom) : formData.bedrooms ? parseInt(formData.bedrooms) : null,
@@ -232,10 +226,11 @@ export function StepReview({
           },
           { onConflict: "property_id" }
         );
+        if (specError) throw new Error(`Gagal menyimpan spesifikasi: ${specError.message}`);
 
         // UPSERT LUAS TANAH
         if (formData.land_area) {
-          await supabase.from("property_land").upsert(
+          const { error: landError } = await supabase.from("property_land").upsert(
             {
               property_id: propertyId,
               land_area: parseFloat(formData.land_area),
@@ -245,11 +240,12 @@ export function StepReview({
             },
             { onConflict: "property_id" }
           );
+          if (landError) throw new Error(`Gagal menyimpan data tanah: ${landError.message}`);
         }
 
         // UPSERT BANGUNAN
         if (formData.building_area) {
-          await supabase.from("property_building").upsert(
+          const { error: buildingError } = await supabase.from("property_building").upsert(
             {
               property_id: propertyId,
               building_area: parseFloat(formData.building_area),
@@ -258,6 +254,7 @@ export function StepReview({
             },
             { onConflict: "property_id" }
           );
+          if (buildingError) throw new Error(`Gagal menyimpan data bangunan: ${buildingError.message}`);
         }
 
         // 🟢 FIX FOTO HILANG: DELETE HANYA DILAKUKAN JIKA PAYLOAD BARU VALID
@@ -311,6 +308,12 @@ export function StepReview({
       // ==========================================
       // MODE CREATE
       // ==========================================
+      // Setiap listing wajib punya agen penanggung jawab; pembuatnya dipakai
+      // sebagai penanggung jawab bawaan. Statusnya lalu ditentukan oleh aturan
+      // bersama di lib/property-publish.ts, bukan dipatok "published" di sini.
+      const assignedTo = formData.assigned_to || user.id;
+      const publish = resolvePublishStatus("published", assignedTo);
+
       const propertyPayload = {
         listing_code: formData.listing_code || `PRP-${Date.now()}`,
         title: formData.title,
@@ -318,15 +321,16 @@ export function StepReview({
         property_type: formData.property_type,
         listing_type: listingType,
         property_category: formData.property_status || formData.property_category || null,
-        status: "published",
+        status: publish.status,
         description: formData.description || null,
         selling_point: formData.selling_point || null,
         rental_period: formData.rental_period || null,
         facilities: facilitiesPayload,
         owner_id: ownerId,
         created_by: user.id,
-        assigned_to: formData.assigned_to || user.id,
-        published_at: new Date().toISOString(),
+        assigned_to: assignedTo,
+        // Hanya listing yang benar-benar terbit yang punya tanggal publikasi.
+        published_at: publish.downgraded ? null : new Date().toISOString(),
       };
 
       const { data: property, error: propertyError } = await supabase
@@ -340,16 +344,15 @@ export function StepReview({
       const newPropertyId = property.id;
 
       // UPSERT ALAMAT
-      if (formData.address) {
-        await supabase.from("property_address").upsert(
-          { property_id: newPropertyId, ...addressPayload },
-          { onConflict: "property_id" }
-        );
-      }
+      const { error: newAddressError } = await supabase.from("property_address").upsert(
+        { property_id: newPropertyId, ...addressPayload },
+        { onConflict: "property_id" }
+      );
+      if (newAddressError) throw new Error(`Gagal menyimpan alamat: ${newAddressError.message}`);
 
       // UPSERT HARGA
       if (formData.selling_price || formData.rental_price) {
-        await supabase.from("property_price").upsert(
+        const { error: newPriceError } = await supabase.from("property_price").upsert(
           {
             property_id: newPropertyId,
             selling_price: formData.selling_price ? parseFloat(formData.selling_price) : null,
@@ -360,10 +363,11 @@ export function StepReview({
           },
           { onConflict: "property_id" }
         );
+        if (newPriceError) throw new Error(`Gagal menyimpan harga: ${newPriceError.message}`);
       }
 
       // UPSERT SPESIFIKASI
-      await supabase.from("property_specifications").upsert(
+      const { error: newSpecError } = await supabase.from("property_specifications").upsert(
         {
           property_id: newPropertyId,
           bedroom: formData.bedroom ? parseInt(formData.bedroom) : formData.bedrooms ? parseInt(formData.bedrooms) : null,
@@ -381,10 +385,11 @@ export function StepReview({
         },
         { onConflict: "property_id" }
       );
+      if (newSpecError) throw new Error(`Gagal menyimpan spesifikasi: ${newSpecError.message}`);
 
       // UPSERT LUAS TANAH
       if (formData.land_area) {
-        await supabase.from("property_land").upsert(
+        const { error: newLandError } = await supabase.from("property_land").upsert(
           {
             property_id: newPropertyId,
             land_area: parseFloat(formData.land_area),
@@ -394,11 +399,12 @@ export function StepReview({
           },
           { onConflict: "property_id" }
         );
+        if (newLandError) throw new Error(`Gagal menyimpan data tanah: ${newLandError.message}`);
       }
 
       // UPSERT BANGUNAN
       if (formData.building_area) {
-        await supabase.from("property_building").upsert(
+        const { error: newBuildingError } = await supabase.from("property_building").upsert(
           {
             property_id: newPropertyId,
             building_area: parseFloat(formData.building_area),
@@ -407,6 +413,7 @@ export function StepReview({
           },
           { onConflict: "property_id" }
         );
+        if (newBuildingError) throw new Error(`Gagal menyimpan data bangunan: ${newBuildingError.message}`);
       }
 
       // SIMPAN MEDIA FOTO
@@ -431,7 +438,14 @@ export function StepReview({
         }
       }
 
-      toast.success("Properti berhasil dipublikasikan!", { duration: 4000 });
+      if (publish.downgraded) {
+        toast.warning("Properti tersimpan sebagai draf", {
+          description: NO_AGENT_MESSAGE,
+          duration: 6000,
+        });
+      } else {
+        toast.success("Properti berhasil dipublikasikan!", { duration: 4000 });
+      }
       setTimeout(() => router.push("/properties"), 1200);
     } catch (error: any) {
       console.error("Publish error:", error);
@@ -530,7 +544,7 @@ export function StepReview({
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 flex items-center gap-1 mt-0.5">
                   <MapPin className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-                  {typeof formData.address === "string" ? formData.address : formData.address?.address || "Alamat belum diisi"}
+                  {composeFullAddress(formData.address, formData) || "Wilayah belum dipilih"}
                 </p>
               </div>
 
@@ -647,24 +661,25 @@ export function StepReview({
         </div>
       </div>
 
-      {/* FOOTER NAVIGASI WIZARD */}
-      <div className="flex items-center justify-between pt-4 border-t">
-        <Button
-          type="button"
-          variant="outline"
-          onClick={prevStep}
-          disabled={publishing}
-          className="gap-2 text-xs h-9 border-slate-300 dark:border-slate-700 cursor-pointer"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span>Kembali</span>
-        </Button>
+      {/* Peringatan bila wilayah belum dipilih — publikasi akan ditolak. */}
+      {!hasRegion(formData) && (
+        <div className="flex items-start gap-2 rounded-xl border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/25 p-3">
+          <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-500 mt-0.5 shrink-0" />
+          <p className="text-xs text-amber-800 dark:text-amber-300">
+            {NO_REGION_MESSAGE} Kembali ke langkah <strong>Lokasi</strong> untuk memilihnya.
+          </p>
+        </div>
+      )}
 
+      {/* AKSI PUBLIKASI
+          Tombol "Kembali" tidak dipasang di sini — navigasi langkah sepenuhnya
+          milik wizard, supaya tidak muncul dua tombol yang sama. */}
+      <div className="pt-4 border-t">
         <Button
           type="button"
           onClick={handlePublish}
           disabled={publishing}
-          className="gap-2 text-xs h-9 bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20 font-bold px-6 cursor-pointer"
+          className="w-full sm:w-auto sm:ml-auto sm:flex gap-2 text-xs h-11 sm:h-9 bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20 font-bold px-6 cursor-pointer"
         >
           {publishing ? (
             <>

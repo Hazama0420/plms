@@ -1,22 +1,86 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerClientInstance } from "@/lib/supabase/server";
+import { requirePermission } from "@/lib/api-auth";
+import { propertyInsertSchema, validate } from "@/lib/validations";
+import { NO_AGENT_MESSAGE, resolvePublishStatus } from "@/lib/property-publish";
+import { NO_REGION_MESSAGE, buildAddressPayload, hasRegion } from "@/lib/property-address";
+
+/** `properties.slug` bersifat NOT NULL dan UNIQUE. */
+function generateUniqueSlug(title: string) {
+  const base = title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  const random = Math.random().toString(36).substring(2, 6);
+  return `${base || "properti"}-${Date.now().toString(36)}-${random}`;
+}
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const supabase = await createServerClientInstance();
+    // Membuat properti butuh izin kelola properti.
+    const auth = await requirePermission("manage_own_properties");
+    if (!auth.ok) return auth.response;
+
+    const raw = await request.json();
+
+    // Membatasi panjang teks bebas sebelum tersimpan (lib/validations.ts).
+    // Skema sengaja longgar: field untuk tabel alamat, harga, spesifikasi, dan
+    // media di bawah tetap dibaca langsung dari body.
+    const parsed = validate(propertyInsertSchema, raw);
+    if (!parsed.ok) return parsed.response;
+
+    // Dibaca dari `raw`, bukan `parsed.data`. Skema `.loose()` mengetik field
+    // tak terdaftar sebagai `unknown`, sehingga parseFloat/parseInt di bawah
+    // tidak akan lolos TypeScript. Validasi di atas tetap berjalan sebagai
+    // penjaga — field yang terdaftar sudah dipastikan bentuknya.
+    //
+    // Sengaja `any`, sama seperti hasil request.json() sebelumnya: dengan tipe
+    // yang lebih sempit, Array.isArray() akan menyempitkan body.photos dan
+    // membuat .filter(Boolean) di blok media gagal kompilasi.
+    const body = raw as any;
+    const { supabase, userId } = auth.ctx;
+
+    // Setiap listing wajib punya agen penanggung jawab. Sebelumnya kolom ini
+    // tidak pernah diisi di sini, sementara status default-nya "published" —
+    // artinya setiap listing lewat route ini lahir dalam keadaan terbit tanpa
+    // penanggung jawab. Pembuatnya dipakai sebagai penanggung jawab bawaan.
+    const assignedTo = body.assigned_to || userId;
+
+    // Bila entah bagaimana agennya tetap kosong, permintaan publikasi diturunkan
+    // menjadi draf alih-alih ditolak: datanya sudah dikirim pengguna dan tidak
+    // ada gunanya dibuang.
+    const publish = resolvePublishStatus(body.status || "published", assignedTo);
+
+    // Wilayah dari tabel `regions` adalah alamat resmi listing; nama jalan opsional.
+    if (!hasRegion(body)) {
+      return NextResponse.json(
+        { success: false, error: NO_REGION_MESSAGE },
+        { status: 400 }
+      );
+    }
 
     // 1. ISOLASI PAYLOAD UNTUK TABEL UTAMA 'properties'
+    // Kolom di sini harus persis mengikuti skema tabel. `co_broke`, `youtube_url`,
+    // dan `user_id` sebelumnya ikut dikirim padahal tidak ada di tabel, sementara
+    // `slug` yang NOT NULL UNIQUE justru terlewat — insert-nya selalu gagal.
+    const title =
+      body.title || `${body.property_type || "Properti"} ${body.listing_type || "Jual"}`;
+
     const propertyPayload = {
-      title: body.title || `${body.property_type || "Properti"} ${body.listing_type || "Jual"}`,
+      title,
+      slug: generateUniqueSlug(title),
       property_type: body.property_type || "rumah",
       listing_type: body.listing_type || "jual",
-      status: body.status || "published",
-      co_broke: Boolean(body.co_broke),
-      youtube_url: body.youtube_url || null,
+      property_category: body.property_status || body.property_category || null,
+      status: publish.status,
       listing_code: body.listing_code || `PR-${Date.now().toString().slice(-6)}`,
       description: body.description || "",
       selling_point: body.selling_point || "",
+      rental_period: body.rental_period || null,
+      facilities: Array.isArray(body.facilities) ? body.facilities : [],
+      assigned_to: assignedTo,
+      // Kepemilikan diambil dari sesi, bukan dari body, agar tidak bisa dipalsukan.
+      created_by: userId,
+      published_at: publish.downgraded ? null : new Date().toISOString(),
     };
 
     // Insert ke tabel master 'properties'
@@ -37,25 +101,25 @@ export async function POST(request: NextRequest) {
     const propertyId = property.id;
 
     // 2. SIMPAN ALAMAT KE TABEL 'property_address'
-    if (body.address || body.city_id || body.province_id) {
-      const addressPayload = {
-        property_id: propertyId,
-        address: body.address || "",
-        country_id: body.country_id || null,
-        province_id: body.province_id || null,
-        city_id: body.city_id || null,
-        district_id: body.district_id || null,
-        village_id: body.village_id || null,
-        postal_code: body.postal_code || null,
-        latitude: body.latitude ? parseFloat(body.latitude) : null,
-        longitude: body.longitude ? parseFloat(body.longitude) : null,
-      };
+    // Kegagalan di sini dikembalikan ke pemanggil, tidak lagi hanya dicatat di
+    // log server — itulah sebabnya alamat bisa hilang tanpa ada tanda apa pun.
+    const { error: addrError } = await supabase
+      .from("property_address")
+      .upsert(
+        { property_id: propertyId, ...buildAddressPayload(body) },
+        { onConflict: "property_id" }
+      );
 
-      const { error: addrError } = await supabase
-        .from("property_address")
-        .upsert(addressPayload, { onConflict: "property_id" });
-
-      if (addrError) console.error("Error UPSERT property_address:", addrError.message);
+    if (addrError) {
+      console.error("Error UPSERT property_address:", addrError.message);
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Properti tersimpan, tetapi alamat gagal disimpan: ${addrError.message}`,
+          data: property,
+        },
+        { status: 400 }
+      );
     }
 
     // 3. SIMPAN HARGA KE TABEL 'property_price'
@@ -150,7 +214,12 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json(
-      { success: true, message: "Properti berhasil dibuat", data: property },
+      {
+        success: true,
+        message: publish.downgraded ? NO_AGENT_MESSAGE : "Properti berhasil dibuat",
+        downgraded: publish.downgraded,
+        data: property,
+      },
       { status: 201 }
     );
   } catch (err: any) {

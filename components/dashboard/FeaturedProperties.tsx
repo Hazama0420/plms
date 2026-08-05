@@ -1,4 +1,3 @@
-// components/dashboard/FeaturedProperties.tsx
 "use client";
 
 import { useState, useEffect } from "react";
@@ -17,6 +16,7 @@ import {
   Globe,
 } from "lucide-react";
 
+import { formatLocationShort } from "@/lib/property-address";
 import { supabase } from "@/lib/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -30,8 +30,6 @@ interface PropertyItem {
   listing_type: string;
   property_type: string;
   status: string;
-  city_name?: string;
-  district_name?: string;
   address_text?: string;
   price?: number | null;
   bedroom?: number | string | null;
@@ -146,12 +144,7 @@ export function FeaturedProperties() {
                 null;
             }
 
-            let locationText = p.location || "";
-            let district = addrObj?.district_name || addrObj?.district || "";
-            let city = addrObj?.city_name || addrObj?.city || addrObj?.province_name || "";
-            if (!district && !city && addrObj?.address) {
-              locationText = addrObj.address;
-            }
+            const locationText = formatLocationShort(addrObj) || p.location || "";
 
             return {
               id: p.id,
@@ -161,8 +154,6 @@ export function FeaturedProperties() {
               listing_type: p.listing_type || "jual",
               property_type: p.property_type || "Rumah",
               status: p.status || "published",
-              city_name: city,
-              district_name: district,
               address_text: locationText,
               price: priceVal,
               bedroom: specObj?.bedroom ?? specObj?.bedrooms ?? p.bedrooms ?? p.bedroom ?? null,
@@ -296,9 +287,7 @@ export function FeaturedProperties() {
                       </h4>
                       <p className="text-[11px] text-muted-foreground flex items-center gap-1 mt-0.5 truncate">
                         <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
-                        {item.district_name || item.city_name
-                          ? `${item.district_name ? item.district_name + ", " : ""}${item.city_name}`
-                          : item.address_text || "Lokasi Properti"}
+                        {item.address_text || "Lokasi Properti"}
                       </p>
                     </div>
 

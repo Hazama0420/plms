@@ -4,8 +4,10 @@ import { useState, useEffect, useMemo, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 
+import { formatLocationShort } from "@/lib/property-address";
 import { supabase } from "@/lib/supabase/client";
 import { useProperties } from "@/hooks/use-properties";
+import type { AdvancedFilter, PropertyFilter } from "@/types/property.types";
 import { WatermarkedImage } from "@/components/ui/WatermarkedImage";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
@@ -47,6 +49,8 @@ import {
   Trash2,
   MoreVertical,
   Ruler,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 
 export interface PropertyItem {
@@ -74,6 +78,18 @@ export interface PropertyItem {
 
 const DEFAULT_FALLBACK_IMAGE =
   "https://images.unsplash.com/photo-1564013799919-ab600027ffc6?auto=format&fit=crop&w=800&q=80";
+
+// Label dan warna status listing, disamakan dengan `statusConfig` di halaman
+// detail properti. Hanya ditampilkan untuk staf: bagi tamu dan viewer semua
+// listing yang terlihat memang sudah "published", jadi badge-nya tidak berguna.
+const STATUS_BADGE: Record<string, { label: string; className: string }> = {
+  draft: { label: "Draf", className: "bg-slate-500/10 text-slate-600 dark:text-slate-300 border-slate-500/30" },
+  review: { label: "Peninjauan", className: "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30" },
+  published: { label: "Tayang", className: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30" },
+  sold: { label: "Terjual", className: "bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 border-indigo-500/30" },
+  rented: { label: "Tersewa", className: "bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/30" },
+  archived: { label: "Diarsip", className: "bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/30" },
+};
 
 const capitalizeWords = (str: string) => {
   if (!str) return "";
@@ -151,21 +167,7 @@ const mapPropertyItem = (
   const buildingArea = Number(buildingObj?.building_area ?? specObj?.building_area ?? p.building_area ?? p.building_size ?? 0);
 
   const addressObj = Array.isArray(p.address) ? p.address[0] : p.address;
-  let locationStr = "Lokasi Belum Dikonfigurasi";
-  if (addressObj) {
-    if (typeof addressObj === "string") {
-      locationStr = addressObj;
-    } else {
-      const parts = [
-        addressObj.address,
-        addressObj.district_name || addressObj.district,
-        addressObj.city_name || addressObj.city,
-      ].filter(Boolean);
-      locationStr = parts.length > 0 ? parts.join(", ") : "Lokasi Terverifikasi";
-    }
-  } else if (p.location) {
-    locationStr = p.location;
-  }
+  const locationStr = formatLocationShort(addressObj) || p.location || "Lokasi Belum Dikonfigurasi";
 
   const legalObj = Array.isArray(p.legalities) ? p.legalities[0] : p.legalities;
 
@@ -219,7 +221,7 @@ function PropertiesCatalogContent() {
   const searchParams = useSearchParams();
 
   // PARAMETER URL
-  const qParam = searchParams.get("q") || searchParams.get("search") || searchParams.get("location") || "";
+  const qParam = searchParams.get("q") || searchParams.get("search") || "";
   const listingTypeParam = searchParams.get("listing_type") || searchParams.get("transaction_type") || "all";
   const propertyTypeParam = searchParams.get("property_type") || searchParams.get("type") || searchParams.get("category") || "all";
   const viewParam = searchParams.get("view");
@@ -227,12 +229,20 @@ function PropertiesCatalogContent() {
   const isFeaturedParam = searchParams.get("featured") === "true" || searchParams.get("is_featured") === "true";
   const forYouParam = searchParams.get("for_you") === "true" || searchParams.get("forYou") === "true";
 
+  const provinceNameParam = searchParams.get("province_name") || "";
+  // `location` dikirim oleh pencarian di beranda dan isinya nama kota. Dulu
+  // nilai itu ditumpuk ke kata kunci `q` yang hanya mencocokkan judul dan kode
+  // listing, sehingga pencarian berdasarkan lokasi hampir selalu nihil.
+  const cityNameParam = searchParams.get("city_name") || searchParams.get("location") || "";
+
   const minPrice = searchParams.get("priceMin") || searchParams.get("minPrice") || "";
   const maxPrice = searchParams.get("priceMax") || searchParams.get("maxPrice") || "";
   const minBuildingArea = searchParams.get("buildingAreaMin") || "";
   const maxBuildingArea = searchParams.get("buildingAreaMax") || "";
   const minLandArea = searchParams.get("landAreaMin") || "";
   const maxLandArea = searchParams.get("landAreaMax") || "";
+  const bedroomParam = searchParams.get("bedroom") || "";
+  const bathroomParam = searchParams.get("bathroom") || "";
   const sortParam = searchParams.get("sort") || "";
 
   // STATE UTAMA & PREFERENSI VIEW MODE TERINTEGRASI
@@ -257,28 +267,54 @@ function PropertiesCatalogContent() {
   const isSuperAdmin = userRole === "super_admin" || userRole === "superadmin";
   const canCreateProperty = currentUser && !isGuestOrViewer;
 
+  // Setiap pencarian bersifat lintas-katalog: menyaring hanya portofolio
+  // sendiri akan membuat hasilnya terasa hilang.
+  const hasSearchIntent = useMemo(
+    () =>
+      Boolean(qParam) ||
+      Boolean(provinceNameParam) ||
+      Boolean(cityNameParam) ||
+      listingTypeParam !== "all" ||
+      propertyTypeParam !== "all" ||
+      Boolean(minPrice || maxPrice || minLandArea || maxLandArea || minBuildingArea || maxBuildingArea) ||
+      Boolean(bedroomParam || bathroomParam),
+    [
+      qParam,
+      provinceNameParam,
+      cityNameParam,
+      listingTypeParam,
+      propertyTypeParam,
+      minPrice,
+      maxPrice,
+      minLandArea,
+      maxLandArea,
+      minBuildingArea,
+      maxBuildingArea,
+      bedroomParam,
+      bathroomParam,
+    ]
+  );
+
   const defaultScope = useMemo(() => {
     if (
       viewParam === "global" ||
       scopeParam === "global" ||
       isFeaturedParam ||
       forYouParam ||
-      Boolean(qParam) ||
-      listingTypeParam !== "all" ||
-      propertyTypeParam !== "all"
+      hasSearchIntent
     ) {
       return "global";
     }
     return "my_properties";
-  }, [viewParam, scopeParam, isFeaturedParam, forYouParam, qParam, listingTypeParam, propertyTypeParam]);
+  }, [viewParam, scopeParam, isFeaturedParam, forYouParam, hasSearchIntent]);
 
   const [scopeMode, setScopeMode] = useState<"my_properties" | "global">(defaultScope);
 
   useEffect(() => {
-    if (viewParam === "global" || scopeParam === "global" || isFeaturedParam || forYouParam || Boolean(qParam)) {
+    if (viewParam === "global" || scopeParam === "global" || isFeaturedParam || forYouParam || hasSearchIntent) {
       setScopeMode("global");
     }
-  }, [viewParam, scopeParam, isFeaturedParam, forYouParam, qParam]);
+  }, [viewParam, scopeParam, isFeaturedParam, forYouParam, hasSearchIntent]);
 
   useEffect(() => {
     async function fetchUser() {
@@ -310,7 +346,115 @@ function PropertiesCatalogContent() {
     fetchUser();
   }, []);
 
-  const { data: rawProperties = [], loading, refetch } = useProperties();
+  // ============================================================
+  // FILTER QUERY — dikirim ke basis data, bukan disaring di peramban
+  // ============================================================
+  //
+  // Sebelumnya halaman ini mengambil 12 baris terbaru tanpa filter apa pun,
+  // lalu menyaringnya di sisi klien. Akibatnya hasil filter hanya diambil dari
+  // 12 properti itu: memilih "Rumah" atau mengisi kota kerap menghasilkan
+  // daftar kosong padahal datanya ada. Semua kriteria kini ikut ke query.
+  const queryFilters = useMemo<PropertyFilter>(() => {
+    const advanced: AdvancedFilter = {};
+
+    if (minPrice) advanced.priceMin = Number(minPrice);
+    if (maxPrice) advanced.priceMax = Number(maxPrice);
+    if (minLandArea) advanced.landAreaMin = Number(minLandArea);
+    if (maxLandArea) advanced.landAreaMax = Number(maxLandArea);
+    if (minBuildingArea) advanced.buildingAreaMin = Number(minBuildingArea);
+    if (maxBuildingArea) advanced.buildingAreaMax = Number(maxBuildingArea);
+    if (bedroomParam) advanced.bedroom = Number(bedroomParam);
+    if (bathroomParam) advanced.bathroom = Number(bathroomParam);
+    if (provinceNameParam) advanced.province_name = provinceNameParam;
+    if (cityNameParam) advanced.city_name = cityNameParam;
+
+    // Tamu dan viewer hanya boleh melihat listing yang sudah tayang.
+    //
+    // Nilainya tepat "published" saja. `PropertyStatus` hanya mengenal draft,
+    // review, published, sold, rented, archived — dan seluruh jalur penyimpanan
+    // (wizard, StepReview, dropdown status di halaman detail) memang hanya
+    // menulis nilai-nilai itu. Menyertakan "available" berisiko galat
+    // 22P02 (invalid input value for enum) yang akan mengosongkan katalog
+    // untuk semua tamu, bukan sekadar melewatkan beberapa baris.
+    const status: PropertyFilter["status"] = isGuestOrViewer ? "published" : "all";
+
+    // "Portofolio Saya" dijalankan sebagai filter kepemilikan di query, agar
+    // paginasinya menghitung jumlah yang benar.
+    const ownerId =
+      !isGuestOrViewer && scopeMode === "my_properties" && !isSuperAdmin && currentUser?.id
+        ? currentUser.id
+        : null;
+
+    const sortByPrice = sortParam === "price_asc" || sortParam === "price_desc";
+
+    return {
+      search: qParam.trim(),
+      status,
+      listing_type: listingTypeParam,
+      property_type: propertyTypeParam,
+      is_featured: isFeaturedParam ? true : null,
+      owner_id: ownerId,
+      sort_by: sortByPrice ? "price" : "created_at",
+      sort_order: sortParam === "price_asc" ? "asc" : "desc",
+      limit: 12,
+      advanced,
+    };
+  }, [
+    qParam,
+    listingTypeParam,
+    propertyTypeParam,
+    provinceNameParam,
+    cityNameParam,
+    minPrice,
+    maxPrice,
+    minLandArea,
+    maxLandArea,
+    minBuildingArea,
+    maxBuildingArea,
+    bedroomParam,
+    bathroomParam,
+    sortParam,
+    isFeaturedParam,
+    isGuestOrViewer,
+    isSuperAdmin,
+    scopeMode,
+    currentUser?.id,
+  ]);
+
+  const {
+    data: rawProperties = [],
+    loading,
+    refetch,
+    totalItems,
+    totalPages,
+    page: currentPage,
+    nextPage,
+    prevPage,
+  } = useProperties(queryFilters);
+
+  // Dihitung dari parameter URL, bukan dari `hasActiveFilters` milik hook:
+  // hook menganggap `status !== "all"` sebagai filter aktif, sedangkan untuk
+  // tamu status memang selalu dipaksa "published" — bukan pilihan pengguna.
+  const activeFilterCount = useMemo(() => {
+    const advancedValues = Object.values(queryFilters.advanced || {});
+    const basic = [
+      qParam.trim(),
+      listingTypeParam !== "all" ? listingTypeParam : "",
+      propertyTypeParam !== "all" ? propertyTypeParam : "",
+      isFeaturedParam ? "featured" : "",
+    ];
+    return (
+      basic.filter(Boolean).length +
+      advancedValues.filter((v) => v !== null && v !== undefined && v !== "" && v !== 0).length
+    );
+  }, [queryFilters.advanced, qParam, listingTypeParam, propertyTypeParam, isFeaturedParam]);
+
+  const hasActiveFilters = activeFilterCount > 0;
+
+  // Filter halaman ini seluruhnya hidup di URL, jadi meresetnya cukup dengan
+  // kembali ke rute polos — `resetFilters` milik hook akan langsung tertimpa
+  // lagi oleh queryFilters pada render berikutnya.
+  const clearAllFilters = () => router.push("/properties");
 
   useEffect(() => {
     async function fetchProfiles() {
@@ -441,86 +585,9 @@ function PropertiesCatalogContent() {
     window.open(`https://wa.me/?text=${text}`, "_blank");
   };
 
-  const filteredProperties = useMemo(() => {
-    const list = properties.filter((item) => {
-      if (isGuestOrViewer && item.status !== "published" && item.status !== "available") return false;
-
-      if (!isGuestOrViewer && scopeMode === "my_properties" && currentUser?.id && !isSuperAdmin) {
-        const isOwner = item.created_by === currentUser.id || item.assigned_to === currentUser.id;
-        if (!isOwner) return false;
-      }
-
-      const query = qParam.trim().toLowerCase();
-      const matchSearch =
-        !query ||
-        item.title.toLowerCase().includes(query) ||
-        item.location.toLowerCase().includes(query) ||
-        item.listing_code.toLowerCase().includes(query);
-
-      let matchListingType = true;
-      if (listingTypeParam && listingTypeParam !== "all") {
-        const typeNorm = item.listing_type.toLowerCase();
-        if (listingTypeParam === "dijual" || listingTypeParam === "jual" || listingTypeParam === "sale") {
-          matchListingType = typeNorm === "jual" || typeNorm === "dijual" || typeNorm === "sale";
-        } else if (listingTypeParam === "disewa" || listingTypeParam === "sewa" || listingTypeParam === "rent") {
-          matchListingType = typeNorm === "sewa" || typeNorm === "disewa" || typeNorm === "rent";
-        }
-      }
-
-      let matchPropertyType = true;
-      if (propertyTypeParam && propertyTypeParam !== "all") {
-        matchPropertyType = item.property_type.toLowerCase() === propertyTypeParam.toLowerCase();
-      }
-
-      const itemPrice = item.price || 0;
-      const matchMinPrice = !minPrice || itemPrice >= Number(minPrice);
-      const matchMaxPrice = !maxPrice || itemPrice <= Number(maxPrice);
-
-      const itemLB = item.building_area || 0;
-      const matchMinLB = !minBuildingArea || itemLB >= Number(minBuildingArea);
-      const matchMaxLB = !maxBuildingArea || itemLB <= Number(maxBuildingArea);
-
-      const itemLT = item.land_area || 0;
-      const matchMinLT = !minLandArea || itemLT >= Number(minLandArea);
-      const matchMaxLT = !maxLandArea || itemLT <= Number(maxLandArea);
-
-      return (
-        matchSearch &&
-        matchListingType &&
-        matchPropertyType &&
-        matchMinPrice &&
-        matchMaxPrice &&
-        matchMinLB &&
-        matchMaxLB &&
-        matchMinLT &&
-        matchMaxLT
-      );
-    });
-
-    if (sortParam === "price_asc") {
-      list.sort((a, b) => (a.price || 0) - (b.price || 0));
-    } else if (sortParam === "price_desc") {
-      list.sort((a, b) => (b.price || 0) - (a.price || 0));
-    }
-
-    return list;
-  }, [
-    properties,
-    qParam,
-    scopeMode,
-    currentUser,
-    isGuestOrViewer,
-    isSuperAdmin,
-    listingTypeParam,
-    propertyTypeParam,
-    minPrice,
-    maxPrice,
-    minBuildingArea,
-    maxBuildingArea,
-    minLandArea,
-    maxLandArea,
-    sortParam,
-  ]);
+  // Penyaringan dan pengurutan sepenuhnya dikerjakan oleh basis data lewat
+  // `queryFilters`; di sini tinggal menampilkan apa yang dikembalikan.
+  const filteredProperties = properties;
 
   return (
     <div className="space-y-4 sm:space-y-6 pb-24 max-w-[1550px] w-full mx-auto px-3 sm:px-8 bg-background/50 min-h-screen overflow-x-hidden">
@@ -639,7 +706,31 @@ function PropertiesCatalogContent() {
         </div>
       </div>
 
-      {/* 4. MAIN LIST PROPERTI */}
+      {/* 4. RINGKASAN HASIL */}
+      {!loading && filteredProperties.length > 0 && (
+        <div className="flex items-center justify-between gap-3 flex-wrap px-0.5">
+          <p className="text-xs text-muted-foreground">
+            Menampilkan <span className="font-bold text-foreground">{filteredProperties.length}</span> dari{" "}
+            <span className="font-bold text-foreground">{totalItems}</span> properti
+            {activeFilterCount > 0 && (
+              <span className="text-muted-foreground"> · {activeFilterCount} filter aktif</span>
+            )}
+          </p>
+
+          {hasActiveFilters && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={clearAllFilters}
+              className="h-7 px-2.5 text-xs font-semibold text-muted-foreground hover:text-foreground cursor-pointer rounded-lg"
+            >
+              Hapus semua filter
+            </Button>
+          )}
+        </div>
+      )}
+
+      {/* 5. MAIN LIST PROPERTI */}
       {loading ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5 sm:gap-5">
           {[...Array(8)].map((_, i) => (
@@ -649,22 +740,53 @@ function PropertiesCatalogContent() {
       ) : filteredProperties.length === 0 ? (
         <Card className="border border-border/80 p-8 sm:p-14 text-center space-y-3 rounded-2xl bg-card shadow-xs">
           <Building2 className="w-10 h-10 sm:w-12 sm:h-12 text-muted-foreground/60 mx-auto" />
-          <h3 className="text-xs sm:text-base font-bold text-foreground">Tidak ada properti ditemukan</h3>
+          <h3 className="text-xs sm:text-base font-bold text-foreground">
+            {hasActiveFilters
+              ? "Tidak ada properti yang cocok"
+              : isGuestOrViewer
+              ? "Belum ada listing dipublikasikan"
+              : "Belum ada properti"}
+          </h3>
           <p className="text-xs text-muted-foreground max-w-sm mx-auto leading-relaxed">
-            Coba atur ulang kata kunci atau filter pencarian Anda.
+            {hasActiveFilters
+              ? "Coba longgarkan kriteria pencarian, atau hapus filter untuk melihat seluruh katalog."
+              : isGuestOrViewer
+              ? "Listing baru akan muncul di sini begitu dipublikasikan."
+              : "Mulai dengan menambahkan properti pertama Anda ke katalog."}
           </p>
+
+          {hasActiveFilters ? (
+            <Button
+              onClick={clearAllFilters}
+              variant="outline"
+              className="text-xs font-bold rounded-xl h-9 cursor-pointer"
+            >
+              <RefreshCw className="w-3.5 h-3.5 mr-1.5" /> Hapus semua filter
+            </Button>
+          ) : canCreateProperty ? (
+            <Button
+              onClick={() => router.push("/properties/create")}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl h-9 cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5 mr-1.5" /> Tambah Properti
+            </Button>
+          ) : null}
         </Card>
       ) : viewMode === "grid" ? (
         /* ================= 🔲 GRID VIEW (RESPONSIF HP BERSINAR) ================= */
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5 sm:gap-5">
           {filteredProperties.map((prop) => {
             const isRent = prop.listing_type === "sewa" || prop.listing_type === "disewa" || prop.listing_type === "rent";
+            // Status dan penanggung jawab hanya relevan bagi staf: tamu dan
+            // viewer memang hanya menerima listing yang sudah tayang.
+            const statusBadge = !isGuestOrViewer ? STATUS_BADGE[prop.status] : null;
+            const showNoAgentWarning = !isGuestOrViewer && !prop.assigned_to;
 
             return (
               <Card
                 key={prop.id}
                 onClick={() => goToDetail(prop.id)}
-                className="group border border-border/80 shadow-2xs hover:shadow-lg hover:border-emerald-500/50 transition-all rounded-2xl overflow-hidden cursor-pointer flex flex-col justify-between bg-card"
+                className="group border border-border/80 shadow-2xs hover:shadow-lg hover:border-emerald-500/50 hover:-translate-y-0.5 transition-all duration-200 rounded-2xl overflow-hidden cursor-pointer flex flex-col justify-between bg-card"
               >
                 <div>
                   {/* Foto Properti */}
@@ -677,6 +799,9 @@ function PropertiesCatalogContent() {
                       watermarkSize="w-1/3"
                       watermarkOpacity={0.6}
                     />
+
+                    {/* Gradien tipis agar kode listing tetap terbaca di foto terang */}
+                    <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-slate-950/60 to-transparent pointer-events-none" />
 
                     {/* Star Super Admin */}
                     {isSuperAdmin && (
@@ -694,11 +819,33 @@ function PropertiesCatalogContent() {
                       </button>
                     )}
 
-                    {/* Badge Tipe Listing */}
-                    <div className="absolute top-2 left-2 z-10">
+                    {/* Badge Tipe Listing + Status + Peringatan Tanpa Agen */}
+                    <div className="absolute top-2 left-2 z-10 flex flex-wrap items-center gap-1 max-w-[calc(100%-3rem)]">
                       <Badge className={cn("text-[9px] sm:text-[10px] font-bold px-2 py-0.5 uppercase tracking-wide text-white border-0 rounded-md shadow-2xs", isRent ? "bg-amber-600" : "bg-emerald-600")}>
                         {isRent ? "SEWA" : "JUAL"}
                       </Badge>
+
+                      {statusBadge && (
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            "text-[9px] sm:text-[10px] font-bold px-1.5 py-0.5 rounded-md backdrop-blur-sm bg-background/90",
+                            statusBadge.className
+                          )}
+                        >
+                          {statusBadge.label}
+                        </Badge>
+                      )}
+
+                      {showNoAgentWarning && (
+                        <Badge
+                          variant="outline"
+                          className="text-[9px] sm:text-[10px] font-bold px-1.5 py-0.5 rounded-md backdrop-blur-sm bg-background/90 bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/40"
+                          title="Listing tanpa agen penanggung jawab tidak dapat dipublikasikan"
+                        >
+                          Belum ada agen
+                        </Badge>
+                      )}
                     </div>
 
                     {/* Kode Listing */}
@@ -734,23 +881,23 @@ function PropertiesCatalogContent() {
                     </p>
 
                     {/* Spesifikasi GRID 2 Kolom di Mobile agar Rapi */}
-                    <div className="grid grid-cols-2 gap-1.5 pt-2 text-[11px] sm:text-xs text-muted-foreground font-semibold border-t border-border/60">
-                      <div className="flex items-center gap-2">
-                        <span className="flex items-center gap-1" title="Kamar Tidur">
-                          <Bed className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                          {prop.bedrooms || 0} KT
-                        </span>
-                        <span className="flex items-center gap-1" title="Kamar Mandi">
-                          <Bath className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                          {prop.bathrooms || 0} KM
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2 justify-end">
-                        <span className="flex items-center gap-1 truncate" title="Luas Bangunan">
-                          <Building2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                          LB {prop.building_area || 0}m²
-                        </span>
-                      </div>
+                    <div className="grid grid-cols-2 gap-x-2 gap-y-1.5 pt-2 text-[11px] sm:text-xs text-muted-foreground font-semibold border-t border-border/60">
+                      <span className="flex items-center gap-1" title="Kamar Tidur">
+                        <Bed className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        {prop.bedrooms || 0} KT
+                      </span>
+                      <span className="flex items-center gap-1" title="Kamar Mandi">
+                        <Bath className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        {prop.bathrooms || 0} KM
+                      </span>
+                      <span className="flex items-center gap-1 truncate" title="Luas Bangunan">
+                        <Building2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        LB {prop.building_area || 0} m²
+                      </span>
+                      <span className="flex items-center gap-1 truncate" title="Luas Tanah">
+                        <Ruler className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        LT {prop.land_area || 0} m²
+                      </span>
                     </div>
                   </CardContent>
                 </div>
@@ -817,6 +964,8 @@ function PropertiesCatalogContent() {
               <TableBody>
                 {filteredProperties.map((prop) => {
                   const isRent = prop.listing_type === "sewa" || prop.listing_type === "disewa" || prop.listing_type === "rent";
+                  const statusBadge = !isGuestOrViewer ? STATUS_BADGE[prop.status] : null;
+                  const showNoAgentWarning = !isGuestOrViewer && !prop.assigned_to;
 
                   return (
                     <TableRow key={prop.id} className="hover:bg-muted/40 border-border/60 cursor-pointer" onClick={() => goToDetail(prop.id)}>
@@ -832,7 +981,23 @@ function PropertiesCatalogContent() {
                           />
                           <div>
                             <div className="font-bold text-xs text-foreground line-clamp-1">{prop.title}</div>
-                            <div className="text-[10px] text-muted-foreground font-mono mt-0.5">{prop.listing_code}</div>
+                            <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                              <span className="text-[10px] text-muted-foreground font-mono">{prop.listing_code}</span>
+                              {statusBadge && (
+                                <Badge variant="outline" className={cn("text-[9px] font-bold px-1.5 py-0 rounded", statusBadge.className)}>
+                                  {statusBadge.label}
+                                </Badge>
+                              )}
+                              {showNoAgentWarning && (
+                                <Badge
+                                  variant="outline"
+                                  className="text-[9px] font-bold px-1.5 py-0 rounded bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/40"
+                                  title="Listing tanpa agen penanggung jawab tidak dapat dipublikasikan"
+                                >
+                                  Belum ada agen
+                                </Badge>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </TableCell>
@@ -909,6 +1074,39 @@ function PropertiesCatalogContent() {
             </Table>
           </div>
         </Card>
+      )}
+
+      {/* 6. PAGINASI
+          Query hanya mengambil 12 baris per halaman. Tanpa navigasi ini,
+          properti selebihnya tidak akan pernah bisa dibuka. */}
+      {!loading && totalPages > 1 && (
+        <div className="flex items-center justify-between gap-3 flex-wrap pt-1">
+          <p className="text-xs text-muted-foreground">
+            Halaman <span className="font-bold text-foreground">{currentPage}</span> dari{" "}
+            <span className="font-bold text-foreground">{totalPages}</span>
+            <span className="hidden sm:inline"> · {totalItems} properti</span>
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={prevPage}
+              disabled={currentPage <= 1}
+              className="h-9 rounded-xl text-xs font-semibold gap-1.5 cursor-pointer disabled:opacity-40"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" /> Sebelumnya
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={nextPage}
+              disabled={currentPage >= totalPages}
+              className="h-9 rounded-xl text-xs font-semibold gap-1.5 cursor-pointer disabled:opacity-40"
+            >
+              Berikutnya <ChevronRight className="w-3.5 h-3.5" />
+            </Button>
+          </div>
+        </div>
       )}
     </div>
   );

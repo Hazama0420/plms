@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerClientInstance } from "@/lib/supabase/server";
+import { requireAuth, requirePermission } from "@/lib/api-auth";
+import { NO_AGENT_MESSAGE, requiresAgent, resolvePublishStatus } from "@/lib/property-publish";
+import { buildAddressPayload } from "@/lib/property-address";
 
 // ============================================================
 // PUT HANDLER (Update Properti & Seluruh Sub-Tabel Relasi)
@@ -9,9 +11,12 @@ export async function PUT(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await requirePermission("manage_own_properties");
+    if (!auth.ok) return auth.response;
+
     const { id: propertyId } = await context.params;
     const body = await request.json();
-    const supabase = await createServerClientInstance();
+    const { supabase } = auth.ctx;
 
     // 1. UPDATE TABEL MASTER 'properties'
     const propertyPayload: Record<string, any> = {
@@ -22,11 +27,29 @@ export async function PUT(
     if (body.property_type !== undefined) propertyPayload.property_type = body.property_type;
     if (body.listing_type !== undefined) propertyPayload.listing_type = body.listing_type;
     if (body.status !== undefined) propertyPayload.status = body.status;
-    if (body.co_broke !== undefined) propertyPayload.co_broke = Boolean(body.co_broke);
-    if (body.youtube_url !== undefined) propertyPayload.youtube_url = body.youtube_url || null;
     if (body.listing_code !== undefined) propertyPayload.listing_code = body.listing_code;
     if (body.description !== undefined) propertyPayload.description = body.description || "";
     if (body.selling_point !== undefined) propertyPayload.selling_point = body.selling_point || "";
+    if (body.rental_period !== undefined) propertyPayload.rental_period = body.rental_period || null;
+    if (body.facilities !== undefined)
+      propertyPayload.facilities = Array.isArray(body.facilities) ? body.facilities : [];
+
+    // Listing tanpa agen penanggung jawab tidak boleh terbit. Route ini tidak
+    // pernah mengubah `assigned_to`, jadi agen yang berlaku adalah milik baris
+    // yang tersimpan sekarang. Barisnya hanya dibaca bila memang mau diterbitkan
+    // — update biasa tidak perlu membayar query tambahan.
+    let downgraded = false;
+    if (requiresAgent(propertyPayload.status)) {
+      const { data: existing } = await supabase
+        .from("properties")
+        .select("assigned_to")
+        .eq("id", propertyId)
+        .single();
+
+      const resolved = resolvePublishStatus(propertyPayload.status, existing?.assigned_to);
+      propertyPayload.status = resolved.status;
+      downgraded = resolved.downgraded;
+    }
 
     const { data: property, error: propError } = await supabase
       .from("properties")
@@ -44,25 +67,32 @@ export async function PUT(
     }
 
     // 2. UPSERT ALAMAT KE 'property_address'
-    if (body.address !== undefined || body.city_id !== undefined || body.province_id !== undefined) {
-      const addressPayload = {
-        property_id: propertyId,
-        address: body.address || "",
-        country_id: body.country_id || null,
-        province_id: body.province_id || null,
-        city_id: body.city_id || null,
-        district_id: body.district_id || null,
-        village_id: body.village_id || null,
-        postal_code: body.postal_code || null,
-        latitude: body.latitude ? parseFloat(body.latitude) : null,
-        longitude: body.longitude ? parseFloat(body.longitude) : null,
-      };
-
+    // Kegagalan alamat sekarang dikembalikan ke pemanggil alih-alih hanya dicatat
+    // di log — itulah yang membuat alamat bisa hilang tanpa ada tanda apa pun.
+    if (
+      body.address !== undefined ||
+      body.region_id !== undefined ||
+      body.province_name !== undefined ||
+      body.city_name !== undefined
+    ) {
       const { error: addrError } = await supabase
         .from("property_address")
-        .upsert(addressPayload, { onConflict: "property_id" });
+        .upsert(
+          { property_id: propertyId, ...buildAddressPayload(body) },
+          { onConflict: "property_id" }
+        );
 
-      if (addrError) console.error("Error UPSERT property_address:", addrError.message);
+      if (addrError) {
+        console.error("Error UPSERT property_address:", addrError.message);
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Properti diupdate, tetapi alamat gagal disimpan: ${addrError.message}`,
+            data: property,
+          },
+          { status: 400 }
+        );
+      }
     }
 
     // 3. UPSERT HARGA KE 'property_price'
@@ -164,7 +194,12 @@ export async function PUT(
       }
     }
 
-    return NextResponse.json({ success: true, data: property });
+    return NextResponse.json({
+      success: true,
+      data: property,
+      downgraded,
+      ...(downgraded ? { message: NO_AGENT_MESSAGE } : {}),
+    });
   } catch (err: any) {
     console.error("PUT Property Error:", err);
     return NextResponse.json(
@@ -182,14 +217,40 @@ export async function PATCH(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await requirePermission("manage_own_properties");
+    if (!auth.ok) return auth.response;
+
     const { id } = await context.params;
     const body = await request.json();
-    const supabase = await createServerClientInstance();
+    const { supabase } = auth.ctx;
 
     // Hapus variabel temporary frontend
     delete body.photos_uploaded;
     delete body.isExisting;
     delete body.file;
+
+    // Kepemilikan tidak boleh dipindah lewat PATCH bebas.
+    delete body.user_id;
+    delete body.id;
+
+    // PATCH menyalin seluruh body, sehingga `status` dan `assigned_to` bisa
+    // berubah dalam satu permintaan yang sama. Agen yang berlaku adalah nilai
+    // baru bila dikirim, kalau tidak nilai yang sudah tersimpan.
+    let downgraded = false;
+    if (requiresAgent(body.status)) {
+      const { data: existing } = await supabase
+        .from("properties")
+        .select("assigned_to")
+        .eq("id", id)
+        .single();
+
+      const effectiveAgent =
+        body.assigned_to !== undefined ? body.assigned_to : existing?.assigned_to;
+
+      const resolved = resolvePublishStatus(body.status, effectiveAgent);
+      body.status = resolved.status;
+      downgraded = resolved.downgraded;
+    }
 
     const { data, error } = await supabase
       .from("properties")
@@ -205,7 +266,12 @@ export async function PATCH(
       );
     }
 
-    return NextResponse.json({ success: true, data });
+    return NextResponse.json({
+      success: true,
+      data,
+      downgraded,
+      ...(downgraded ? { message: NO_AGENT_MESSAGE } : {}),
+    });
   } catch (err: any) {
     return NextResponse.json(
       { success: false, error: err.message || "Internal Server Error" },
@@ -222,8 +288,13 @@ export async function GET(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Respons memuat relasi property_owners (nama, telepon, email pemilik).
+    // Itu data pribadi, jadi endpoint ini wajib login.
+    const auth = await requireAuth();
+    if (!auth.ok) return auth.response;
+
     const { id } = await context.params;
-    const supabase = await createServerClientInstance();
+    const { supabase } = auth.ctx;
 
     const { data, error } = await supabase
       .from("properties")
@@ -231,14 +302,7 @@ export async function GET(
         `
           *,
           owner:property_owners(*),
-          address:property_address(
-            *,
-            country:countries(name),
-            province:provinces(name),
-            city:cities(name),
-            district:districts(name),
-            village:villages(name)
-          ),
+          address:property_address(*),
           price:property_price(*),
           specifications:property_specifications(*),
           land:property_land(*),
@@ -273,8 +337,12 @@ export async function DELETE(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Penghapusan permanen — butuh izin kelola seluruh properti.
+    const auth = await requirePermission("manage_all_properties");
+    if (!auth.ok) return auth.response;
+
     const { id } = await context.params;
-    const supabase = await createServerClientInstance();
+    const { supabase } = auth.ctx;
 
     const { error } = await supabase
       .from("properties")

@@ -11,12 +11,77 @@ import type {
 export type { PropertyFilter };
 
 // ============================================================
+// NORMALISASI NILAI FILTER
+// ============================================================
+
+/**
+ * Label di UI tidak selalu sama dengan nilai di basis data. "Perkantoran"
+ * tersimpan sebagai `kantor`, dan "Ruang Usaha" sebagai `ruang_usaha`.
+ * Tanpa pemetaan ini, memilih kategori tersebut selalu menghasilkan nol baris.
+ */
+const PROPERTY_TYPE_ALIASES: Record<string, string> = {
+  perkantoran: "kantor",
+  "ruang usaha": "ruang_usaha",
+  apartment: "apartemen",
+  house: "rumah",
+  land: "tanah",
+};
+
+function normalizePropertyType(value: string): string {
+  const key = value.trim().toLowerCase();
+  return (PROPERTY_TYPE_ALIASES[key] ?? key).replace(/\s+/g, "_");
+}
+
+/** "dijual"/"sale"/"jual" → "jual"; "disewa"/"rent"/"sewa" → "sewa". */
+const LISTING_TYPE_ALIASES: Record<string, string> = {
+  jual: "jual",
+  dijual: "jual",
+  sale: "jual",
+  sell: "jual",
+  sewa: "sewa",
+  disewa: "sewa",
+  disewakan: "sewa",
+  rent: "sewa",
+  rental: "sewa",
+};
+
+function normalizeListingType(value: string): string {
+  const key = value.trim().toLowerCase();
+  return LISTING_TYPE_ALIASES[key] ?? key;
+}
+
+/** Mengubah nilai filter menjadi angka; string kosong dianggap "tidak diisi". */
+function toNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+}
+
+function toText(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+/**
+ * Menetralkan karakter yang punya arti khusus di dalam pola PostgREST agar
+ * kata kunci pencarian tidak bisa menyelipkan filter tambahan.
+ */
+function escapePattern(value: string): string {
+  return value.replace(/[%_,().*\\]/g, " ").trim();
+}
+
+// ============================================================
 // SERVICE OBJECT (tanpa duplikasi)
 // ============================================================
 const propertyService = {
   // ============================================================
   // GET LIST – Daftar Properti (Dengan Multi-Filter Presisi & Aman)
   // ============================================================
+  //
+  // Seluruh penyaringan dikerjakan di basis data, bukan di peramban. Versi
+  // sebelumnya mengambil satu halaman berisi 12 baris terbaru lalu menyaringnya
+  // di sisi klien, sehingga hasil pencarian hanya berasal dari 12 properti itu
+  // — memilih "Rumah" atau "Kota: Bandung" tampak seperti tidak berfungsi
+  // karena kebanyakan properti yang cocok tidak pernah ikut terambil.
   async getList(filters: PropertyFilter = {}) {
     const {
       search = "",
@@ -27,119 +92,153 @@ const propertyService = {
       limit = 12,
       sort_by = "created_at",
       sort_order = "desc",
+      owner_id = null,
+      is_featured = null,
       advanced = {},
     } = filters;
 
     const offset = (page - 1) * limit;
+    const ascending = sort_order === "asc";
 
-    let query = supabase
-      .from("properties")
-      .select(
-        `
-          *,
-          owner:property_owners(*),
-          address:property_address(
-            *,
-            country:countries(name),
-            province:provinces(name),
-            city:cities(name),
-            district:districts(name),
-            village:villages(name)
-          ),
-          price:property_price(*),
-          specifications:property_specifications(*),
-          land:property_land(*),
-          building:property_building(*),
-          media:property_media(*)
-        `,
-        { count: "exact" }
-      )
-      .order(sort_by, { ascending: sort_order === "asc" })
-      .range(offset, offset + limit - 1);
+    // ===== NILAI FILTER LANJUTAN =====
+    const priceMin = toNumber(advanced.priceMin);
+    const priceMax = toNumber(advanced.priceMax);
+    const landAreaMin = toNumber(advanced.landAreaMin);
+    const landAreaMax = toNumber(advanced.landAreaMax);
+    const buildingAreaMin = toNumber(advanced.buildingAreaMin);
+    const buildingAreaMax = toNumber(advanced.buildingAreaMax);
+    const bedroom = toNumber(advanced.bedroom);
+    const bathroom = toNumber(advanced.bathroom);
+    const yearBuilt = toNumber(advanced.year_built);
 
-    // ===== SEARCH (Judul atau Kode Listing) =====
-    if (search) {
+    const provinceName = escapePattern(toText(advanced.province_name));
+    const cityName = escapePattern(toText(advanced.city_name));
+    const districtName = escapePattern(toText(advanced.district_name));
+
+    const certificate = toText(advanced.certificate);
+    const furnishing = toText(advanced.furnishing);
+    const hasCertificate = Boolean(certificate) && certificate !== "all";
+    const hasFurnishing = Boolean(furnishing) && furnishing !== "all";
+
+    const sortByPrice = sort_by === "price";
+
+    // ===== PENENTUAN JOIN =====
+    //
+    // `!inner` menentukan hidup-matinya filter relasi. Tanpa itu PostgREST hanya
+    // mengosongkan objek anak yang tidak cocok, sementara baris induknya tetap
+    // ikut terkirim — persis gejala "filter harga/luas tidak berpengaruh".
+    //
+    // Join dipasang hanya saat filternya benar-benar dipakai, supaya properti
+    // yang belum punya baris harga atau luas tidak lenyap dari daftar biasa.
+    const joinPrice = priceMin !== null || priceMax !== null || sortByPrice;
+    const joinLand = landAreaMin !== null || landAreaMax !== null;
+    const joinBuilding = buildingAreaMin !== null || buildingAreaMax !== null;
+    const joinSpecs =
+      bedroom !== null ||
+      bathroom !== null ||
+      yearBuilt !== null ||
+      hasCertificate ||
+      hasFurnishing;
+    const joinAddress = Boolean(provinceName) || Boolean(cityName) || Boolean(districtName);
+
+    const inner = (needed: boolean) => (needed ? "!inner" : "");
+
+    // Nama wilayah kini tersimpan langsung di `property_address` (region_id +
+    // province_name/city_name/district_name/village_name), jadi tidak ada lagi
+    // join ke countries/provinces/cities/districts/villages. Join bertingkat itu
+    // juga sempat menyembunyikan properti yang tabel referensinya sudah kosong.
+    const selectClause = `
+      *,
+      owner:property_owners(*),
+      address:property_address${inner(joinAddress)}(*),
+      price:property_price${inner(joinPrice)}(*),
+      specifications:property_specifications${inner(joinSpecs)}(*),
+      land:property_land${inner(joinLand)}(*),
+      building:property_building${inner(joinBuilding)}(*),
+      media:property_media(*)
+    `;
+
+    // Klausa select disusun dinamis, sehingga tipe hasilnya tidak lagi bisa
+    // disimpulkan dari string literal. Builder dilonggarkan di sini saja, lalu
+    // hasil akhirnya dipetakan kembali ke `Property[]`.
+    let query: any = supabase.from("properties").select(selectClause, { count: "exact" });
+
+    // ===== PENGURUTAN =====
+    if (sortByPrice) {
+      // Hanya pengurutan relasi yang dikirim: menggabungkannya dengan order
+      // pada tabel induk membuat urutan akhirnya tidak menentu.
+      query = query.order("selling_price", {
+        referencedTable: "price",
+        ascending,
+        nullsFirst: false,
+      });
+    } else {
+      query = query.order(sort_by, { ascending });
+    }
+
+    query = query.range(offset, offset + limit - 1);
+
+    // ===== SEARCH (judul, kode listing, deskripsi) =====
+    const keyword = escapePattern(search);
+    if (keyword) {
       query = query.or(
-        `title.ilike.%${search}%,listing_code.ilike.%${search}%`
+        `title.ilike.%${keyword}%,listing_code.ilike.%${keyword}%,description.ilike.%${keyword}%`
       );
     }
 
-    // ===== BASIC FILTERS =====
-    if (status && status !== "all") {
+    // ===== FILTER DASAR =====
+    if (Array.isArray(status)) {
+      if (status.length > 0) query = query.in("status", status);
+    } else if (status && status !== "all") {
       query = query.eq("status", status);
     }
 
-    // 1. Filter Tipe Transaksi (jual / sewa)
     if (listing_type && listing_type !== "all") {
-      query = query.eq("listing_type", listing_type);
+      query = query.eq("listing_type", normalizeListingType(String(listing_type)));
     }
 
-    // 2. 🟢 FIX UTAMA: Filter Kategori/Jenis Properti (Menggunakan .ilike agar Case-Insensitive)
     if (property_type && property_type !== "all") {
-      query = query.ilike("property_type", property_type);
+      // .ilike agar tidak peka huruf besar/kecil, setelah nilainya diselaraskan
+      // dengan penulisan di basis data.
+      query = query.ilike("property_type", normalizePropertyType(property_type));
     }
 
-    // ===== ADVANCED FILTERS (LANJUTAN) =====
-   // Filter Harga Minimum
-if (advanced?.priceMin !== null && advanced?.priceMin !== undefined && advanced.priceMin !== ("" as any)) {
-  query = query.gte("property_price.selling_price", Number(advanced.priceMin));
-}
-
-// Filter Harga Maksimum (Diperbaiki)
-if (advanced?.priceMax !== null && advanced?.priceMax !== undefined && advanced.priceMax !== ("" as any)) {
-  query = query.lte("property_price.selling_price", Number(advanced.priceMax));
-}
-
-    // Filter Luas Tanah Minimum
-if (advanced?.landAreaMin !== null && advanced?.landAreaMin !== undefined && advanced.landAreaMin !== ("" as any)) {
-  query = query.gte("property_specs.land_area", Number(advanced.landAreaMin));
-}
-
-// Filter Luas Tanah Maksimum
-if (advanced?.landAreaMax !== null && advanced?.landAreaMax !== undefined && advanced.landAreaMax !== ("" as any)) {
-  query = query.lte("property_specs.land_area", Number(advanced.landAreaMax));
-}
-
-   // 3. Filter Luas Bangunan (Building Area)
-if (advanced?.buildingAreaMin != null && !isNaN(Number(advanced.buildingAreaMin))) {
-  query = query.gte("property_specs.building_area", Number(advanced.buildingAreaMin));
-}
-if (advanced?.buildingAreaMax != null && !isNaN(Number(advanced.buildingAreaMax))) {
-  query = query.lte("property_specs.building_area", Number(advanced.buildingAreaMax));
-}
-
-// Filter Kamar Tidur & Mandi
-if (advanced?.bedroom != null && !isNaN(Number(advanced.bedroom))) {
-  query = query.eq("property_specs.bedrooms", Number(advanced.bedroom));
-}
-if (advanced?.bathroom != null && !isNaN(Number(advanced.bathroom))) {
-  query = query.eq("property_specs.bathrooms", Number(advanced.bathroom));
-}
-
-    if (advanced?.city_id) {
-      query = query.eq("property_address.city_id", advanced.city_id);
+    if (is_featured) {
+      query = query.eq("is_featured", true);
     }
 
-    // Filter Lokasi Berdasarkan Nama Provinsi & Kota
-if ((advanced as any)?.province_name) {
-  query = query.ilike("property_address.province_name", `%${(advanced as any).province_name}%`);
-}
-
-if ((advanced as any)?.city_name) {
-  query = query.ilike("property_address.city_name", `%${(advanced as any).city_name}%`);
-}
-
-   if (advanced?.year_built !== null && advanced?.year_built !== undefined && advanced.year_built !== ("" as any)) {
-  query = query.eq("property_specifications.year_built", Number(advanced.year_built));
-}
-
-    if (advanced?.certificate && advanced.certificate !== "all") {
-      query = query.eq("property_specifications.certificate", advanced.certificate);
+    if (owner_id) {
+      // Properti dianggap "milik saya" bila dibuat sendiri atau ditugaskan.
+      query = query.or(`created_by.eq.${owner_id},assigned_to.eq.${owner_id}`);
     }
 
-    if (advanced?.furnishing && advanced.furnishing !== "all") {
-      query = query.eq("property_specifications.furnishing", advanced.furnishing);
-    }
+    // ===== HARGA (tabel property_price, alias `price`) =====
+    if (priceMin !== null) query = query.gte("price.selling_price", priceMin);
+    if (priceMax !== null) query = query.lte("price.selling_price", priceMax);
+
+    // ===== LUAS TANAH (tabel property_land, alias `land`) =====
+    if (landAreaMin !== null) query = query.gte("land.land_area", landAreaMin);
+    if (landAreaMax !== null) query = query.lte("land.land_area", landAreaMax);
+
+    // ===== LUAS BANGUNAN (tabel property_building, alias `building`) =====
+    if (buildingAreaMin !== null) query = query.gte("building.building_area", buildingAreaMin);
+    if (buildingAreaMax !== null) query = query.lte("building.building_area", buildingAreaMax);
+
+    // ===== SPESIFIKASI (tabel property_specifications, alias `specifications`) =====
+    //
+    // Kolomnya tunggal — `bedroom`/`bathroom`, bukan bentuk jamak — dan UI
+    // menuliskannya sebagai "3+", jadi pembandingnya minimal, bukan sama dengan.
+    if (bedroom !== null) query = query.gte("specifications.bedroom", bedroom);
+    if (bathroom !== null) query = query.gte("specifications.bathroom", bathroom);
+    if (yearBuilt !== null) query = query.gte("specifications.year_built", yearBuilt);
+    if (hasCertificate) query = query.eq("specifications.certificate", certificate);
+    if (hasFurnishing) query = query.eq("specifications.furnishing", furnishing);
+
+    // ===== LOKASI (tabel property_address, alias `address`) =====
+    // Filter kota/provinsi sekarang langsung ke kolom nama di `property_address`.
+    if (provinceName) query = query.ilike("address.province_name", `%${provinceName}%`);
+    if (cityName) query = query.ilike("address.city_name", `%${cityName}%`);
+    if (districtName) query = query.ilike("address.district_name", `%${districtName}%`);
 
     const { data, error, count } = await query;
 
@@ -149,10 +248,10 @@ if ((advanced as any)?.city_name) {
     }
 
     return {
-      data: data as Property[],
+      data: (data ?? []) as Property[],
       count: count || 0,
       page,
-      totalPages: Math.ceil((count || 0) / limit),
+      totalPages: Math.max(1, Math.ceil((count || 0) / limit)),
     };
   },
 
@@ -167,14 +266,7 @@ if ((advanced as any)?.city_name) {
         `
           *,
           owner:property_owners(*),
-          address:property_address(
-            *,
-            country:countries(name),
-            province:provinces(name),
-            city:cities(name),
-            district:districts(name),
-            village:villages(name)
-          ),
+          address:property_address(*),
           price:property_price(*),
           specifications:property_specifications(*),
           land:property_land(*),
@@ -214,16 +306,31 @@ if ((advanced as any)?.city_name) {
   // ============================================================
   // UPDATE STATUS
   // ============================================================
+  //
+  // Lewat route, bukan update langsung dari peramban: perubahan status memicu
+  // notifikasi ke agen pemegang dan pembuat listing, dan baris notifikasi untuk
+  // akun lain hanya bisa ditulis dengan service role di sisi server.
+  //
+  // Mengembalikan objek respons utuh, bukan hanya barisnya: server bisa
+  // menurunkan permintaan "published" menjadi draf bila listingnya belum punya
+  // agen, dan pemanggil perlu tahu itu agar tidak memberi pesan sukses palsu.
   async updateStatus(id: string, status: PropertyStatus) {
-    const { data, error } = await supabase
-      .from("properties")
-      .update({ status, updated_at: new Date().toISOString() })
-      .eq("id", id)
-      .select()
-      .single();
+    const res = await fetch(`/api/properties/${id}/status`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    });
 
-    if (error) throw new Error(error.message);
-    return data as Property;
+    const json = await res.json();
+    if (!res.ok || !json.success) {
+      throw new Error(json.error || "Gagal mengubah status properti");
+    }
+
+    return {
+      data: json.data as Property,
+      downgraded: Boolean(json.downgraded),
+      message: (json.message as string | undefined) ?? null,
+    };
   },
 
   // ============================================================
@@ -265,9 +372,9 @@ if ((advanced as any)?.city_name) {
     if (original.address) {
       const addr = Array.isArray(original.address) ? original.address[0] : original.address;
       if (addr) {
-        const { id: _, property_id: __, country: ___, province: ____, city: _____, district: ______, village: _______, ...cleanAddr } = addr;
+        const { id: _, property_id: __, ...rest } = addr;
         await supabase.from("property_address").insert({
-          ...cleanAddr,
+          ...rest,
           property_id: newPropertyId,
         });
       }
@@ -365,19 +472,29 @@ if ((advanced as any)?.city_name) {
   // ============================================================
   // UPDATE ASSIGNED TO
   // ============================================================
+  //
+  // Lewat route dengan alasan yang sama seperti updateStatus: agen yang baru
+  // ditugaskan harus mendapat notifikasi, dan itu tidak bisa ditulis dari
+  // peramban atas nama akun lain.
   async updateAssignedTo(id: string, assignedTo: string | null) {
-    const { data, error } = await supabase
-      .from("properties")
-      .update({
-        assigned_to: assignedTo,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", id)
-      .select()
-      .single();
+    const res = await fetch(`/api/properties/${id}/assign`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ assigned_to: assignedTo }),
+    });
 
-    if (error) throw new Error(error.message);
-    return data as Property;
+    const json = await res.json();
+    if (!res.ok || !json.success) {
+      throw new Error(json.error || "Gagal menugaskan agen");
+    }
+
+    // `drafted` menandai listing terbit yang ikut dikembalikan ke draf karena
+    // penugasannya dilepas — tanpa agen, listing tidak boleh tetap publik.
+    return {
+      data: json.data as Property,
+      drafted: Boolean(json.drafted),
+      message: (json.message as string | undefined) ?? null,
+    };
   },
 };
 

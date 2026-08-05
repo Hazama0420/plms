@@ -826,18 +826,6 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
       </Dialog>
 
       <canvas ref={canvasRef} className="hidden" />
-
-      {/* FOOTER NAVIGASI */}
-      <div className="flex justify-end pt-4 border-t">
-        <Button
-          type="button"
-          onClick={nextStep}
-          className="gap-2 text-xs h-9 bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20"
-        >
-          <span>Lanjut ke Lokasi & Alamat</span>
-          <ArrowRight className="w-4 h-4" />
-        </Button>
-      </div>
     </div>
   );
 }

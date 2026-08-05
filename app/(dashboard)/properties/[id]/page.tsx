@@ -76,6 +76,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
+import { LeadCaptureModal } from "@/components/inquiry/LeadCaptureModal";
+import { useLeadCapture } from "@/hooks/use-lead-capture";
 
 type PropertyStatus = "draft" | "review" | "published" | "sold" | "rented" | "archived";
 
@@ -285,13 +287,6 @@ export default function PropertyDetailPage() {
   const [relatedProperties, setRelatedProperties] = useState<PropertyCardItem[]>([]);
   const [loadingRelated, setLoadingRelated] = useState<boolean>(false);
 
-  // State Modal Form Leads CRM
-  const [showLeadModal, setShowLeadModal] = useState(false);
-  const [leadName, setLeadName] = useState("");
-  const [leadPhone, setLeadPhone] = useState("");
-  const [leadMessage, setLeadMessage] = useState("");
-  const [submittingLead, setSubmittingLead] = useState(false);
-
   // Nama wilayah kini tersimpan langsung di `property_address`
   // (province_name/city_name/district_name/village_name), jadi halaman ini
   // tidak lagi menarik isi penuh lima tabel master setiap kali dibuka.
@@ -438,6 +433,16 @@ export default function PropertyDetailPage() {
   }, [property, agents, fetchedAssignedAgent]);
 
   const isSuperAdmin = userRole === "super_admin" || userRole === "superadmin";
+
+  const isLoggedIn = !!currentUser && currentUser.id !== "";
+
+  // HOOK INQUIRY — dideklarasikan di sini karena butuh assignedAgent yang baru
+  // tersedia setelah useMemo (:431-433)
+  const { requestContact, modalProps } = useLeadCapture({
+    isLoggedIn,
+    source: "Website Property Detail",
+    fallbackWhatsapp: assignedAgent?.whatsapp || assignedAgent?.phone || null,
+  });
 
   // Tamu dan viewer hanya boleh melihat listing yang sudah dipublikasikan.
   // Draf, peninjauan, dan arsip diperlakukan seolah tidak ada — bukan "akses
@@ -728,74 +733,10 @@ export default function PropertyDetailPage() {
     router.push(`/properties?${params.toString()}`);
   };
 
-  // Inquiry pengunjung.
-  //
-  // Seluruh penulisan dilakukan lewat POST /api/leads, bukan insert langsung
-  // dari peramban. Alasannya bukan sekadar kerapian:
-  //
-  //  - Formulir ini terbuka untuk tamu yang belum login. Versi lama menulis
-  //    crm_contacts/crm_leads/crm_interests dari klien, lalu memanggil
-  //    /api/notifications/whatsapp — endpoint yang dijaga requireRole(agent…),
-  //    sehingga untuk pengunjung SELALU ditolak dan galatnya ditelan catch.
-  //    Hasilnya: tidak ada satu pun agen yang benar-benar diberi tahu,
-  //    padahal toast menyatakan sebaliknya.
-  //  - Route-nya punya rate limit per IP, memaksa status "new", dan menolak
-  //    `assigned_to` kiriman klien sehingga tamu tidak bisa menimpakan lead
-  //    ke agen mana pun.
-  //
-  // Tautan wa.me di akhir tetap dipertahankan: itu WhatsApp milik pengunjung
-  // sendiri, bukan pesan gateway berbayar.
-  const handleLeadSubmit = async (e: React.FormEvent, targetPhone: string) => {
-    e.preventDefault();
-    if (!leadName || !leadPhone) {
-      toast.error("Mohon lengkapi Nama dan No WhatsApp Anda.");
-      return;
-    }
-
-    setSubmittingLead(true);
-    try {
-      const res = await fetch("/api/leads", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: leadName,
-          phone: leadPhone,
-          property_id: property?.id ?? undefined,
-          source: "Website Property Detail",
-          notes:
-            leadMessage ||
-            `Tertarik dengan properti: ${property?.title} (${property?.listing_code})`,
-        }),
-      });
-
-      const json = await res.json();
-
-      if (!res.ok) {
-        // 429 datang dari rate limit per IP; pesannya sudah ramah pengguna.
-        throw new Error(json.error || "Gagal menyimpan data lead");
-      }
-
-      toast.success("Berhasil! Data Anda tercatat dan agen kami telah dinotifikasi.");
-
-      let cleanTargetPhone = targetPhone ? targetPhone.replace(/[^0-9]/g, "") : "";
-      if (cleanTargetPhone.startsWith("0")) cleanTargetPhone = "62" + cleanTargetPhone.slice(1);
-
-      const text = encodeURIComponent(
-        `Halo, saya *${leadName}* tertarik dengan properti *${property?.title}* (${property?.listing_code}). ${leadMessage ? `Pesan: "${leadMessage}"` : "Mohon informasi lebih lanjut."}`
-      );
-
-      setShowLeadModal(false);
-      setLeadName("");
-      setLeadPhone("");
-      setLeadMessage("");
-
-      window.open(`https://wa.me/${cleanTargetPhone}?text=${text}`, "_blank");
-    } catch (err: any) {
-      toast.error("Gagal menyimpan data lead", { description: err.message || JSON.stringify(err) });
-    } finally {
-      setSubmittingLead(false);
-    }
-  };
+  // Inquiry pengunjung kini ditangani useLeadCapture + LeadCaptureModal.
+  // Formulir inline yang dulu ada di sini digantikan komponen bersama supaya
+  // katalog, dasbor, dan halaman ini memakai aturan yang sama: tamu mengisi
+  // form, client terdaftar langsung tercatat dari data akunnya.
 
   const handleAssignAgent = async (agentId: string | null) => {
     if (!property) return;
@@ -1556,7 +1497,11 @@ export default function PropertyDetailPage() {
                     </div>
 
                     <Button
-                      onClick={() => setShowLeadModal(true)}
+                      onClick={() => requestContact({
+                        id: property.id,
+                        title: property.title,
+                        listing_code: property.listing_code,
+                      })}
                       className="flex items-center justify-center gap-2 w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs shadow-md cursor-pointer h-12 transition-all active:scale-[0.98] mt-1"
                     >
                       <MessageCircle className="w-5 h-5 fill-white text-emerald-600" />
@@ -1567,7 +1512,11 @@ export default function PropertyDetailPage() {
                   <div className="p-4 bg-muted/30 rounded-xl text-center space-y-2">
                     <p className="text-[11px] text-muted-foreground italic">Belum ada agent spesifik yang ditugaskan.</p>
                     <Button
-                      onClick={() => setShowLeadModal(true)}
+                      onClick={() => requestContact({
+                        id: property.id,
+                        title: property.title,
+                        listing_code: property.listing_code,
+                      })}
                       className="w-full bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold text-xs h-10 cursor-pointer"
                     >
                       <MessageCircle className="w-4 h-4 mr-1.5" /> Konsultasi Properti
@@ -1623,7 +1572,11 @@ export default function PropertyDetailPage() {
       {/* 4. FLOATING ACTION BAR MOBILE */}
       <div className="fixed bottom-0 left-0 right-0 p-3 bg-background/95 backdrop-blur-md border-t border-border z-40 sm:hidden flex items-center gap-2 shadow-lg">
         <Button
-          onClick={() => setShowLeadModal(true)}
+          onClick={() => requestContact({
+            id: property.id,
+            title: property.title,
+            listing_code: property.listing_code,
+          })}
           className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-11 rounded-xl shadow-md gap-2 cursor-pointer"
         >
           <MessageCircle className="w-4 h-4 fill-white text-emerald-600" />
@@ -1676,76 +1629,12 @@ export default function PropertyDetailPage() {
         </DialogContent>
       </Dialog>
 
-      {/* 6. MODAL CAPTURE LEADS */}
-      <Dialog open={showLeadModal} onOpenChange={setShowLeadModal}>
-        <DialogContent className="sm:max-w-md rounded-2xl bg-card border border-border p-5 max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="text-sm font-bold flex items-center gap-1.5 text-foreground">
-              <MessageCircle className="w-4 h-4 text-emerald-600" /> Konsultasi & Tanya Properti
-            </DialogTitle>
-            <DialogDescription className="text-xs text-muted-foreground">
-              Lengkapi data Anda agar agent kami dapat segera merespons ketertarikan Anda pada <span className="font-semibold text-emerald-600">{property?.title}</span>.
-            </DialogDescription>
-          </DialogHeader>
-
-          <form onSubmit={(e) => handleLeadSubmit(e, assignedAgent?.whatsapp || assignedAgent?.phone || "6281234567890")} className="space-y-3.5 py-1">
-            <div className="space-y-1">
-              <Label className="text-xs font-medium text-foreground">Nama Lengkap</Label>
-              <input
-                type="text"
-                required
-                placeholder="Contoh: Budi Santoso"
-                value={leadName}
-                onChange={(e) => setLeadName(e.target.value)}
-                className="w-full h-10 px-3 text-xs rounded-xl border border-border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <Label className="text-xs font-medium text-foreground">Nomor WhatsApp / HP</Label>
-              <input
-                type="tel"
-                required
-                placeholder="Contoh: 081234567890"
-                value={leadPhone}
-                onChange={(e) => setLeadPhone(e.target.value)}
-                className="w-full h-10 px-3 text-xs rounded-xl border border-border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <Label className="text-xs font-medium text-foreground">Pesan / Catatan Khusus (Opsional)</Label>
-              <textarea
-                placeholder="Contoh: Apakah bisa survei lokasi minggu ini?"
-                value={leadMessage}
-                onChange={(e) => setLeadMessage(e.target.value)}
-                rows={3}
-                className="w-full p-3 text-xs rounded-xl border border-border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none"
-              />
-            </div>
-
-            <DialogFooter className="gap-2 pt-2 sm:gap-0">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setShowLeadModal(false)}
-                className="text-xs rounded-xl cursor-pointer h-10"
-              >
-                Batal
-              </Button>
-              <Button
-                type="submit"
-                disabled={submittingLead}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs rounded-xl cursor-pointer gap-1.5 h-10 font-bold"
-              >
-                {submittingLead && <Loader2 className="h-4 w-4 animate-spin" />}
-                Kirim & Buka WhatsApp
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      {/* 6. MODAL CAPTURE LEADS —
+          Hanya muncul untuk tamu (belum login) dan pengguna yang profilnya
+          belum memuat nama/nomor WhatsApp. Client yang sudah terdaftar
+          langsung diteruskan ke WhatsApp oleh useLeadCapture, dengan
+          aktivitasnya dicatat server memakai data akunnya sendiri. */}
+      <LeadCaptureModal {...modalProps} />
 
       {/* DIALOG UBAH STATUS */}
       {canEdit && (

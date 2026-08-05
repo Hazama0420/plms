@@ -42,6 +42,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { LeadCaptureModal } from "@/components/inquiry/LeadCaptureModal";
+import { useLeadCapture } from "@/hooks/use-lead-capture";
 
 type UserRole = "super_admin" | "superadmin" | "admin" | "agent" | "commissioner" | "viewer";
 
@@ -203,38 +205,27 @@ export default function DashboardPage() {
   const canAccessInvoice = isLoggedIn && (isSuperAdmin || isAdmin || isAgent);
 
   // Handler Tombol WhatsApp + Log Aktivitas CRM
-  const handleWhatsAppClick = async (e: React.MouseEvent, prop: PropertyItem) => {
-    e.stopPropagation();
+  //
+  // Seluruh pencatatan dipindahkan ke POST /api/leads. Versi lama menulis
+  // langsung ke `crm_activities` dari peramban dengan kolom `property_id` dan
+  // `description` — dua kolom yang tidak ada di tabel itu — sambil melewatkan
+  // `lead_id` yang NOT NULL. Insert-nya selalu gagal dan galatnya ditelan
+  // catch, sementara toast tetap menyatakan "Aktivitas kontak telah dicatat di
+  // log CRM." Jadi tidak ada satu pun klik WA dari dasbor yang pernah tercatat.
+  //
+  // Nomor tujuan juga tidak lagi diambil dari `prop.agent_phone` dengan nomor
+  // cadangan yang ditulis keras di kode; server yang menentukannya dari
+  // pemegang listing.
+  const { requestContact, modalProps } = useLeadCapture({
+    isLoggedIn,
+    source: "Dasbor Katalog",
+  });
 
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        await supabase.from("crm_activities").insert({
-          user_id: user.id,
-          property_id: prop.id,
-          activity_type: "whatsapp_contact",
-          description: `Menghubungi agen untuk properti: ${prop.title} (${prop.listing_code})`,
-          created_at: new Date().toISOString(),
-        });
-      }
-    } catch (err) {
-      console.error("Gagal mencatat log aktivitas CRM:", err);
-    }
-
-    const phoneNum = prop.agent_phone ? prop.agent_phone.replace(/\D/g, "") : "";
-    const formattedPhone = phoneNum
-      ? (phoneNum.startsWith("0") ? `62${phoneNum.slice(1)}` : phoneNum)
-      : "6281234567890";
-
-    const waMsg = encodeURIComponent(
-      `Halo, saya berminat dengan properti: *${prop.title}* (${prop.listing_code}). Apakah masih tersedia?`
+  const handleWhatsAppClick = (e: React.MouseEvent, prop: PropertyItem) => {
+    requestContact(
+      { id: prop.id, title: prop.title, listing_code: prop.listing_code },
+      e
     );
-
-    toast.success("Membuka WhatsApp...", {
-      description: "Aktivitas kontak telah dicatat di log CRM.",
-    });
-
-    window.open(`https://wa.me/${formattedPhone}?text=${waMsg}`, "_blank");
   };
 
   // Fetch AI Summary
@@ -1147,10 +1138,10 @@ export default function DashboardPage() {
                       </div>
                       <Button
                         size="sm"
-                        onClick={() => window.open(`https://wa.me/${lead.phone}`, "_blank")}
+                        onClick={() => router.push(`/crm/leads/${lead.id}`)}
                         className="w-full h-7 text-[10px] bg-emerald-600 hover:bg-emerald-700 text-white rounded-md cursor-pointer"
                       >
-                        <MessageSquare className="w-3 h-3 mr-1" /> WhatsApp
+                        <UserCheck className="w-3 h-3 mr-1" /> Detail Lead
                       </Button>
                     </div>
                   ))
@@ -1162,6 +1153,9 @@ export default function DashboardPage() {
           </div>
         )}
       </div>
+
+      {/* MODAL INQUIRY — hanya muncul untuk tamu dan client berprofil belum lengkap */}
+      <LeadCaptureModal {...modalProps} />
     </div>
   );
 }

@@ -32,6 +32,10 @@ import { cn } from "@/lib/utils";
 // 🔍 IMPORT KOMPONEN PENCARIAN DASHBOARD
 import { DashboardPropertySearch } from "@/components/dashboard/DashboardPropertySearch";
 
+// 📝 IMPORT MODAL INQUIRY BERSAMA
+import { LeadCaptureModal } from "@/components/inquiry/LeadCaptureModal";
+import { useLeadCapture } from "@/hooks/use-lead-capture";
+
 import {
   Plus,
   Building2,
@@ -266,6 +270,13 @@ function PropertiesCatalogContent() {
   const isGuestOrViewer = !currentUser || userRole === "guest" || userRole === "viewer";
   const isSuperAdmin = userRole === "super_admin" || userRole === "superadmin";
   const canCreateProperty = currentUser && !isGuestOrViewer;
+  const isLoggedIn = !!currentUser && currentUser.id !== "";
+
+  // HOOK INQUIRY — menyatukan logic WA di satu tempat
+  const { requestContact, modalProps } = useLeadCapture({
+    isLoggedIn,
+    source: "Katalog Properti",
+  });
 
   // Setiap pencarian bersifat lintas-katalog: menyaring hanya portofolio
   // sendiri akan membuat hasilnya terasa hilang.
@@ -544,33 +555,9 @@ function PropertiesCatalogContent() {
     router.push(`/properties/${id}`);
   };
 
-  const handleWhatsAppClick = async (property: PropertyItem, e?: React.MouseEvent) => {
+  const handleWhatsAppClick = (property: PropertyItem, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        await supabase.from("crm_activities").insert({
-          user_id: user.id,
-          property_id: property.id,
-          activity_type: "whatsapp_contact",
-          description: `Menghubungi agen/pemilik untuk properti: ${property.title} (${property.listing_code})`,
-          created_at: new Date().toISOString(),
-        });
-      }
-    } catch (err) {
-      console.error("Gagal mencatat log aktivitas CRM:", err);
-    }
-
-    const waMsg = encodeURIComponent(
-      `Halo, saya berminat dengan properti: *${property.title}* (${property.listing_code}). Apakah masih tersedia?`
-    );
-
-    toast.success("Membuka WhatsApp...", {
-      description: "Aktivitas kontak telah dicatat di log CRM.",
-    });
-
-    window.open(`https://wa.me/?text=${waMsg}`, "_blank");
+    requestContact(property, e);
   };
 
   const handleSendWABrochure = (property: PropertyItem, e?: React.MouseEvent) => {
@@ -1108,6 +1095,9 @@ function PropertiesCatalogContent() {
           </div>
         </div>
       )}
+
+      {/* MODAL INQUIRY — hanya muncul untuk tamu dan client berprofil belum lengkap */}
+      <LeadCaptureModal {...modalProps} />
     </div>
   );
 }

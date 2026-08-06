@@ -48,6 +48,35 @@ const STATUS_STAGES: { id: LeadStatus; label: string; color: string; dotColor: s
   { id: "lost", label: "Lost", color: "border-rose-500/30", dotColor: "bg-rose-500" },
 ];
 
+/**
+ * Bentuk minimal lead — hanya field yang benar-benar dibaca board ini.
+ *
+ * Baris dari Supabase jauh lebih lebar dan masih mengalir sebagai `any` di
+ * jalur pengambilan data; tipe ini dipakai pada pengelompokan dan penjumlahan
+ * agar bagian yang dirender punya kontrak yang jelas.
+ */
+interface KanbanLead {
+  id: string;
+  status: LeadStatus;
+  client_name?: string;
+  client_phone?: string;
+  interest_type?: string | null;
+  budget?: number | null;
+}
+
+/**
+ * Rupiah ringkas untuk ruang sempit: 2_400_000_000 -> "2,4 M", 400_000_000 -> "400 jt".
+ *
+ * Versi lama selalu membagi dengan satu miliar, sehingga budget 400 juta
+ * tampil sebagai "0.4M". Mengikuti pola formatTerbilangRupiah di
+ * components/create-property/steps/StepPriceDescription.tsx.
+ */
+function formatCompactRupiah(num: number): string {
+  if (num >= 1_000_000_000) return `${(num / 1_000_000_000).toFixed(1).replace(".", ",")} M`;
+  if (num >= 1_000_000) return `${Math.round(num / 1_000_000)} jt`;
+  return new Intl.NumberFormat("id-ID").format(num);
+}
+
 export function CrmKanbanBoard() {
   const router = useRouter();
   const [leads, setLeads] = useState<any[]>([]);
@@ -55,6 +84,7 @@ export function CrmKanbanBoard() {
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [draggedLead, setDraggedLead] = useState<any | null>(null);
   const [dragOverStage, setDragOverStage] = useState<string | null>(null);
+  const [activeStage, setActiveStage] = useState<LeadStatus>("new");
 
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [currentUserRole, setCurrentUserRole] = useState<string>("");
@@ -260,17 +290,97 @@ export function CrmKanbanBoard() {
     });
   }, [leads, searchQuery]);
 
+  /**
+   * Leads dikelompokkan per stage sekali saja.
+   *
+   * Bar distribusi, chip, baris meta, flow line, dan kolom board semuanya butuh
+   * angka yang sama. Tanpa ini tiap bagian memanggil .filter() sendiri —
+   * lima kali tujuh pemindaian pada setiap render.
+   */
+  const stageBuckets = useMemo(() => {
+    const buckets = new Map<LeadStatus, KanbanLead[]>(STATUS_STAGES.map((s) => [s.id, []]));
+    for (const lead of filteredLeads) {
+      buckets.get(lead.status as LeadStatus)?.push(lead);
+    }
+    return buckets;
+  }, [filteredLeads]);
+
+  const sumBudget = useCallback(
+    (rows: KanbanLead[]) => rows.reduce((acc, curr) => acc + (curr.budget || 0), 0),
+    []
+  );
+
   return (
     <div className="space-y-4 text-foreground">
-      {/* 🚀 INDIKATOR ALUR TALI TERHUBUNG (FLOW LINE) */}
-      <div className="hidden lg:flex items-center justify-between bg-card border border-border p-2.5 rounded-xl overflow-x-auto shadow-2xs">
+      {/* 🚀 BAR DISTRIBUSI PIPELINE + CHIP SELECTOR MOBILE */}
+      <div className="md:hidden space-y-3">
+        {/* Bar proporsi stage */}
+        <div className="flex h-1.5 rounded-full bg-muted overflow-hidden">
+          {STATUS_STAGES.map((stage) => {
+            const count = stageBuckets.get(stage.id)?.length || 0;
+            if (count === 0) return null;
+            return (
+              <div
+                key={stage.id}
+                className={cn("transition-all", stage.dotColor)}
+                style={{ flexGrow: count }}
+              />
+            );
+          })}
+        </div>
+
+        {/* Baris chip selector */}
+        <div className="-mx-3 px-3 flex gap-1.5 overflow-x-auto pb-1">
+          {STATUS_STAGES.map((stage) => {
+            const count = stageBuckets.get(stage.id)?.length || 0;
+            const isActive = activeStage === stage.id;
+            return (
+              <button
+                key={stage.id}
+                type="button"
+                onClick={() => setActiveStage(stage.id)}
+                className={cn(
+                  "shrink-0 h-7 rounded-full px-2.5 text-[11px] flex items-center gap-1.5 border transition-colors",
+                  isActive
+                    ? "border-emerald-500 bg-emerald-500/10 text-foreground font-semibold"
+                    : "border-border bg-card text-muted-foreground"
+                )}
+              >
+                <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", stage.dotColor)} />
+                <span>{stage.label}</span>
+                <span className="font-mono">{count}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Meta stage aktif — sekali, di luar loop kolom */}
+        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+          <span className="font-semibold text-foreground">
+            {STATUS_STAGES.find((s) => s.id === activeStage)?.label}
+          </span>
+          <span>·</span>
+          <span>{stageBuckets.get(activeStage)?.length || 0} prospek</span>
+          {sumBudget(stageBuckets.get(activeStage) || []) > 0 && (
+            <>
+              <span>·</span>
+              <span className="font-mono font-semibold text-emerald-600 dark:text-emerald-400">
+                Rp {formatCompactRupiah(sumBudget(stageBuckets.get(activeStage) || []))}
+              </span>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* 🚀 INDIKATOR ALUR TALI TERHUBUNG (FLOW LINE) DESKTOP */}
+      <div className="hidden md:flex items-center justify-between bg-card border border-border p-2.5 rounded-xl overflow-x-auto">
         {STATUS_STAGES.map((stage, idx) => {
-          const count = filteredLeads.filter((l) => l.status === stage.id).length;
+          const count = stageBuckets.get(stage.id)?.length || 0;
           return (
             <div key={stage.id} className="flex items-center gap-2 shrink-0">
-              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-muted/60 border border-border">
+              <div className="flex items-center gap-1.5 px-2.5 py-1">
                 <span className={cn("w-2 h-2 rounded-full", stage.dotColor)} />
-                <span className="text-[11px] font-bold text-foreground">{stage.label}</span>
+                <span className="text-[11px] lg:text-xs font-bold text-foreground">{stage.label}</span>
                 <span className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-1.5 rounded font-bold">
                   {count}
                 </span>
@@ -284,8 +394,8 @@ export function CrmKanbanBoard() {
       </div>
 
       {/* TOOLBAR PENCARIAN & STATISTIK ROLE */}
-      <div className="flex items-center justify-between gap-3">
-        <div className="relative max-w-sm w-full">
+      <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+        <div className="relative w-full sm:max-w-xs">
           <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-muted-foreground" />
           <Input
             placeholder="Cari nama prospek, minat..."
@@ -295,11 +405,12 @@ export function CrmKanbanBoard() {
           />
         </div>
 
-        <div className="flex items-center gap-2">
-          {/* BADGE KEAMANAN ROLE */}
+        <div className="flex items-center gap-2 w-full sm:w-auto sm:ml-auto justify-end">
+          {/* BADGE KEAMANAN ROLE — teks panjang disembunyikan di ponsel */}
           {!isAdminOrSuperAdmin && (
-            <span className="text-[10px] font-medium text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-1 rounded-lg flex items-center gap-1">
-              <Lock className="w-3 h-3" /> Mode Agen (Kontak Disensor)
+            <span className="text-[10px] font-medium text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-1 rounded-lg flex items-center gap-1 shrink-0">
+              <Lock className="w-3 h-3 shrink-0" /> Mode Agen
+              <span className="hidden sm:inline">(Kontak Disensor)</span>
             </span>
           )}
 
@@ -322,11 +433,15 @@ export function CrmKanbanBoard() {
         </div>
       </div>
 
-      {/* KANBAN BOARD */}
-      <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-7 gap-3 items-start overflow-x-auto pb-4">
+      {/* KANBAN BOARD
+          Mobile: hanya stage terpilih yang tampil, tanpa bingkai kolom.
+          Desktop (md+): kolom selebar 250px yang digeser horizontal. Grid 7 kolom
+          yang lama hanya menyisakan ~100px per kolom, dan itu sebabnya seluruh
+          teks dulu terpaksa turun ke 9px. */}
+      <div className="flex flex-col md:flex-row md:items-start md:gap-3 md:overflow-x-auto md:pb-3">
         {STATUS_STAGES.map((stage) => {
-          const stageLeads = filteredLeads.filter((l) => l.status === stage.id);
-          const totalBudget = stageLeads.reduce((acc, curr) => acc + (curr.budget || 0), 0);
+          const stageLeads = stageBuckets.get(stage.id) || [];
+          const totalBudget = sumBudget(stageLeads);
           const isOver = dragOverStage === stage.id;
 
           return (
@@ -336,32 +451,42 @@ export function CrmKanbanBoard() {
               onDragLeave={handleDragLeave}
               onDrop={(e) => handleDrop(e, stage.id)}
               className={cn(
-                "rounded-xl border p-2 flex flex-col transition-all min-h-[440px] bg-card/60 shadow-2xs",
+                "flex flex-col transition-all md:w-[250px] md:shrink-0",
+                // Bingkai, padding, dan tinggi minimum hanya untuk desktop.
+                "border-0 p-0 bg-transparent min-h-0",
+                "md:rounded-xl md:border md:p-2 md:bg-card/60 md:min-h-[440px]",
                 stage.color,
-                isOver && "bg-emerald-500/10 border-emerald-500 border-dashed"
+                // Di ponsel hanya stage aktif yang dirender terlihat. Kolom lain
+                // tetap ada di DOM untuk desktop, jadi tidak ada JSX terduplikasi.
+                stage.id !== activeStage && "hidden md:flex",
+                isOver && "md:bg-emerald-500/10 md:border-emerald-500 md:border-dashed"
               )}
             >
-              {/* HEADER KOLOM */}
-              <div className="flex items-center justify-between pb-2 mb-2 border-b border-border">
+              {/* HEADER KOLOM — di ponsel perannya diambil chip + baris meta di atas */}
+              <div className="hidden md:flex items-center justify-between pb-2 mb-2 border-b border-border">
                 <div className="flex items-center gap-1.5 min-w-0">
                   <span className={cn("w-2 h-2 rounded-full shrink-0", stage.dotColor)} />
-                  <h3 className="font-bold text-[11px] text-foreground truncate">{stage.label}</h3>
-                  <span className="text-[10px] font-mono text-muted-foreground bg-muted px-1.5 py-0.2 rounded font-semibold">
+                  <h3 className="font-bold text-xs text-foreground truncate">{stage.label}</h3>
+                  <span className="text-[10px] font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded font-semibold">
                     {stageLeads.length}
                   </span>
                 </div>
                 {totalBudget > 0 && (
-                  <span className="text-[9px] font-mono text-emerald-600 dark:text-emerald-400 font-bold shrink-0">
-                    {(totalBudget / 1000000000).toFixed(1)}M
+                  <span className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 font-bold shrink-0">
+                    {formatCompactRupiah(totalBudget)}
                   </span>
                 )}
               </div>
 
               {/* LIST KARTU LEADS RINGKAS */}
-              <div className="space-y-2 flex-1 overflow-y-auto">
-                {stageLeads.length === 0 ? (
-                  <div className="h-16 flex items-center justify-center border border-dashed border-border rounded-lg text-center">
-                    <span className="text-[10px] text-muted-foreground">Kosong</span>
+              <div className="space-y-2 flex-1 md:overflow-y-auto">
+                {loading && stageLeads.length === 0 ? (
+                  // Tanpa ini, board yang sedang memuat tampil sebagai "belum ada
+                  // prospek" — pesan kosong yang salah.
+                  <div className="h-14 rounded-lg bg-muted/60 animate-pulse md:h-16" />
+                ) : stageLeads.length === 0 ? (
+                  <div className="flex items-center justify-center rounded-lg border border-dashed border-border py-3 md:h-16">
+                    <span className="text-[10px] text-muted-foreground">Belum ada prospek</span>
                   </div>
                 ) : (
                   stageLeads.map((lead) => (
@@ -370,31 +495,56 @@ export function CrmKanbanBoard() {
                       draggable={canDragAndMove}
                       onDragStart={(e) => handleDragStart(e, lead)}
                       className={cn(
-                        "p-2 rounded-lg bg-card border border-border hover:border-emerald-500/40 transition select-none space-y-1.5 shadow-2xs",
-                        canDragAndMove ? "cursor-grab active:cursor-grabbing" : "cursor-default opacity-85",
+                        "p-2 rounded-lg bg-card border border-border hover:border-emerald-500/40 transition select-none space-y-1",
+                        canDragAndMove ? "md:cursor-grab md:active:cursor-grabbing" : "cursor-default opacity-85",
                         draggedLead?.id === lead.id && "opacity-30"
                       )}
                     >
-                      <div className="flex items-start justify-between gap-1">
-                        <div className="flex items-center gap-1 min-w-0">
-                          {canDragAndMove ? (
-                            <GripVertical className="w-3 h-3 text-muted-foreground shrink-0" />
-                          ) : (
-                            <span title="Terkunci untuk Viewer/Tamu" className="inline-flex items-center shrink-0">
-  <Lock className="w-2.5 h-2.5 text-amber-500" />
-</span>
+                      {/* BARIS 1: nama + WA + menu */}
+                      <div className="flex items-center gap-1">
+                        {canDragAndMove ? (
+                          // Seret memakai HTML5 drag events, yang tidak pernah
+                          // menyala di layar sentuh. Gagangnya hanya ditampilkan
+                          // di tempat yang benar-benar bisa menyeret.
+                          <GripVertical className="hidden md:block w-3 h-3 text-muted-foreground shrink-0" />
+                        ) : (
+                          <span title="Terkunci untuk Viewer/Tamu" className="inline-flex items-center shrink-0">
+                            <Lock className="w-2.5 h-2.5 text-amber-500" />
+                          </span>
+                        )}
+
+                        <h4
+                          onClick={() => router.push(`/crm/leads/${lead.id}`)}
+                          className="flex-1 min-w-0 font-bold text-xs md:text-[13px] text-foreground truncate cursor-pointer hover:text-emerald-600 dark:hover:text-emerald-400"
+                        >
+                          {lead.client_name}
+                        </h4>
+
+                        <button
+                          type="button"
+                          onClick={() => handleOpenWhatsApp(lead.client_phone, lead.client_name)}
+                          className={cn(
+                            "h-7 w-7 shrink-0 rounded flex items-center justify-center transition-colors cursor-pointer",
+                            isAdminOrSuperAdmin
+                              ? "text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10"
+                              : "text-muted-foreground hover:text-amber-500"
                           )}
-                          <h4
-                            onClick={() => router.push(`/crm/leads/${lead.id}`)}
-                            className="font-bold text-xs text-foreground truncate cursor-pointer hover:text-emerald-600 dark:hover:text-emerald-400"
-                          >
-                            {lead.client_name}
-                          </h4>
-                        </div>
+                          title={
+                            isAdminOrSuperAdmin
+                              ? "Chat WhatsApp Direct"
+                              : "Kontak Terkunci demi Keamanan"
+                          }
+                        >
+                          {isAdminOrSuperAdmin ? (
+                            <MessageCircle className="w-3.5 h-3.5" />
+                          ) : (
+                            <Lock className="w-3 h-3 text-amber-500" />
+                          )}
+                        </button>
 
                         <DropdownMenu>
-                          <DropdownMenuTrigger className="text-muted-foreground hover:text-foreground p-0.5 rounded cursor-pointer">
-                            <MoreVertical className="w-3 h-3" />
+                          <DropdownMenuTrigger className="h-7 w-7 shrink-0 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer">
+                            <MoreVertical className="w-3.5 h-3.5" />
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end" className="bg-card border-border text-card-foreground text-xs w-36">
                             <DropdownMenuItem onClick={() => router.push(`/crm/leads/${lead.id}`)}>
@@ -416,51 +566,26 @@ export function CrmKanbanBoard() {
                         </DropdownMenu>
                       </div>
 
+                      {/* BARIS 2: budget */}
                       {Boolean(lead.budget) && (
-                        <div className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 font-mono pl-4">
-                          Rp {lead.budget.toLocaleString("id-ID")}
+                        <div className="text-[11px] md:text-xs font-bold text-emerald-600 dark:text-emerald-400 font-mono">
+                          Rp {(lead.budget || 0).toLocaleString("id-ID")}
                         </div>
                       )}
 
-                      {lead.interest_type && (
-                        <div className="flex items-center gap-1 text-[9px] text-muted-foreground bg-muted/60 px-1.5 py-0.5 rounded border border-border truncate">
-                          <Building2 className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                          <span className="truncate">{lead.interest_type}</span>
-                        </div>
-                      )}
-
-                      {/* MASKING NOMOR TELP & WA */}
-                      <div className="flex items-center justify-between pt-1 border-t border-border text-[10px]">
-                        <span className="text-muted-foreground font-mono flex items-center gap-0.5">
-                          <Phone className="w-2.5 h-2.5 text-muted-foreground" />{" "}
+                      {/* BARIS 3: minat + nomor telepon (disensor untuk non-admin) */}
+                      <div className="flex items-center gap-1.5 text-[10px] md:text-[11px] text-muted-foreground">
+                        {lead.interest_type && (
+                          <span className="flex items-center gap-1 min-w-0">
+                            <Building2 className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                            <span className="truncate">{lead.interest_type}</span>
+                          </span>
+                        )}
+                        {lead.interest_type && <span className="shrink-0">·</span>}
+                        <span className="flex items-center gap-1 shrink-0 font-mono">
+                          <Phone className="w-2.5 h-2.5 shrink-0" />
                           {formatPhoneForUser(lead.client_phone)}
                         </span>
-
-                        <button
-                          type="button"
-                          onClick={() => handleOpenWhatsApp(lead.client_phone, lead.client_name)}
-                          className={cn(
-                            "p-0.5 rounded flex items-center gap-0.5 font-semibold transition-colors cursor-pointer",
-                            isAdminOrSuperAdmin
-                              ? "text-emerald-600 dark:text-emerald-400 hover:underline"
-                              : "text-muted-foreground hover:text-amber-500"
-                          )}
-                          title={
-                            isAdminOrSuperAdmin
-                              ? "Chat WhatsApp Direct"
-                              : "Kontak Terkunci demi Keamanan"
-                          }
-                        >
-                          {isAdminOrSuperAdmin ? (
-                            <>
-                              <MessageCircle className="w-3 h-3" /> WA
-                            </>
-                          ) : (
-                            <>
-                              <Lock className="w-2.5 h-2.5 text-amber-500" /> WA
-                            </>
-                          )}
-                        </button>
                       </div>
                     </div>
                   ))

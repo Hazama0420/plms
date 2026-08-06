@@ -78,7 +78,7 @@ function CRMContent() {
       {/* TATA LETAK UTAMA: GRID KANBAN DI KIRI/ATAS & WIDGET MONITOR AKTIVITAS DI KANAN/BAWAH */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
         {/* Kanban Board Utama Memakan 3 Kolom */}
-        <div className="lg:col-span-3 space-y-4">
+        <div className="lg:col-span-3 space-y-4 min-w-0">
           <CrmKanbanBoard />
         </div>
 

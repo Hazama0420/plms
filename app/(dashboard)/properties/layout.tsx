@@ -14,7 +14,17 @@ const description =
 const url = `${SITE.url}/properties`;
 
 export const metadata: Metadata = {
-  title,
+  // Template ditulis ulang di sini, bukan sekadar `title: "Jelajahi Properti"`.
+  //
+  // Judul string biasa di sebuah layout hanya menetapkan judul baku bagi
+  // segmen anak; yang meneruskan sufiks merek ke bawah adalah `title.template`
+  // (generate-metadata.md:338-340). Tanpa baris ini halaman detail properti
+  // menulis judulnya sendiri dan keluar tanpa "| Inland Property", sementara
+  // seluruh halaman lain memakainya — persis yang terjadi di produksi.
+  //
+  // `default` tetap membuat /properties sendiri terbaca "Jelajahi Properti |
+  // Inland Property" lewat template milik app/layout.tsx.
+  title: { default: title, template: `%s | ${SITE.name}` },
   description,
   alternates: { canonical: url },
   // openGraph ditulis ulang, bukan diwarisi: bila dibiarkan kosong, kartu

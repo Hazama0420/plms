@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { LegalLinksInline } from "@/components/layout/SiteFooter";
 import {
   Loader2,
   Mail,
@@ -328,6 +329,9 @@ export default function RegisterPage() {
               </Link>
             </p>
           </div>
+
+          {/* TAUTAN DOKUMEN LEGAL */}
+          <LegalLinksInline className="pt-3 border-t border-white/10" />
         </CardContent>
       </Card>
     </div>

@@ -10,6 +10,7 @@ import { NotificationBell } from "@/components/notification-bell";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { BottomNav } from "@/components/layout/BottomNav";
+import { SiteFooter } from "@/components/layout/SiteFooter";
 import { cn } from "@/lib/utils";
 
 export default function DashboardLayout({
@@ -110,6 +111,19 @@ export default function DashboardLayout({
           )}
         >
           {children}
+
+          {/*
+            Footer ikut di dalam <main> karena wadah ini yang bisa di-scroll —
+            layout luarnya dikunci h-[100dvh] overflow-hidden.
+
+            Margin negatif membatalkan padding <main> supaya footer menyentuh
+            tepi layar. Karena -mb juga ikut menghapus clearance untuk BottomNav
+            yang fixed di mobile, ruang itu dikembalikan sebagai padding di
+            dalam footer — jadi latar hijaunya tetap menutup penuh sampai dasar,
+            tidak menyisakan celah abu-abu di belakang BottomNav.
+          */}
+          <SiteFooter className="mt-8 -mx-4 -mb-28 pb-20 sm:-mb-24 sm:pb-16 md:-mx-6 md:-mb-6 md:pb-0" />
+
         </main>
 
         {/* Bottom Navigation Khusus Mobile */}

@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { LegalLinksInline } from "@/components/layout/SiteFooter";
 import {
   Loader2,
   Mail,
@@ -312,6 +313,9 @@ export default function LoginPage() {
               Daftar Sekarang
             </Link>
           </p>
+
+          {/* TAUTAN DOKUMEN LEGAL */}
+          <LegalLinksInline className="pt-3 border-t border-white/10" />
         </CardContent>
       </Card>
     </div>

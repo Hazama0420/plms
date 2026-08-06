@@ -14,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { LegalLinksInline } from "@/components/layout/SiteFooter";
 import {
   Loader2,
   Mail,
@@ -529,6 +530,9 @@ export default function RegisterAgentPage() {
               </Link>
             </p>
           </div>
+
+          {/* TAUTAN DOKUMEN LEGAL */}
+          <LegalLinksInline className="pt-3 border-t border-white/10" />
         </CardContent>
       </Card>
     </div>

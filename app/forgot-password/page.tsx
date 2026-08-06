@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
+import { LegalLinksInline } from "@/components/layout/SiteFooter";
 import { Mail, ArrowLeft, CheckCircle, Loader2, RefreshCw } from "lucide-react";
 
 export default function ForgotPasswordPage() {
@@ -174,6 +175,9 @@ export default function ForgotPasswordPage() {
               </p>
             </form>
           )}
+
+          {/* TAUTAN DOKUMEN LEGAL */}
+          <LegalLinksInline className="pt-4 mt-4 border-t border-white/10" />
         </CardContent>
       </Card>
     </div>

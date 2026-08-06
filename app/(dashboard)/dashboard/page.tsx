@@ -43,7 +43,9 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { LeadCaptureModal } from "@/components/inquiry/LeadCaptureModal";
+import { DashboardAgendaPanel } from "@/components/dashboard/DashboardAgendaPanel";
 import { useLeadCapture } from "@/hooks/use-lead-capture";
+import type { Survey } from "@/types/survey.types";
 
 type UserRole = "super_admin" | "superadmin" | "admin" | "agent" | "commissioner" | "viewer";
 
@@ -52,6 +54,10 @@ interface LeadFollowUpItem {
   name: string;
   property: string;
   phone: string;
+  // Dipakai panel agenda untuk titik status berwarna dan waktu relatif.
+  // Keduanya sudah ikut di-select sejak dulu, hanya belum pernah dipetakan.
+  status: string | null;
+  created_at: string | null;
 }
 
 interface PropertyItem {
@@ -187,11 +193,17 @@ export default function DashboardPage() {
   // Real-Time Data States
   const [agentFollowUpLeads, setAgentFollowUpLeads] = useState<LeadFollowUpItem[]>([]);
   const [loadingLeads, setLoadingLeads] = useState(false);
+  const [upcomingSurveys, setUpcomingSurveys] = useState<Survey[]>([]);
+  const [loadingSurveys, setLoadingSurveys] = useState(false);
 
   // AI Summary States
-  const [aiSummary, setAiSummary] = useState<string>("Memuat ringkasan eksekutif...");
+  //
+  // Bawaannya nonaktif: ringkasan ini memanggil AI berbayar setiap kali
+  // dashboard dibuka. Hanya Super Admin yang bisa menyalakannya lewat tombol di
+  // kartu, dan servernya menolak siapa pun selain Super Admin.
+  const [aiSummary, setAiSummary] = useState<string>("Fitur ini berbayar.");
   const [loadingAiSummary, setLoadingAiSummary] = useState<boolean>(false);
-  const [aiEnabled, setAiEnabled] = useState<boolean>(true);
+  const [aiEnabled, setAiEnabled] = useState<boolean>(false);
   const [togglingAi, setTogglingAi] = useState<boolean>(false);
 
   // Definisi Role & Aturan Hak Akses
@@ -200,9 +212,12 @@ export default function DashboardPage() {
   const isAgent = userRole === "agent";
   const isExecutive = userRole === "commissioner";
 
-  const canSeeAdminManagement = isAdmin; 
+  const canSeeAdminManagement = isAdmin;
   const canSeeAiSummary = isSuperAdmin || isAdmin || isAgent || isExecutive;
   const canAccessInvoice = isLoggedIn && (isSuperAdmin || isAdmin || isAgent);
+
+  // Agenda kerja internal: tamu dan client tidak boleh melihatnya sama sekali.
+  const canSeeAgenda = isLoggedIn && (isAgent || isAdmin);
 
   // Handler Tombol WhatsApp + Log Aktivitas CRM
   //
@@ -237,7 +252,7 @@ export default function DashboardPage() {
         const data = await res.json();
         if (data.disabled || data.enabled === false) {
           setAiEnabled(false);
-          setAiSummary("Fitur AI Executive Summary sedang dinonaktifkan oleh Super Admin.");
+          setAiSummary("Fitur ini berbayar.");
         } else if (data.summary) {
           setAiEnabled(true);
           setAiSummary(data.summary);
@@ -349,14 +364,42 @@ export default function DashboardPage() {
                 name: contact.full_name || "Calon Pembeli",
                 property: lead.interest_type || "Properti Pilihan",
                 phone: contact.phone || "#",
+                status: lead.status ?? null,
+                created_at: lead.created_at ?? null,
               };
             })
           );
         } else {
           setAgentFollowUpLeads([]);
         }
+
+        // Jadwal survei diambil lewat GET /api/surveys, bukan supabase langsung:
+        // surveys.agent_id ber-FK ke auth.users sehingga profil agen tidak bisa
+        // di-embed PostgREST, dan route itu sudah menegakkan filter kepemilikan
+        // (agen hanya jadwalnya sendiri, admin semuanya).
+        setLoadingSurveys(true);
+        try {
+          const res = await fetch("/api/surveys");
+          const json = res.ok ? await res.json() : { data: [] };
+          const now = Date.now();
+
+          setUpcomingSurveys(
+            ((json.data ?? []) as Survey[]).filter(
+              (s) =>
+                s.status === "scheduled" &&
+                new Date(s.scheduled_at).getTime() >= now
+            )
+          );
+        } catch (surveyError) {
+          // Panel survei kosong tidak boleh merobohkan seluruh dashboard.
+          console.error("Gagal memuat jadwal survei:", surveyError);
+          setUpcomingSurveys([]);
+        } finally {
+          setLoadingSurveys(false);
+        }
       } else {
         setAgentFollowUpLeads([]);
+        setUpcomingSurveys([]);
       }
     } catch (error) {
       console.error("Gagal memuat data dashboard:", error);
@@ -406,7 +449,10 @@ export default function DashboardPage() {
         await loadDashboardData(!!user, activeRole);
         if (isMounted) setLoading(false);
 
-        if (activeRole !== "viewer") {
+        // Hanya Super Admin yang memicu /api/dashboard/summary. Sebelumnya
+        // semua role selain viewer memanggilnya tiap kali dashboard dibuka,
+        // dan setiap panggilan itu satu permintaan AI berbayar.
+        if (activeRole === "super_admin" || activeRole === "superadmin") {
           loadAiSummary();
         }
       } catch (err) {
@@ -485,38 +531,30 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* 🔍 1. HEADER HERO SEARCH */}
-      <section className="relative rounded-2xl overflow-hidden shadow-xs border border-emerald-950/10 dark:border-emerald-500/20">
-        <div 
-          className="absolute inset-0 bg-cover bg-center z-0"
-          style={{ backgroundImage: "url('/bg-header.webp')" }}
-        />
-        <div className="absolute inset-0 bg-gradient-to-r from-slate-950/85 via-slate-950/65 to-slate-950/30 z-[1]" />
-        
-        <div className="relative z-10 p-3.5 sm:p-7 space-y-2.5 max-w-2xl text-left">
-          <div className="space-y-1">
-            <Badge className="bg-emerald-600 text-white border-0 text-[8px] sm:text-[9px] font-semibold uppercase tracking-wider shadow-md px-2 py-0.5">
-              Portal Properti Eksklusif
-            </Badge>
-            
-            <h2 className="text-base sm:text-xl md:text-2xl font-extrabold text-white tracking-tight drop-shadow-md leading-tight sm:leading-snug">
-              Temukan Hunian Impian Anda Bersama Kami
-            </h2>
+      {/* 🔍 1. HEADER HERO SEARCH (HALAMAN DEPAN / DASBOR) */}
+<section className="relative rounded-2xl sm:rounded-3xl overflow-hidden text-white border border-white/20 shadow-xl">
+  {/* Foto Background Jernih & Transparan */}
+  <div 
+    className="absolute inset-0 bg-cover bg-center bg-no-repeat pointer-events-none"
+    style={{ backgroundImage: "url('/bg-header.webp')" }}
+  />
 
-            <p className="text-[10px] sm:text-xs text-slate-200 max-w-lg font-medium drop-shadow-sm leading-normal sm:leading-relaxed">
-              Gunakan pencarian dan filter cepat di bawah untuk menemukan properti terbaik sesuai lokasi, tipe, dan anggaran Anda.
-            </p>
-          </div>
+  <div className="relative z-10 p-5 sm:p-8 md:p-10 space-y-3 sm:space-y-4 max-w-2xl text-left">
+    {/* Judul Eksklusif Halaman Depan dengan Gradien Emerald - Cyan */}
+    <h2 className="text-2xl sm:text-4xl md:text-5xl font-black tracking-tight leading-tight drop-shadow-lg">
+      <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-300 via-teal-200 to-cyan-300">
+        Hunian Modern & Investasi Masa Depan
+      </span>
+    </h2>
 
-          <div className="pt-0.5 w-full max-w-full sm:max-w-xl">
-            {/* Suspense wajib: komponen ini membaca useSearchParams(), dan tanpa
-                batas Suspense Next.js menggagalkan prerender halaman ini. */}
-            <Suspense fallback={<div className="h-14 rounded-2xl bg-white/10 animate-pulse" />}>
-              <DashboardPropertySearch />
-            </Suspense>
-          </div>
-        </div>
-      </section>
+    {/* Search Bar */}
+    <div className="pt-2 w-full">
+      <Suspense fallback={<div className="h-11 rounded-xl bg-white/10 animate-pulse" />}>
+        <DashboardPropertySearch />
+      </Suspense>
+    </div>
+  </div>
+</section>
 
       {/* 🔴 2. QUICK ACCESS BULAT */}
       <section className={cn("border-b border-[#F4EFE6] dark:border-slate-800 pb-4", isLoggedIn ? "pt-1" : "pt-0")}>
@@ -632,7 +670,7 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
         {/* KOLOM UTAMA */}
-        <div className={cn("space-y-6", isAgent ? "lg:col-span-8" : "lg:col-span-12")}>
+        <div className={cn("space-y-6", canSeeAgenda ? "lg:col-span-8" : "lg:col-span-12")}>
           
           {/* ⭐ SECTION 1: PROPERTI UNGGULAN */}
           <section className="bg-gradient-to-b from-emerald-950/[0.04] via-emerald-900/[0.02] to-transparent dark:from-emerald-950/20 dark:via-emerald-950/10 dark:to-transparent border border-emerald-700/20 dark:border-emerald-500/20 rounded-2xl p-3.5 sm:p-5 space-y-3.5 shadow-xs">
@@ -1052,7 +1090,10 @@ export default function DashboardPage() {
             <Card className="border border-[#F4EFE6] dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs rounded-xl">
               <CardHeader className="p-3.5 pb-2 flex flex-row items-center justify-between border-b border-[#F4EFE6] dark:border-slate-800">
                 <div className="flex items-center gap-2">
-                  <div className="p-1.5 bg-emerald-600 text-white rounded-lg">
+                  <div className={cn(
+                    "p-1.5 bg-emerald-600 text-white rounded-lg",
+                    !aiEnabled && "opacity-50 grayscale"
+                  )}>
                     <Sparkles className="w-3.5 h-3.5" />
                   </div>
                   <div>
@@ -1076,7 +1117,7 @@ export default function DashboardPage() {
                         setTogglingAi(true);
                         setAiEnabled(nextState);
                         if (!nextState) {
-                          setAiSummary("Fitur AI Executive Summary sedang dinonaktifkan oleh Super Admin.");
+                          setAiSummary("Fitur ini berbayar.");
                         }
 
                         try {
@@ -1109,6 +1150,18 @@ export default function DashboardPage() {
                     <RefreshCw className="w-3 h-3 animate-spin text-emerald-600 dark:text-emerald-400" />
                     <span>Merangkum analisis sistem...</span>
                   </div>
+                ) : !aiEnabled ? (
+                  <div className="flex items-start gap-2.5 py-0.5">
+                    <Lock className="w-3.5 h-3.5 mt-0.5 shrink-0 text-slate-400 dark:text-slate-500" />
+                    <div>
+                      <p className="font-bold text-slate-900 dark:text-white">
+                        Fitur ini berbayar
+                      </p>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                        Ringkasan analitik AI tersedia pada paket berlangganan.
+                      </p>
+                    </div>
+                  </div>
                 ) : (
                   aiSummary
                 )}
@@ -1117,39 +1170,17 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* KOLOM SAMPING (KHUSUS AGEN) */}
-        {isAgent && (
-          <div className="lg:col-span-4 space-y-6">
-            <Card className="border border-[#F4EFE6] dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs rounded-xl">
-              <CardHeader className="p-3.5 border-b border-[#F4EFE6] dark:border-slate-800">
-                <CardTitle className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                  <UserCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" /> Leads Perlu Follow-Up
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-3 space-y-2 text-xs">
-                {loadingLeads ? (
-                  <p className="text-center py-4 text-slate-400">Memuat prospek...</p>
-                ) : agentFollowUpLeads.length > 0 ? (
-                  agentFollowUpLeads.map((lead) => (
-                    <div key={lead.id} className="p-2.5 border border-[#F4EFE6] dark:border-slate-800 rounded-lg space-y-1.5 bg-[#FDFBF7] dark:bg-slate-800/50">
-                      <div>
-                        <p className="font-semibold text-slate-900 dark:text-white">{lead.name}</p>
-                        <p className="text-[10px] text-slate-500 dark:text-slate-400">{lead.property}</p>
-                      </div>
-                      <Button
-                        size="sm"
-                        onClick={() => router.push(`/crm/leads/${lead.id}`)}
-                        className="w-full h-7 text-[10px] bg-emerald-600 hover:bg-emerald-700 text-white rounded-md cursor-pointer"
-                      >
-                        <UserCheck className="w-3 h-3 mr-1" /> Detail Lead
-                      </Button>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-center py-4 text-slate-400 text-xs">Tidak ada leads baru.</p>
-                )}
-              </CardContent>
-            </Card>
+        {/* KOLOM SAMPING — AGENDA STAFF (agen, admin, super admin) */}
+        {canSeeAgenda && (
+          // order-first di layar kecil: agenda kerja hari ini muncul tepat
+          // setelah Quick Access, bukan setelah empat section properti.
+          <div className="lg:col-span-4 space-y-6 order-first lg:order-none">
+            <DashboardAgendaPanel
+              leads={agentFollowUpLeads}
+              surveys={upcomingSurveys}
+              loadingLeads={loadingLeads}
+              loadingSurveys={loadingSurveys}
+            />
           </div>
         )}
       </div>

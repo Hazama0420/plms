@@ -222,6 +222,13 @@ export interface AdvancedFilter {
   city_name?: string | null;
   /** Nama kecamatan (pencarian sebagian, tidak peka huruf besar/kecil). */
   district_name?: string | null;
+  /**
+   * Beberapa kecamatan/area sekaligus, dicocokkan sebagai OR — dipakai filter
+   * multi-lokasi di katalog. Dipisahkan dari `district_name` karena nilainya
+   * tidak boleh digabung jadi satu string ber-koma: `escapePattern` di
+   * property.service.ts membuang koma sebelum kueri dibentuk.
+   */
+  district_names?: string[] | null;
 
   // Lainnya
   year_built?: number | null;

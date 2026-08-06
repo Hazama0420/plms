@@ -24,6 +24,51 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  RegionMultiSelect,
+  type SelectedRegion,
+} from "@/components/dashboard/RegionMultiSelect";
+
+/**
+ * Membangun ulang chip lokasi dari URL saat panel dibuka atau halaman dimuat
+ * ulang.
+ *
+ * Ada dua bentuk parameter lokasi yang beredar:
+ *   - `district_name` berulang — ditulis panel ini sendiri.
+ *   - `city_name` tunggal — dikirim tombol "Lihat Semua" di halaman detail
+ *     properti dan pencarian di beranda.
+ * Keduanya ditampilkan sebagai chip agar pengguna melihat filter yang sedang
+ * aktif, bukan panel kosong yang akan menghapus filternya begitu ditekan Cari.
+ *
+ * Id negatif dipakai sebagai penanda "bukan baris asli tabel regions"; nilainya
+ * tidak pernah ikut dikirim ke basis data.
+ */
+function readRegionsFromParams(params: URLSearchParams): SelectedRegion[] {
+  const result: SelectedRegion[] = [];
+
+  params.getAll("district_name").forEach((name, index) => {
+    const area = name.trim();
+    if (!area) return;
+    result.push({
+      id: -(index + 1),
+      province_name: "",
+      city_name: "",
+      area_name: area,
+    });
+  });
+
+  const city = (params.get("city_name") ?? "").trim();
+  if (city) {
+    result.push({
+      id: -1000,
+      province_name: "",
+      city_name: city,
+      area_name: "",
+    });
+  }
+
+  return result;
+}
 
 export function DashboardPropertySearch() {
   const router = useRouter();
@@ -39,8 +84,9 @@ export function DashboardPropertySearch() {
   const [keyword, setKeyword] = useState(initial("q"));
   const [listingType, setListingType] = useState<string>(initial("listing_type", "all"));
   const [propertyType, setPropertyType] = useState<string>(initial("property_type", "all"));
-  const [provinceName, setProvinceName] = useState(initial("province_name"));
-  const [cityName, setCityName] = useState(initial("city_name"));
+  const [regions, setRegions] = useState<SelectedRegion[]>(() =>
+    readRegionsFromParams(searchParams)
+  );
   const [minBuildingArea, setMinBuildingArea] = useState(initial("buildingAreaMin"));
   const [maxBuildingArea, setMaxBuildingArea] = useState(initial("buildingAreaMax"));
   const [minLandArea, setMinLandArea] = useState(initial("landAreaMin"));
@@ -94,8 +140,21 @@ export function DashboardPropertySearch() {
     if (keyword.trim()) params.set("q", keyword.trim());
     if (listingType && listingType !== "all") params.set("listing_type", listingType);
     if (propertyType && propertyType !== "all") params.set("property_type", propertyType);
-    if (provinceName.trim()) params.set("province_name", provinceName.trim());
-    if (cityName.trim()) params.set("city_name", cityName.trim());
+
+    // Lokasi dikirim sebagai parameter berulang, bukan satu string ber-koma:
+    // escapePattern di property.service.ts membuang koma, jadi CSV akan lebur
+    // menjadi satu kata kunci yang tidak pernah cocok dengan alamat mana pun.
+    //
+    // Chip yang hanya punya kota (datang dari "Lihat Semua") tetap dikirim
+    // sebagai `city_name` supaya filternya bekerja di level yang benar.
+    regions.forEach((region) => {
+      if (region.area_name) {
+        params.append("district_name", region.area_name);
+      } else if (region.city_name) {
+        params.set("city_name", region.city_name);
+      }
+    });
+
     if (minBuildingArea) params.set("buildingAreaMin", minBuildingArea);
     if (maxBuildingArea) params.set("buildingAreaMax", maxBuildingArea);
     if (minLandArea) params.set("landAreaMin", minLandArea);
@@ -112,8 +171,7 @@ export function DashboardPropertySearch() {
     setKeyword("");
     setListingType("all");
     setPropertyType("all");
-    setProvinceName("");
-    setCityName("");
+    setRegions([]);
     setMinBuildingArea("");
     setMaxBuildingArea("");
     setMinLandArea("");
@@ -125,51 +183,74 @@ export function DashboardPropertySearch() {
   };
 
   return (
-    <div className="w-full bg-transparent text-white space-y-3 relative z-10">
-      <form onSubmit={handleSearch} className="space-y-3">
-        {/* BAR INPUT UTAMA */}
-        <div className="flex flex-col md:flex-row items-stretch gap-2 bg-slate-950/40 backdrop-blur-md p-2 rounded-2xl shadow-2xl border border-white/20">
-          
-          {/* Input Keyword Utama */}
-          <div className="flex-1 flex items-center gap-2 px-3 h-10 bg-white/95 rounded-xl border border-white/30">
-            <Search className="w-4 h-4 text-emerald-600 shrink-0" />
-            <input
-              type="text"
-              value={keyword}
-              onChange={(e) => setKeyword(e.target.value)}
-              placeholder="Cari nama properti, kode listing, atau klaster..."
-              className="w-full bg-transparent text-slate-900 placeholder:text-slate-400 text-xs focus:outline-none font-medium"
-            />
-            {keyword && (
-              <button
-                type="button"
-                onClick={() => setKeyword("")}
-                className="text-slate-400 hover:text-slate-600 p-1 rounded-full hover:bg-slate-200 transition"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
+    /* Menggunakan 'max-w-lg' (atau 'max-w-md') TANPA 'mx-auto' agar tetap rata kiri */
+    <div className="w-full max-w-lg bg-transparent text-white space-y-3 relative z-10">
+      <form onSubmit={handleSearch} className="space-y-2">
+        {/* KOLOM PENCARIAN */}
+        <div className="flex items-center gap-2 h-11 pl-3 pr-1.5 bg-white/95 rounded-xl border border-white/30 shadow-md">
+          <Search className="w-4 h-4 text-emerald-600 shrink-0" />
+          <input
+            type="text"
+            value={keyword}
+            onChange={(e) => setKeyword(e.target.value)}
+            placeholder="Cari lokasi, nama properti, atau kode listing..."
+            className="w-full min-w-0 bg-transparent text-slate-900 placeholder:text-slate-400 text-xs focus:outline-none font-medium"
+          />
+          {keyword && (
+            <button
+              type="button"
+              onClick={() => setKeyword("")}
+              aria-label="Bersihkan pencarian"
+              className="text-slate-400 hover:text-slate-600 p-1 rounded-full hover:bg-slate-200 transition shrink-0"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+          <Button
+            type="submit"
+            aria-label="Cari Properti"
+            className="h-8 w-8 p-0 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg shadow-sm shrink-0 cursor-pointer transition-transform active:scale-95"
+          >
+            <Search className="w-4 h-4" />
+          </Button>
+        </div>
 
-          <div className="flex items-center gap-2 shrink-0">
-            {/* POPOVER FILTER */}
-            <Popover open={filterOpen} onOpenChange={setFilterOpen}>
-              <PopoverTrigger
-                className={cn(
-                  "inline-flex items-center justify-center gap-1.5 rounded-xl border border-white/30 bg-white/95 text-slate-700 text-xs font-semibold px-3 h-10 shadow-xs hover:bg-white transition cursor-pointer"
-                )}
-              >
-                <SlidersHorizontal className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Filter</span>
-              </PopoverTrigger>
+        {/* TOMBOL FILTER */}
+        <div className="flex items-center gap-2">
+          {/* POPOVER FILTER */}
+          <Popover open={filterOpen} onOpenChange={setFilterOpen}>
+            <PopoverTrigger
+              className={cn(
+                "inline-flex items-center justify-center gap-1.5 rounded-xl border border-white/30 bg-white/95 text-slate-700 text-xs font-semibold px-3.5 h-9 shadow-xs hover:bg-white transition cursor-pointer"
+              )}
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Filter</span>
+              {/* Jumlah lokasi terpilih ditampilkan di pemicu supaya filter
+                  lokasi yang sedang aktif terlihat tanpa membuka panel. */}
+              {regions.length > 0 && (
+                <span className="ml-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-emerald-600 px-1 text-[10px] font-bold text-white">
+                  {regions.length}
+                </span>
+              )}
+            </PopoverTrigger>
 
+              {/* `max-h-[80vh]` sebelumnya membuat panel mentok ke tepi atas di
+                  halaman /properties: pemicunya duduk jauh lebih rendah di
+                  viewport (di bawah header, toggle scope, dan hero), sehingga
+                  80% tinggi layar lebih besar daripada ruang yang benar-benar
+                  tersisa dan Base UI terpaksa membalik lalu memangkas panel.
+                  `--available-height` diisi Base UI pada Positioner dengan
+                  ruang nyata di sisi terpilih, jadi panel selalu muat.
+                  `align="start"` menjaga panel tidak menggantung keluar layar
+                  sempit. */}
               <PopoverContent
-                align="center"
+                align="start"
                 side="bottom"
                 sideOffset={8}
-                className="w-[92vw] max-w-[580px] p-4 sm:p-6 rounded-2xl sm:rounded-3xl shadow-2xl border-slate-200 space-y-5 max-h-[80vh] overflow-y-auto bg-white text-slate-900 z-50 scrollbar-thin"
+                className="w-[92vw] max-w-[580px] p-4 sm:p-6 rounded-2xl sm:rounded-3xl shadow-2xl border-slate-200 max-h-[var(--available-height)] flex flex-col gap-4 bg-white text-slate-900 z-50"
               >
-                <div className="flex items-center justify-between border-b pb-3">
+                <div className="flex items-center justify-between border-b pb-3 shrink-0">
                   <h4 className="font-extrabold text-sm sm:text-base text-slate-900 flex items-center gap-2">
                     <SlidersHorizontal className="w-4 h-4 text-emerald-600" /> Filter Pencarian Properti
                   </h4>
@@ -184,7 +265,11 @@ export function DashboardPropertySearch() {
                   </Button>
                 </div>
 
-                <div className="space-y-4 text-xs">
+                {/* Hanya badan panel yang bergulir; judul dan tombol aksi tetap
+                    terlihat. `min-h-0` wajib — tanpa itu item flex menolak
+                    menyusut di bawah tinggi kontennya dan panel kembali
+                    meluber keluar viewport. */}
+                <div className="space-y-4 text-xs flex-1 min-h-0 overflow-y-auto scrollbar-thin pr-0.5">
                   {/* 1. Tipe Transaksi */}
                   <div className="space-y-2">
                     <Label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
@@ -243,20 +328,12 @@ export function DashboardPropertySearch() {
                     <Label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                       <MapPin className="w-3.5 h-3.5 text-rose-500" /> Lokasi & Kawasan
                     </Label>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                      <Input
-                        placeholder="Provinsi (mis: Banten, Jakarta)"
-                        value={provinceName}
-                        onChange={(e) => setProvinceName(e.target.value)}
-                        className="h-10 text-xs rounded-xl bg-slate-50 border-slate-200 text-slate-900"
-                      />
-                      <Input
-                        placeholder="Kota / Kabupaten"
-                        value={cityName}
-                        onChange={(e) => setCityName(e.target.value)}
-                        className="h-10 text-xs rounded-xl bg-slate-50 border-slate-200 text-slate-900"
-                      />
-                    </div>
+                    {/* Dua kolom teks bebas "Provinsi" dan "Kota" sebelumnya
+                        dikirim apa adanya ke ilike, jadi salah ketik sedikit
+                        saja membuat hasilnya nihil. Sekarang nilainya dipilih
+                        dari tabel `regions` — sumber yang sama dengan alamat
+                        properti saat dibuat — sehingga selalu cocok. */}
+                    <RegionMultiSelect value={regions} onChange={setRegions} />
                   </div>
 
                   {/* 4. Rentang Harga */}
@@ -373,7 +450,7 @@ export function DashboardPropertySearch() {
                   </div>
                 </div>
 
-                <div className="pt-3 border-t flex items-center justify-end gap-2.5">
+                <div className="pt-3 border-t flex items-center justify-end gap-2.5 shrink-0">
                   <Button
                     type="button"
                     variant="outline"
@@ -394,17 +471,7 @@ export function DashboardPropertySearch() {
                   </Button>
                 </div>
               </PopoverContent>
-            </Popover>
-
-            {/* Tombol Eksekusi Cari Utama */}
-            <Button
-              type="submit"
-              className="h-10 px-5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl gap-1.5 shadow-md shrink-0 cursor-pointer transition-transform active:scale-98"
-            >
-              <Search className="w-3.5 h-3.5" /> Cari Properti
-            </Button>
-          </div>
-
+          </Popover>
         </div>
       </form>
     </div>

@@ -55,6 +55,7 @@ import {
   Ruler,
   ChevronLeft,
   ChevronRight,
+  Sparkles,
 } from "lucide-react";
 
 export interface PropertyItem {
@@ -239,6 +240,21 @@ function PropertiesCatalogContent() {
   // listing, sehingga pencarian berdasarkan lokasi hampir selalu nihil.
   const cityNameParam = searchParams.get("city_name") || searchParams.get("location") || "";
 
+  // Filter lokasi multi-pilih dari panel filter. Ditulis sebagai parameter
+  // berulang (`?district_name=A&district_name=B`), bukan satu string ber-koma,
+  // karena `escapePattern` di property.service.ts membuang koma dan akan
+  // meleburkan seluruh pilihan menjadi satu kata kunci yang tak pernah cocok.
+  //
+  // `districtKey` menjadi dependency useMemo menggantikan array-nya: hasil
+  // `getAll` adalah array baru pada tiap render, sehingga memakainya langsung
+  // membuat `queryFilters` selalu dianggap berubah dan katalog memuat ulang
+  // tanpa henti.
+  const districtNamesParam = searchParams
+    .getAll("district_name")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  const districtKey = districtNamesParam.join("|");
+
   const minPrice = searchParams.get("priceMin") || searchParams.get("minPrice") || "";
   const maxPrice = searchParams.get("priceMax") || searchParams.get("maxPrice") || "";
   const minBuildingArea = searchParams.get("buildingAreaMin") || "";
@@ -285,6 +301,7 @@ function PropertiesCatalogContent() {
       Boolean(qParam) ||
       Boolean(provinceNameParam) ||
       Boolean(cityNameParam) ||
+      Boolean(districtKey) ||
       listingTypeParam !== "all" ||
       propertyTypeParam !== "all" ||
       Boolean(minPrice || maxPrice || minLandArea || maxLandArea || minBuildingArea || maxBuildingArea) ||
@@ -293,6 +310,7 @@ function PropertiesCatalogContent() {
       qParam,
       provinceNameParam,
       cityNameParam,
+      districtKey,
       listingTypeParam,
       propertyTypeParam,
       minPrice,
@@ -379,6 +397,14 @@ function PropertiesCatalogContent() {
     if (provinceNameParam) advanced.province_name = provinceNameParam;
     if (cityNameParam) advanced.city_name = cityNameParam;
 
+    // Diturunkan ulang dari `districtKey`, bukan dari array hasil `getAll`,
+    // supaya isi memo ini benar-benar sejalan dengan dependency-nya. Array
+    // kosong sengaja tidak ditulis ke `advanced`: `activeFilterCount`
+    // menghitung setiap nilai yang bukan kosong, dan `[]` akan terhitung
+    // sebagai satu filter aktif padahal tidak ada lokasi yang dipilih.
+    const districtNames = districtKey ? districtKey.split("|") : [];
+    if (districtNames.length > 0) advanced.district_names = districtNames;
+
     // Tamu dan viewer hanya boleh melihat listing yang sudah tayang.
     //
     // Nilainya tepat "published" saja. `PropertyStatus` hanya mengenal draft,
@@ -416,6 +442,7 @@ function PropertiesCatalogContent() {
     propertyTypeParam,
     provinceNameParam,
     cityNameParam,
+    districtKey,
     minPrice,
     maxPrice,
     minLandArea,
@@ -666,26 +693,33 @@ function PropertiesCatalogContent() {
         </div>
       )}
 
-      {/* 3. HERO SEARCH BANNER */}
-      <div className="relative rounded-2xl sm:rounded-3xl overflow-hidden bg-slate-950 text-white border border-border/40 shadow-lg">
+      {/* 3. HERO SEARCH BANNER
+          Latar gelap penuh, lapisan `opacity-35`, dan gradien hitam di atasnya
+          membuat foto latar nyaris tak terlihat. Ketiganya dilepas: gambar kini
+          tampil apa adanya, dan teks dijaga terbaca lewat `drop-shadow` saja.
+          Salinan judul juga dipangkas supaya area gambar tidak habis oleh
+          tulisan. */}
+      <div className="relative rounded-2xl sm:rounded-3xl overflow-hidden text-white border border-border/40 shadow-lg">
         <div
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-35 transition-transform duration-700 hover:scale-105 pointer-events-none"
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat pointer-events-none"
           style={{ backgroundImage: "url('/bg-header.webp')" }}
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/70 to-transparent pointer-events-none" />
 
-        <div className="relative z-10 p-4 sm:p-7 md:p-8 space-y-3 sm:space-y-4">
-          <div className="max-w-2xl">
-            <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30 text-[10px] sm:text-xs font-bold uppercase tracking-wider mb-1.5">
-              Pencarian Properti
-            </Badge>
-            <h2 className="text-lg sm:text-2xl md:text-3xl font-extrabold tracking-tight text-white leading-tight">
-              Temukan Properti Impian Anda
-            </h2>
-            <p className="text-xs sm:text-sm text-slate-300 mt-1 leading-relaxed">
-              Gunakan filter presisi untuk menemukan hunian, tanah, atau ruang usaha terbaik.
-            </p>
-          </div>
+        <div className="relative z-10 p-4 sm:p-7 md:p-8 space-y-4 sm:space-y-5">
+  <div className="max-w-2xl space-y-2">
+    {/* Badge Header dengan Ikon */}
+    <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/30 text-[10px] sm:text-xs font-bold uppercase tracking-wider mb-1 flex items-center gap-1.5 w-fit backdrop-blur-md px-3 py-1 rounded-full shadow-sm">
+      <Sparkles className="w-3 h-3 text-emerald-400 animate-pulse" />
+      Direktori Properti Terpercaya
+    </Badge>
+
+    {/* Judul Utama dengan Gradien Warna */}
+<h2 className="text-xl sm:text-3xl md:text-4xl font-black tracking-tight leading-tight drop-shadow-md">
+  <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 via-teal-300 to-emerald-200">
+    Temukan Properti Impianmu
+  </span>
+</h2>
+  </div>
 
           <div className="pt-1">
             <DashboardPropertySearch />

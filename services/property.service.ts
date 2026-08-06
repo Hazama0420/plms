@@ -69,6 +69,20 @@ function escapePattern(value: string): string {
   return value.replace(/[%_,().*\\]/g, " ").trim();
 }
 
+/**
+ * Batas jumlah id properti yang boleh ikut dari pencocokan alamat.
+ *
+ * Kata kunci dicocokkan ke alamat lewat pra-kueri ke `property_address`, lalu
+ * id-nya disisipkan ke klausa `or` sebagai `id.in.(...)`. PostgREST tidak bisa
+ * meng-OR kolom tabel induk dengan kolom tabel anak dalam satu klausa, jadi
+ * dua langkah ini satu-satunya cara mendapat perilaku "judul ATAU alamat".
+ *
+ * Batasnya ada karena setiap id memakan ~37 karakter di URL kueri; tanpa itu
+ * kata kunci umum seperti "Jakarta" bisa membangun URL belasan kilobyte yang
+ * ditolak gateway Supabase.
+ */
+const ADDRESS_MATCH_LIMIT = 200;
+
 // ============================================================
 // SERVICE OBJECT (tanpa duplikasi)
 // ============================================================
@@ -115,6 +129,16 @@ const propertyService = {
     const cityName = escapePattern(toText(advanced.city_name));
     const districtName = escapePattern(toText(advanced.district_name));
 
+    // Filter multi-lokasi katalog: beberapa kecamatan sekaligus, dicocokkan
+    // sebagai OR. Nilainya dikirim sebagai array — bukan satu string ber-koma —
+    // karena escapePattern membuang koma dan akan meleburkan seluruh pilihan
+    // menjadi satu kata kunci yang tidak pernah cocok.
+    const districtNames = (
+      Array.isArray(advanced.district_names) ? advanced.district_names : []
+    )
+      .map((value) => escapePattern(toText(value)))
+      .filter(Boolean);
+
     const certificate = toText(advanced.certificate);
     const furnishing = toText(advanced.furnishing);
     const hasCertificate = Boolean(certificate) && certificate !== "all";
@@ -139,7 +163,11 @@ const propertyService = {
       yearBuilt !== null ||
       hasCertificate ||
       hasFurnishing;
-    const joinAddress = Boolean(provinceName) || Boolean(cityName) || Boolean(districtName);
+    const joinAddress =
+      Boolean(provinceName) ||
+      Boolean(cityName) ||
+      Boolean(districtName) ||
+      districtNames.length > 0;
 
     const inner = (needed: boolean) => (needed ? "!inner" : "");
 
@@ -178,12 +206,58 @@ const propertyService = {
 
     query = query.range(offset, offset + limit - 1);
 
-    // ===== SEARCH (judul, kode listing, deskripsi) =====
+    // ===== SEARCH (judul, kode listing, deskripsi, dan ALAMAT) =====
+    //
+    // Sebelumnya kata kunci hanya dicocokkan ke tiga kolom di tabel induk,
+    // sehingga mengetik nama daerah — "Gunung Sindur", "BSD", "Bogor" — hampir
+    // selalu nihil meski propertinya ada: nama wilayah tersimpan di
+    // `property_address`, bukan di judul.
+    //
+    // Menggabungkannya jadi satu `.or()` tidak bisa: PostgREST menolak klausa
+    // yang mencampur kolom tabel induk dengan kolom tabel anak. Jadi alamatnya
+    // dicari lebih dulu secara terpisah, lalu id hasilnya disisipkan sebagai
+    // salah satu cabang `or` — hasil akhirnya "judul ATAU kode ATAU deskripsi
+    // ATAU alamat", bukan irisan keempatnya.
     const keyword = escapePattern(search);
     if (keyword) {
-      query = query.or(
-        `title.ilike.%${keyword}%,listing_code.ilike.%${keyword}%,description.ilike.%${keyword}%`
-      );
+      const orClauses = [
+        `title.ilike.%${keyword}%`,
+        `listing_code.ilike.%${keyword}%`,
+        `description.ilike.%${keyword}%`,
+      ];
+
+      const { data: addressMatches, error: addressError } = await supabase
+        .from("property_address")
+        .select("property_id")
+        .or(
+          [
+            `province_name.ilike.%${keyword}%`,
+            `city_name.ilike.%${keyword}%`,
+            `district_name.ilike.%${keyword}%`,
+            `village_name.ilike.%${keyword}%`,
+            `address.ilike.%${keyword}%`,
+          ].join(",")
+        )
+        .limit(ADDRESS_MATCH_LIMIT);
+
+      if (addressError) {
+        // Pencarian alamat yang gagal tidak boleh mengosongkan seluruh hasil:
+        // pencocokan judul tetap dijalankan seperti sebelumnya.
+        console.error("Supabase error (cari alamat):", addressError);
+      } else {
+        const ids = Array.from(
+          new Set(
+            (addressMatches ?? [])
+              .map((row: { property_id: string | null }) => row.property_id)
+              .filter((value): value is string => Boolean(value))
+          )
+        );
+        if (ids.length > 0) {
+          orClauses.push(`id.in.(${ids.join(",")})`);
+        }
+      }
+
+      query = query.or(orClauses.join(","));
     }
 
     // ===== FILTER DASAR =====
@@ -239,6 +313,16 @@ const propertyService = {
     if (provinceName) query = query.ilike("address.province_name", `%${provinceName}%`);
     if (cityName) query = query.ilike("address.city_name", `%${cityName}%`);
     if (districtName) query = query.ilike("address.district_name", `%${districtName}%`);
+
+    // Beberapa kecamatan sekaligus. `referencedTable` wajib: tanpa itu PostgREST
+    // menerapkan OR pada tabel `properties`, yang tidak punya kolom
+    // district_name, dan seluruh kueri gagal.
+    if (districtNames.length > 0) {
+      query = query.or(
+        districtNames.map((name) => `district_name.ilike.%${name}%`).join(","),
+        { referencedTable: "address" }
+      );
+    }
 
     const { data, error, count } = await query;
 

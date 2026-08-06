@@ -566,141 +566,69 @@ export default function PropertyDetailPage() {
     return isNaN(payment) ? 0 : Math.round(payment);
   }, [calculatedPrice, kprDpRupiah, kprTenor, kprBunga]);
 
-  // 🟢 PERBAIKAN AKURAT: Fetch "Properti Untukmu" (Menggunakan Filter District & City)
+  // "Properti Untukmu": kategori yang sama, di kota yang sama.
+  //
+  // Sebelumnya ada empat strategi bertingkat: kecamatan, lalu kota, lalu
+  // kategori saja secara global, lalu properti terbaru apa pun. Dua strategi
+  // terakhir itulah sumber keluhan "hanya memfilter kategori" — begitu tidak
+  // ada tetangga di kecamatan yang sama, seksi ini diam-diam menampilkan
+  // properti dari kota mana saja tanpa memberi tahu pengguna.
+  //
+  // Sekarang satu kueri saja dengan kunci Kota. Kecamatan terlalu sempit dan
+  // justru yang dulu memicu jatuh ke fallback global. Bila kotanya belum
+  // terisi, hasilnya dikosongkan — seksi menampilkan pesan kosong, bukan
+  // rekomendasi yang tidak relevan.
   useEffect(() => {
     async function fetchRelated() {
       if (!property?.id) return;
       setLoadingRelated(true);
       try {
-        // Pencocokan kini murni berbasis nama wilayah — `district_id`/`city_id`
+        // Pencocokan murni berbasis nama wilayah — `district_id`/`city_id`
         // mengacu ke tabel master yang sudah tidak diisi lagi.
         const targetCityName = resolveLocationName(addressObj, ["city_name", "city"]);
-        const targetDistrictName = resolveLocationName(addressObj, ["district_name", "district"]);
 
-        let fetchedData: any[] = [];
-
-        // STRATEGI 1: Filter Tipe Properti + KECAMATAN / KOTA PERSIS
-        if (targetCityName || targetDistrictName) {
-          let query1 = supabase
-            .from("properties")
-            .select(`
-              *,
-              address:property_address!inner(*),
-              price:property_price(*),
-              specifications:property_specifications(*),
-              building:property_building(*),
-              land:property_land(*),
-              media:property_media(*),
-              agent:users(full_name, avatar_url, phone)
-            `)
-            .eq("status", "published")
-            .neq("id", property.id);
-
-          if (property.property_type) {
-            query1 = query1.eq("property_type", property.property_type);
-          }
-
-          if (targetDistrictName) {
-            query1 = query1.ilike("address.district_name", `%${targetDistrictName}%`);
-          } else if (targetCityName) {
-            query1 = query1.ilike("address.city_name", `%${targetCityName}%`);
-          }
-
-          const { data: data1 } = await query1.order("created_at", { ascending: false }).limit(8);
-          if (data1 && data1.length > 0) {
-            fetchedData = data1;
-          }
-        }
-
-        // STRATEGI 2: Fallback jika level Kecamatan kosong, cari level KOTA SAMA
-        if (fetchedData.length === 0 && targetCityName) {
-          let query2 = supabase
-            .from("properties")
-            .select(`
-              *,
-              address:property_address!inner(*),
-              price:property_price(*),
-              specifications:property_specifications(*),
-              building:property_building(*),
-              land:property_land(*),
-              media:property_media(*),
-              agent:users(full_name, avatar_url, phone)
-            `)
-            .eq("status", "published")
-            .neq("id", property.id);
-
-          if (property.property_type) {
-            query2 = query2.eq("property_type", property.property_type);
-          }
-
-          if (targetCityName) {
-            query2 = query2.ilike("address.city_name", `%${targetCityName}%`);
-          }
-
-          const { data: data2 } = await query2.order("created_at", { ascending: false }).limit(8);
-          if (data2 && data2.length > 0) {
-            fetchedData = data2;
-          }
-        }
-
-        // STRATEGI 3: Fallback Tipe Properti Sama (Global)
-        if (fetchedData.length === 0) {
-          let query3 = supabase
-            .from("properties")
-            .select(`
-              *,
-              address:property_address(*),
-              price:property_price(*),
-              specifications:property_specifications(*),
-              building:property_building(*),
-              land:property_land(*),
-              media:property_media(*),
-              agent:users(full_name, avatar_url, phone)
-            `)
-            .eq("status", "published")
-            .neq("id", property.id);
-
-          if (property.property_type) {
-            query3 = query3.eq("property_type", property.property_type);
-          }
-
-          const { data: data3 } = await query3.order("created_at", { ascending: false }).limit(8);
-          if (data3 && data3.length > 0) {
-            fetchedData = data3;
-          }
-        }
-
-        // STRATEGI 4: Fallback Akhir Properti Terbaru Mana Saja
-        if (fetchedData.length === 0) {
-          const { data: data4 } = await supabase
-            .from("properties")
-            .select(`
-              *,
-              address:property_address(*),
-              price:property_price(*),
-              specifications:property_specifications(*),
-              building:property_building(*),
-              land:property_land(*),
-              media:property_media(*),
-              agent:users(full_name, avatar_url, phone)
-            `)
-            .eq("status", "published")
-            .neq("id", property.id)
-            .order("created_at", { ascending: false })
-            .limit(4);
-
-          if (data4) {
-            fetchedData = data4;
-          }
-        }
-
-        if (fetchedData.length > 0) {
-          setRelatedProperties(fetchedData.map(formatPropertyItem).slice(0, 4));
-        } else {
+        if (!targetCityName) {
           setRelatedProperties([]);
+          return;
         }
+
+        // `!inner` wajib: tanpa itu PostgREST hanya mengosongkan objek address
+        // yang tidak cocok, sementara baris propertinya tetap ikut terkirim —
+        // persis gejala filter lokasi yang "tidak berpengaruh".
+        let query = supabase
+          .from("properties")
+          .select(`
+            *,
+            address:property_address!inner(*),
+            price:property_price(*),
+            specifications:property_specifications(*),
+            building:property_building(*),
+            land:property_land(*),
+            media:property_media(*),
+            agent:users(full_name, avatar_url, phone)
+          `)
+          .eq("status", "published")
+          .neq("id", property.id)
+          .ilike("address.city_name", `%${targetCityName}%`);
+
+        if (property.property_type) {
+          query = query.eq("property_type", property.property_type);
+        }
+
+        const { data, error } = await query
+          .order("created_at", { ascending: false })
+          .limit(8);
+
+        if (error) {
+          console.error("Gagal memuat rekomendasi properti:", error.message);
+          setRelatedProperties([]);
+          return;
+        }
+
+        setRelatedProperties((data ?? []).map(formatPropertyItem).slice(0, 4));
       } catch (e) {
         console.error("Gagal memuat rekomendasi properti:", e);
+        setRelatedProperties([]);
       } finally {
         setLoadingRelated(false);
       }
@@ -709,7 +637,19 @@ export default function PropertyDetailPage() {
     fetchRelated();
   }, [property?.id, property?.property_type, addressObj]);
 
-  // 🟢 PERBAIKAN AKURAT: Tombol "Lihat Semua" Kirim Param Kota & Kecamatan
+  // Kota yang benar-benar dipakai memfilter rekomendasi. Dipakai bersama oleh
+  // kueri, tombol "Lihat Semua", dan subjudul seksi supaya ketiganya tidak
+  // pernah bercerita hal yang berbeda — subjudul dulu menyebut kecamatan
+  // sementara filternya bekerja di level lain.
+  const relatedCityName = resolveLocationName(addressObj, ["city_name", "city"]);
+
+  // Tombol "Lihat Semua" harus menghasilkan daftar yang sama persis dengan yang
+  // baru saja dilihat pengguna: kategori + kota, tanpa kata kunci.
+  //
+  // Versi lama mengirim nama kecamatan lewat `q`. Parameter itu hanya
+  // dicocokkan ke title/listing_code/description di propertyService.getList —
+  // tidak pernah ke alamat — sehingga katalog selalu kosong dan nama kecamatan
+  // muncul mentah di dalam kotak pencarian.
   const handleSeeAllRelated = () => {
     const params = new URLSearchParams();
     params.set("view", "global");
@@ -718,16 +658,8 @@ export default function PropertyDetailPage() {
       params.set("property_type", property.property_type);
     }
 
-    const cityName = resolveLocationName(addressObj, ["city_name", "city"]);
-    const districtName = resolveLocationName(addressObj, ["district_name", "district"]);
-
-    if (cityName) {
-      params.set("city_name", cityName);
-    }
-    if (districtName) {
-      params.set("q", districtName);
-    } else if (!cityName && regionLocationText && regionLocationText !== "Lokasi Terverifikasi") {
-      params.set("q", regionLocationText.split(",")[0].trim());
+    if (relatedCityName) {
+      params.set("city_name", relatedCityName);
     }
 
     router.push(`/properties?${params.toString()}`);
@@ -1313,7 +1245,7 @@ export default function PropertyDetailPage() {
             </div>
           </section>
 
-          {/* 🏡 SECTION "PROPERTI UNTUKMU" (SUDAH DIPERBAIKI PRESISI WLAYAH) */}
+          {/* 🏡 SECTION "PROPERTI UNTUKMU" — kategori + Kota yang sama */}
           <section className="space-y-3 pt-2">
             <div className="flex items-center justify-between border-b border-border/60 pb-2.5">
               <div>
@@ -1321,18 +1253,30 @@ export default function PropertyDetailPage() {
                   <Building2 className="w-4 h-4 text-emerald-600" /> Properti Untukmu
                 </h3>
                 <p className="text-[11px] text-muted-foreground">
-                  Pilihan properti serupa tipe <span className="font-semibold text-emerald-600">{property.property_type}</span> di area <span className="font-semibold text-emerald-600">{regionLocationText.split(',')[0]}</span>.
+                  {relatedCityName ? (
+                    <>
+                      Pilihan properti serupa tipe{" "}
+                      <span className="font-semibold text-emerald-600">{property.property_type}</span> di{" "}
+                      <span className="font-semibold text-emerald-600">{relatedCityName}</span>.
+                    </>
+                  ) : (
+                    <>Kota properti ini belum terisi, jadi rekomendasi serupa belum bisa ditampilkan.</>
+                  )}
                 </p>
               </div>
 
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleSeeAllRelated}
-                className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 hover:text-emerald-800 hover:bg-emerald-600/10 rounded-lg cursor-pointer h-8 shrink-0"
-              >
-                Lihat Semua <ChevronRight className="w-3.5 h-3.5 ml-0.5" />
-              </Button>
+              {/* Disembunyikan saat kosong: menuju katalog yang sudah pasti nihil
+                  hanya membuang klik pengguna. */}
+              {relatedProperties.length > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleSeeAllRelated}
+                  className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 hover:text-emerald-800 hover:bg-emerald-600/10 rounded-lg cursor-pointer h-8 shrink-0"
+                >
+                  Lihat Semua <ChevronRight className="w-3.5 h-3.5 ml-0.5" />
+                </Button>
+              )}
             </div>
 
             {loadingRelated ? (

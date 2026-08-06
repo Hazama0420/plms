@@ -70,13 +70,17 @@ export async function GET(
       return NextResponse.json({ error: "ID Invoice tidak valid." }, { status: 400 });
     }
 
-    let { data: inv, error } = await supabase
+    // Dipisah dari destructuring `let`: hanya `inv` yang ditugaskan ulang oleh
+    // jalur fallback di bawah, sementara `error` tidak pernah berubah.
+    const primary = await supabase
       .from("invoices")
       .select("*, property:properties(title, address)")
       .eq("id", id)
       .maybeSingle();
 
-    if (error || !inv) {
+    let inv = primary.data;
+
+    if (primary.error || !inv) {
       // Fallback kueri murni tabel invoices, untuk baris tanpa properti tertaut.
       const fallback = await supabase
         .from("invoices")

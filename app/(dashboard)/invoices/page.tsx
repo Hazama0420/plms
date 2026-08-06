@@ -357,7 +357,7 @@ export default function InvoicesPage() {
       </div>
 
       {/* 2. STATS RINGKASAN */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5 sm:gap-4">
         {[
           { label: "Total Invoice", value: stats.total, icon: FileText, border: "border-l-emerald-500" },
           { label: "Lunas (Paid)", value: stats.paid, icon: CheckCircle2, border: "border-l-blue-500" },
@@ -532,6 +532,11 @@ export default function InvoicesPage() {
                 Tidak ada data invoice.
               </div>
             ) : (
+              // Tujuh kolom masih meluber di tablet sempit. Pembungkus ini yang
+              // scroll, bukan halamannya. `overflow-hidden` di Card induk tetap
+              // dipertahankan — ia hanya memotong sudut membulat Card, dan isi
+              // yang scroll sudah tertampung di dalam pembungkus ini.
+              <div className="overflow-x-auto">
               <Table>
                 <TableHeader className="bg-muted/50">
                   <TableRow>
@@ -615,6 +620,7 @@ export default function InvoicesPage() {
                   })}
                 </TableBody>
               </Table>
+              </div>
             )}
           </CardContent>
         </Card>

@@ -408,7 +408,9 @@ function KprCalculatorContent() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-5 gap-1.5">
+                  {/* Lima kolom di 375px menyisakan ~65px per tombol — di bawah
+                      target sentuh yang nyaman. Turun ke dua kolom di ponsel. */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-1.5">
                     {[5, 10, 15, 20, 25].map((yr) => (
                       <button
                         key={yr}
@@ -606,7 +608,10 @@ function KprCalculatorContent() {
               <TabsContent value="amortization" className="pt-2">
                 <Card className="border border-border/70 shadow-2xs rounded-2xl overflow-hidden">
                   <CardContent className="p-0">
-                    <div className="max-h-[260px] overflow-y-auto scrollbar-thin">
+                    {/* overflow-x-auto: empat kolom nominal tidak muat di 375px.
+                        Tanpa ini tabel melebar melewati Card dan memaksa
+                        seluruh halaman ikut scroll ke samping. */}
+                    <div className="max-h-[260px] overflow-y-auto overflow-x-auto scrollbar-thin">
                       <Table>
                         <TableHeader className="bg-muted/60 sticky top-0 backdrop-blur-md">
                           <TableRow>

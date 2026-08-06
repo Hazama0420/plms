@@ -104,18 +104,30 @@ const parsePropertyPrice = (val?: string | null): number => {
 };
 
 // Preset Template Catatan Pembayaran
+//
+// SENGAJA tidak mencantumkan nama bank, nomor rekening, atau nama perusahaan.
+// Invoice cetak sudah mencetaknya sendiri di bagian "Pembayaran :", diambil dari
+// lib/invoice-config.ts. Versi lama mengulangnya di sini dan kedua salinan itu
+// memang sudah berbeda: preset menyebut PT Inland Property Indonesia / BCA
+// 8830-123-456, sementara yang tercetak PT Kaya Dari Properti / BCA
+// 658-090-9971. Klien menerima dua nomor rekening yang bertentangan dalam satu
+// dokumen. Menghapus salinannya menutup seluruh kelas kesalahan itu, bukan cuma
+// kejadian yang satu ini.
+//
+// Preset di sini hanya untuk syarat pembayaran — hal yang berbeda per invoice
+// dan memang perlu ditulis manual.
 const PAYMENT_PRESETS = [
   {
-    label: "BCA PT Inland",
-    text: "Transfer melalui Bank BCA No. Rek: 8830-123-456 a.n PT Inland Property Indonesia. Mohon kirimkan bukti transfer.",
+    label: "Konfirmasi transfer",
+    text: "Pembayaran ditransfer ke rekening yang tercantum pada invoice ini. Mohon kirimkan bukti transfer setelah pembayaran.",
   },
   {
-    label: "Mandiri PT Inland",
-    text: "Transfer via Bank Mandiri No. Rek: 137-000-987-6543 a.n PT Inland Property Indonesia.",
+    label: "Jatuh tempo 1x24 jam",
+    text: "Pembayaran berlaku 1x24 jam sejak invoice ini diterbitkan.",
   },
   {
     label: "Pelunasan Booking Fee",
-    text: "Tagihan Pelunasan Booking Fee Properti. Pembayaran berlaku 1x24 jam dari diterbitkannya invoice ini.",
+    text: "Tagihan pelunasan Booking Fee properti. Pembayaran berlaku 1x24 jam sejak invoice ini diterbitkan.",
   },
 ];
 

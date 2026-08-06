@@ -11,7 +11,6 @@ import {
   DollarSign,
   Home,
   Building2,
-  Users,
   Download,
   RefreshCw,
   MapPin,
@@ -305,36 +304,38 @@ export default function ReportsPage() {
       </div>
 
       {/* 2. RINGKASAN METRIK UTAMA (KPI CARDS) */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
-        <Card className="border border-[#F4EFE6] bg-white shadow-2xs rounded-2xl">
+      {/* Dua kolom di ponsel, tiga di tablet: empat kartu KPI di 375px
+          menyisakan lebar yang membuat nominal rupiah terpotong. */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3.5">
+        <Card className="border bg-card shadow-2xs rounded-2xl">
           <CardContent className="p-4 space-y-1">
-            <div className="flex items-center justify-between text-slate-500">
+            <div className="flex items-center justify-between text-muted-foreground">
               <span className="text-xs font-semibold">Total Portofolio</span>
               <div className="p-2 bg-emerald-50 rounded-xl text-emerald-600">
                 <Home size={16} />
               </div>
             </div>
-            <p className="text-xl sm:text-2xl font-bold text-slate-900">{formatNumber(stats?.totalProperties)} Unit</p>
+            <p className="text-xl sm:text-2xl font-bold text-foreground">{formatNumber(stats?.totalProperties)} Unit</p>
             <TrendBadge change={createdTrend} />
           </CardContent>
         </Card>
 
-        <Card className="border border-[#F4EFE6] bg-white shadow-2xs rounded-2xl">
+        <Card className="border bg-card shadow-2xs rounded-2xl">
           <CardContent className="p-4 space-y-1">
-            <div className="flex items-center justify-between text-slate-500">
+            <div className="flex items-center justify-between text-muted-foreground">
               <span className="text-xs font-semibold">Listing Aktif</span>
               <div className="p-2 bg-blue-50 rounded-xl text-blue-600">
                 <Building2 size={16} />
               </div>
             </div>
             <p className="text-xl sm:text-2xl font-bold text-blue-600">{formatNumber(stats?.totalActive)} Unit</p>
-            <p className="text-[10px] text-slate-400 font-medium pt-1">Siap dipasarkan</p>
+            <p className="text-[10px] text-muted-foreground font-medium pt-1">Siap dipasarkan</p>
           </CardContent>
         </Card>
 
-        <Card className="border border-[#F4EFE6] bg-white shadow-2xs rounded-2xl">
+        <Card className="border bg-card shadow-2xs rounded-2xl">
           <CardContent className="p-4 space-y-1">
-            <div className="flex items-center justify-between text-slate-500">
+            <div className="flex items-center justify-between text-muted-foreground">
               <span className="text-xs font-semibold">Terjual & Disewa</span>
               <div className="p-2 bg-amber-50 rounded-xl text-amber-600">
                 <CheckCircle2 size={16} />
@@ -347,9 +348,9 @@ export default function ReportsPage() {
           </CardContent>
         </Card>
 
-        <Card className="border border-[#F4EFE6] bg-white shadow-2xs rounded-2xl">
+        <Card className="border bg-card shadow-2xs rounded-2xl">
           <CardContent className="p-4 space-y-1">
-            <div className="flex items-center justify-between text-slate-500">
+            <div className="flex items-center justify-between text-muted-foreground">
               <span className="text-xs font-semibold">Gross Sales Revenue</span>
               <div className="p-2 bg-purple-50 rounded-xl text-purple-600">
                 <DollarSign size={16} />
@@ -366,19 +367,19 @@ export default function ReportsPage() {
       </div>
 
       {/* 3. TREN PENJUALAN BULANAN */}
-      <Card className="border border-[#F4EFE6] bg-white shadow-2xs rounded-2xl overflow-hidden">
-        <CardHeader className="p-4 border-b border-[#F4EFE6] bg-slate-50/50 flex flex-row items-center justify-between">
-          <CardTitle className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-2">
+      <Card className="border bg-card shadow-2xs rounded-2xl overflow-hidden">
+        <CardHeader className="p-4 border-b bg-muted/50 flex flex-row items-center justify-between">
+          <CardTitle className="text-xs font-bold uppercase tracking-wider text-foreground flex items-center gap-2">
             <BarChart3 size={16} className="text-emerald-600" />
             Tren Aktivitas Penjualan vs Listing Baru ({selectedYear})
           </CardTitle>
-          <Badge variant="outline" className="text-[10px] bg-white border-[#F4EFE6] text-slate-600">
+          <Badge variant="outline" className="text-[10px] bg-card border-border text-muted-foreground">
             Bulanan
           </Badge>
         </CardHeader>
         <CardContent className="p-4 sm:p-6">
           {monthlyLoading ? (
-            <Skeleton className="h-[280px] w-full rounded-xl bg-[#F4EFE6]" />
+            <Skeleton className="h-[280px] w-full rounded-xl" />
           ) : (
             <div className="space-y-3">
               <div className="h-[280px]">
@@ -407,7 +408,7 @@ export default function ReportsPage() {
                   </ComposedChart>
                 </ResponsiveContainer>
               </div>
-              <div className="flex items-center justify-center gap-6 text-xs text-slate-500 font-medium pt-2">
+              <div className="flex items-center justify-center gap-6 text-xs text-muted-foreground font-medium pt-2">
                 <span className="flex items-center gap-1.5">
                   <span className="w-3 h-3 rounded-xs bg-blue-500 inline-block" /> Listing Baru Ditambahkan
                 </span>
@@ -424,10 +425,10 @@ export default function ReportsPage() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
         {/* 📍 LOKASI TERATAS (HOTSPOT WILAYAH) */}
-        <Card className="lg:col-span-7 border border-[#F4EFE6] bg-white shadow-2xs rounded-2xl flex flex-col justify-between">
+        <Card className="lg:col-span-7 border bg-card shadow-2xs rounded-2xl flex flex-col justify-between">
           <div>
-            <CardHeader className="p-4 border-b border-[#F4EFE6] bg-slate-50/50 flex flex-row items-center justify-between">
-              <CardTitle className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-2">
+            <CardHeader className="p-4 border-b bg-muted/50 flex flex-row items-center justify-between">
+              <CardTitle className="text-xs font-bold uppercase tracking-wider text-foreground flex items-center gap-2">
                 <MapPin size={16} className="text-emerald-600" />
                 Lokasi Teratas (Hotspot Wilayah)
               </CardTitle>
@@ -437,7 +438,7 @@ export default function ReportsPage() {
             </CardHeader>
             <CardContent className="p-4 sm:p-5 space-y-3.5">
               {locationData.length === 0 ? (
-                <p className="text-center text-slate-400 py-10 text-xs">Belum ada data lokasi terdaftar.</p>
+                <p className="text-center text-muted-foreground py-10 text-xs">Belum ada data lokasi terdaftar.</p>
               ) : (
                 locationData.map((loc, index) => {
                   const percentage = totalLocationProperties > 0 
@@ -447,18 +448,18 @@ export default function ReportsPage() {
                   return (
                     <div key={index} className="space-y-1.5">
                       <div className="flex items-center justify-between text-xs font-medium">
-                        <span className="text-slate-800 font-bold flex items-center gap-1.5">
-                          <span className="w-4 text-slate-400 text-[10px]">#{index + 1}</span>
+                        <span className="text-foreground font-bold flex items-center gap-1.5">
+                          <span className="w-4 text-muted-foreground text-[10px]">#{index + 1}</span>
                           {loc.name || "Lokasi Lainnya"}
                         </span>
-                        <div className="flex items-center gap-2 text-slate-600 text-[11px]">
+                        <div className="flex items-center gap-2 text-muted-foreground text-[11px]">
                           <span className="font-bold text-emerald-600">{loc.count} Unit</span>
-                          <span className="text-slate-400 text-[10px]">({percentage}%)</span>
+                          <span className="text-muted-foreground text-[10px]">({percentage}%)</span>
                         </div>
                       </div>
-                      
+
                       {/* Visual Progress Bar */}
-                      <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                      <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
                         <div
                           className="bg-emerald-600 h-full rounded-full transition-all duration-500"
                           style={{ width: `${Math.max(percentage, 5)}%` }}
@@ -470,25 +471,25 @@ export default function ReportsPage() {
               )}
             </CardContent>
           </div>
-          <div className="p-3.5 bg-slate-50/80 border-t border-[#F4EFE6] rounded-b-2xl">
-            <p className="text-[10px] text-slate-500 font-medium text-center">
+          <div className="p-3.5 bg-muted/60 border-t rounded-b-2xl">
+            <p className="text-[10px] text-muted-foreground font-medium text-center">
               💡 Wilayah dengan persentase tertinggi merupakan prioritas pemasaran dan kampanye iklan.
             </p>
           </div>
         </Card>
 
         {/* 🏢 DISTRIBUSI TIPE PROPERTI */}
-        <Card className="lg:col-span-5 border border-[#F4EFE6] bg-white shadow-2xs rounded-2xl flex flex-col justify-between">
+        <Card className="lg:col-span-5 border bg-card shadow-2xs rounded-2xl flex flex-col justify-between">
           <div>
-            <CardHeader className="p-4 border-b border-[#F4EFE6] bg-slate-50/50 flex flex-row items-center justify-between">
-              <CardTitle className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-2">
+            <CardHeader className="p-4 border-b bg-muted/50 flex flex-row items-center justify-between">
+              <CardTitle className="text-xs font-bold uppercase tracking-wider text-foreground flex items-center gap-2">
                 <PieIcon size={16} className="text-emerald-600" />
                 Komposisi Tipe Properti
               </CardTitle>
             </CardHeader>
             <CardContent className="p-4 sm:p-5">
               {typeData.length === 0 ? (
-                <p className="text-center text-slate-400 py-10 text-xs">Belum ada data tipe properti.</p>
+                <p className="text-center text-muted-foreground py-10 text-xs">Belum ada data tipe properti.</p>
               ) : (
                 <div className="h-[240px]">
                   <ResponsiveContainer width="100%" height="100%">
@@ -511,7 +512,7 @@ export default function ReportsPage() {
                       <Legend
                         verticalAlign="bottom"
                         height={36}
-                        formatter={(value) => <span className="text-[11px] font-semibold text-slate-700">{value}</span>}
+                        formatter={(value) => <span className="text-[11px] font-semibold text-foreground">{value}</span>}
                       />
                     </PieChart>
                   </ResponsiveContainer>
@@ -523,9 +524,9 @@ export default function ReportsPage() {
       </div>
 
       {/* 5. LEADERBOARD & PERFORMA AGEN AKTIF */}
-      <Card className="border border-[#F4EFE6] bg-white shadow-2xs rounded-2xl overflow-hidden">
-        <CardHeader className="p-4 border-b border-[#F4EFE6] bg-slate-50/50 flex flex-row items-center justify-between">
-          <CardTitle className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-2">
+      <Card className="border bg-card shadow-2xs rounded-2xl overflow-hidden">
+        <CardHeader className="p-4 border-b bg-muted/50 flex flex-row items-center justify-between">
+          <CardTitle className="text-xs font-bold uppercase tracking-wider text-foreground flex items-center gap-2">
             <Trophy size={16} className="text-amber-500" />
             Papan Peringkat & Performa Agen Aktif
           </CardTitle>
@@ -535,11 +536,11 @@ export default function ReportsPage() {
         </CardHeader>
         <CardContent className="p-0">
           {agentData.length === 0 ? (
-            <p className="text-center text-slate-400 py-12 text-xs">Belum ada data pencapaian agen.</p>
+            <p className="text-center text-muted-foreground py-12 text-xs">Belum ada data pencapaian agen.</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-xs text-left border-collapse">
-                <thead className="bg-slate-100/70 border-b border-[#F4EFE6] text-slate-600 font-bold uppercase text-[10px]">
+                <thead className="bg-muted border-b text-muted-foreground font-bold uppercase text-[10px]">
                   <tr>
                     <th className="p-3 text-center w-12">Rank</th>
                     <th className="p-3">Nama Agen</th>
@@ -557,25 +558,25 @@ export default function ReportsPage() {
                     const closingRate = totalProp > 0 ? ((totalSold / totalProp) * 100).toFixed(1) : "0.0";
 
                     return (
-                      <tr key={agent.agent_id || index} className="hover:bg-slate-50/60 transition-colors">
+                      <tr key={agent.agent_id || index} className="hover:bg-muted/60 transition-colors">
                         <td className="p-3 text-center font-bold">
                           {index === 0 ? (
                             <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-amber-100 text-amber-700 font-bold text-[11px]">
                               🥇
                             </span>
                           ) : index === 1 ? (
-                            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-slate-200 text-slate-700 font-bold text-[11px]">
+                            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-muted text-foreground font-bold text-[11px]">
                               🥈
                             </span>
                           ) : index === 2 ? (
-                            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-amber-800/20 text-amber-900 font-bold text-[11px]">
+                            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-amber-800/20 text-amber-900 dark:text-amber-300 font-bold text-[11px]">
                               🥉
                             </span>
                           ) : (
-                            <span className="text-slate-400 font-semibold">#{index + 1}</span>
+                            <span className="text-muted-foreground font-semibold">#{index + 1}</span>
                           )}
                         </td>
-                        <td className="p-3 font-bold text-slate-900">
+                        <td className="p-3 font-bold text-foreground">
                           <div className="flex items-center gap-2">
                             <div className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-[10px]">
                               {agent.agent_name?.slice(0, 2)?.toUpperCase() || "AG"}
@@ -583,14 +584,14 @@ export default function ReportsPage() {
                             <span>{agent.agent_name || "Agen Inland"}</span>
                           </div>
                         </td>
-                        <td className="p-3 text-center font-semibold text-slate-700">{totalProp} Unit</td>
+                        <td className="p-3 text-center font-semibold text-foreground">{totalProp} Unit</td>
                         <td className="p-3 text-center font-extrabold text-emerald-600">{totalSold} Unit</td>
                         <td className="p-3 text-center">
-                          <Badge variant="outline" className="text-[10px] font-bold bg-slate-50 text-slate-700 border-slate-200">
+                          <Badge variant="outline" className="text-[10px] font-bold bg-muted text-foreground">
                             {closingRate}%
                           </Badge>
                         </td>
-                        <td className="p-3 text-right font-extrabold text-slate-900">
+                        <td className="p-3 text-right font-extrabold text-foreground">
                           {formatCurrency(agent.total_revenue)}
                         </td>
                         <td className="p-3 text-right font-bold text-emerald-600">

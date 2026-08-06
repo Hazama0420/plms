@@ -1496,7 +1496,9 @@ function SurveyCard({
         {/* Aksi status — hanya agen pemilik jadwal (atau admin) yang boleh */}
         {viewerIsAgent && isActive && (
           <div className="space-y-2 pt-1">
-            <div className="grid grid-cols-3 gap-2">
+            {/* Tiga tombol berlabel teks di 375px menyisakan ~100px per tombol;
+                labelnya terpotong. Dua kolom di ponsel. */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               <Button
                 size="sm"
                 variant="outline"

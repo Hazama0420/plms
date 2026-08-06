@@ -662,6 +662,10 @@ export default function LeadsPage() {
                   ))}
                 </div>
               ) : (
+                // Empat kolom (nama, status, budget, aksi) tidak muat di 375px.
+                // Pembungkus ini membuat tabelnya sendiri yang scroll, bukan
+                // seluruh halaman.
+                <div className="overflow-x-auto">
                 <Table>
                   <TableHeader className="bg-muted/50">
                     <TableRow className="border-b border-border">
@@ -736,6 +740,7 @@ export default function LeadsPage() {
                     })}
                   </TableBody>
                 </Table>
+                </div>
               )}
             </CardContent>
           </Card>

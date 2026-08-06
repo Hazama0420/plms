@@ -7,13 +7,14 @@ import { supabase } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { id } from "date-fns/locale";
-import { ArrowLeft, Edit, Trash2, Printer, Download } from "lucide-react";
+import { ArrowLeft, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { PrintInvoiceButton } from "@/components/invoices/print-invoice-button";
 import { type Invoice, resolveInvoiceAmount } from "@/types/invoice.types";
 
 const statusConfig: Record<string, { label: string; color: string; bg: string }> = {
@@ -50,9 +51,11 @@ export default function InvoiceDetailPage() {
 
         if (error) throw error;
         setInvoice(data);
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.error("Error fetching invoice:", error);
-        toast.error(error?.message || "Gagal memuat data invoice");
+        toast.error(
+          error instanceof Error ? error.message : "Gagal memuat data invoice"
+        );
         router.push("/invoices");
       } finally {
         setLoading(false);
@@ -98,7 +101,7 @@ export default function InvoiceDetailPage() {
   if (!invoice) {
     return (
       <div className="flex flex-col items-center justify-center h-96">
-        <p className="text-slate-500">Invoice tidak ditemukan</p>
+        <p className="text-muted-foreground">Invoice tidak ditemukan</p>
         <Button onClick={() => router.push("/invoices")} className="mt-4">
           Kembali
         </Button>
@@ -112,7 +115,7 @@ export default function InvoiceDetailPage() {
   // RENDER
   // ============================================================
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-7xl mx-auto px-1 sm:px-0">
       {/* HEADER */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
@@ -120,26 +123,27 @@ export default function InvoiceDetailPage() {
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-slate-800 dark:text-slate-100">
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">
               Detail Invoice
             </h1>
-            <p className="text-sm text-slate-500 dark:text-slate-400">
+            <p className="text-sm text-muted-foreground">
               {invoice.invoice_number}
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        {/* flex-wrap: di 375px badge + tombol cetak tidak lagi memaksa
+            scroll horizontal di seluruh halaman. */}
+        <div className="flex flex-wrap items-center gap-2">
           <Badge className={cn("border-0", status.bg, status.color)}>
             {status.label}
           </Badge>
-          <Button variant="outline" size="sm" onClick={() => window.print()}>
-            <Printer className="h-4 w-4 mr-2" />
-            Cetak
-          </Button>
-          <Button variant="default" size="sm" className="bg-emerald-600 hover:bg-emerald-700">
-            <Download className="h-4 w-4 mr-2" />
-            Unduh PDF
-          </Button>
+          {/* Dulu `window.print()` polos pada DOM dashboard: ikut mencetak
+              sidebar dan navigasi, karena tidak ada satu pun aturan
+              @media print di proyek ini. Tombol di samping ("Unduh PDF")
+              bahkan tidak punya onClick sama sekali. Keduanya diganti satu
+              tombol yang membuka dokumen invoice sungguhan; penyimpanan PDF
+              lewat opsi "Save as PDF" di dialog cetak. */}
+          <PrintInvoiceButton invoiceId={invoice.id} label="Cetak" />
         </div>
       </div>
 
@@ -151,48 +155,48 @@ export default function InvoiceDetailPage() {
               <CardTitle>Informasi Invoice</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <p className="text-sm text-slate-500">Nomor Invoice</p>
+                  <p className="text-sm text-muted-foreground">Nomor Invoice</p>
                   <p className="font-medium">{invoice.invoice_number}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-slate-500">Status</p>
+                  <p className="text-sm text-muted-foreground">Status</p>
                   <Badge className={cn("border-0", status.bg, status.color)}>
                     {status.label}
                   </Badge>
                 </div>
               </div>
               <Separator />
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <p className="text-sm text-slate-500">Klien</p>
+                  <p className="text-sm text-muted-foreground">Klien</p>
                   <p className="font-medium">{invoice.client_name}</p>
                   {invoice.client_email && (
-                    <p className="text-sm text-slate-500">{invoice.client_email}</p>
+                    <p className="text-sm text-muted-foreground">{invoice.client_email}</p>
                   )}
                 </div>
                 <div>
-                  <p className="text-sm text-slate-500">Properti Terkait</p>
+                  <p className="text-sm text-muted-foreground">Properti Terkait</p>
                   <p className="font-medium">
                     {invoice.property?.title || invoice.property_id || "-"}
                   </p>
                 </div>
               </div>
               <Separator />
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <p className="text-sm text-slate-500">Tanggal Terbit</p>
+                  <p className="text-sm text-muted-foreground">Tanggal Terbit</p>
                   <p className="font-medium">{formatDateSafe(invoice.issue_date)}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-slate-500">Jatuh Tempo</p>
+                  <p className="text-sm text-muted-foreground">Jatuh Tempo</p>
                   <p className="font-medium">{formatDateSafe(invoice.due_date)}</p>
                 </div>
               </div>
               {invoice.paid_date && (
                 <div>
-                  <p className="text-sm text-slate-500">Tanggal Lunas</p>
+                  <p className="text-sm text-muted-foreground">Tanggal Lunas</p>
                   <p className="font-medium">{formatDateSafe(invoice.paid_date)}</p>
                 </div>
               )}
@@ -200,7 +204,7 @@ export default function InvoiceDetailPage() {
                 <>
                   <Separator />
                   <div>
-                    <p className="text-sm text-slate-500">Catatan</p>
+                    <p className="text-sm text-muted-foreground">Catatan</p>
                     <p className="text-sm">{invoice.notes}</p>
                   </div>
                 </>
@@ -216,7 +220,9 @@ export default function InvoiceDetailPage() {
               <div className="flex justify-between items-center">
                 <span className="text-lg font-semibold">Total</span>
                 <span className="text-2xl font-bold text-emerald-600">
-                  {formatCurrency(invoice.total_amount)}
+                  {/* Baris invoice lama menyimpan nilai di `amount`, yang baru di
+                      `total_amount`. Helper bersama memilih yang terisi. */}
+                  {formatCurrency(resolveInvoiceAmount(invoice))}
                 </span>
               </div>
             </CardContent>
@@ -230,17 +236,16 @@ export default function InvoiceDetailPage() {
               <CardTitle>Aksi</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
+              {/* Tombol "Edit Invoice" dihapus: mengarah ke
+                  /invoices/[id]/edit, rute yang tidak ada di proyek ini —
+                  menekannya hanya menghasilkan 404. */}
+              <PrintInvoiceButton
+                invoiceId={invoice.id}
+                className="w-full justify-start text-sm"
+              />
               <Button
                 variant="outline"
-                className="w-full justify-start"
-                onClick={() => router.push(`/invoices/${invoice.id}/edit`)}
-              >
-                <Edit className="h-4 w-4 mr-2" />
-                Edit Invoice
-              </Button>
-              <Button
-                variant="outline"
-                className="w-full justify-start text-rose-600 hover:text-rose-700 hover:bg-rose-50"
+                className="w-full justify-start text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40"
                 onClick={async () => {
                   if (!confirm("Yakin hapus invoice ini?")) return;
                   try {
@@ -251,8 +256,10 @@ export default function InvoiceDetailPage() {
                     if (error) throw error;
                     toast.success("Invoice berhasil dihapus");
                     router.push("/invoices");
-                  } catch (error: any) {
-                    toast.error(error?.message || "Gagal hapus invoice");
+                  } catch (error: unknown) {
+                    const message =
+                      error instanceof Error ? error.message : "Gagal hapus invoice";
+                    toast.error(message);
                   }
                 }}
               >
@@ -268,11 +275,11 @@ export default function InvoiceDetailPage() {
             </CardHeader>
             <CardContent className="space-y-2 text-sm">
               <div className="flex justify-between">
-                <span className="text-slate-500">Dibuat</span>
+                <span className="text-muted-foreground">Dibuat</span>
                 <span>{formatDateSafe(invoice.created_at)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-500">ID</span>
+                <span className="text-muted-foreground">ID</span>
                 <span className="font-mono text-xs">{invoice.id.slice(0, 8)}...</span>
               </div>
             </CardContent>

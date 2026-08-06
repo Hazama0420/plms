@@ -4,40 +4,47 @@
 // Teks tetap tajam pada resolusi cetak berapa pun, bisa diseleksi dan dicari,
 // dan berkasnya tetap kecil.
 //
-// Empat masalah yang diperbaiki dari versi sebelumnya:
+// GEOMETRI DIUKUR DARI DESAIN REFERENSI. Semua posisi di bawah diturunkan dari
+// gambar acuan berukuran 1414 x 2000 px yang dipetakan ke A4 (210 x 297 mm),
+// dengan faktor 1 px = 0,1485 mm. Angka-angka mm di CSS bukan tebakan.
 //
-//   1. WARNA HILANG SAAT DICETAK. Dulu hanya ada `@page { size: A4 }` tanpa
-//      `print-color-adjust: exact`, sehingga banner hijau, aksen emas, dan
-//      baris abu rontok di Chrome kecuali pengguna mencentang "Background
-//      graphics" secara manual. Ini bug visual terbesarnya.
-//   2. TERKUNCI SATU HALAMAN. `.page-container` memakai `height: 297mm` dengan
-//      `overflow: hidden` — isi yang lebih panjang terpotong diam-diam alih-alih
-//      pindah ke halaman berikutnya.
-//   3. TIDAK ADA ESCAPING. Nama klien dan catatan disisipkan mentah. Catatan
-//      berasal dari form bebas DAN dari hasil OCR AI, jadi `<` merusak layout
-//      dan `<img onerror=...>` benar-benar tereksekusi di tab cetak.
+// Empat masalah yang diperbaiki dari versi lama masih dipertahankan di sini:
+//
+//   1. WARNA HILANG SAAT DICETAK. Tanpa `print-color-adjust: exact`, banner
+//      hijau, aksen emas, dan baris abu rontok di Chrome kecuali pengguna
+//      mencentang "Background graphics" secara manual.
+//   2. TERKUNCI SATU HALAMAN. `height: 297mm` + `overflow: hidden` memotong isi
+//      yang lebih panjang diam-diam alih-alih memindahkannya ke halaman baru.
+//   3. TIDAK ADA ESCAPING. Nama klien dan catatan disisipkan mentah. `notes`
+//      berasal dari form bebas DAN dari hasil OCR AI, jadi `<img onerror=...>`
+//      benar-benar tereksekusi di tab cetak.
 //   4. SATU BARIS HARDCODED. Tabel item tidak pernah punya `.map()`.
 //
-// Dokumen ini juga mencetak dirinya sendiri lewat `<script>` di bawah. Versi
-// lama memasang `printWindow.onload` dari jendela pemanggil, yang untuk
-// navigasi lintas-dokumen kerap tidak pernah menyala.
+// Dokumen ini mencetak dirinya sendiri lewat `<script>` di bawah. Memasang
+// `printWindow.onload` dari jendela pemanggil tidak bisa diandalkan: untuk
+// navigasi lintas-dokumen, handle itu diganti saat dokumen baru dimuat.
 
 import type { InvoiceIssuer } from "@/lib/invoice-config";
 import type { InvoiceLineItem } from "@/types/invoice.types";
 
 /**
- * Palet merek, terpusat.
+ * Palet merek, diambil dari desain referensi.
  *
- * Nilai-nilai ini dulu diulang belasan kali di seluruh blok CSS, sehingga
- * mengganti warna berarti mencari-ganti dan berharap tidak ada yang terlewat.
+ * Perhatikan ada DUA warna gelap yang berbeda, dan itu memang begitu di
+ * desainnya: judul "INVOICE" serta bilah tabel memakai hijau tua, sementara
+ * garis pemisah, "Sub Total", dan "Pembayaran :" memakai biru tua.
  */
 const BRAND = {
-  dark: "#0E2C24",
-  gold: "#E2B23B",
-  rowAlt: "#ECECEC",
+  /** Hijau tua: banner atas/bawah, judul INVOICE, bilah kepala tabel. */
+  dark: "#1B3A30",
+  /** Emas: pita diagonal di banner atas dan bawah. */
+  gold: "#E2B33C",
+  /** Biru tua: garis pemisah, label Sub Total, judul Pembayaran. */
+  navy: "#17384A",
+  /** Abu baris tabel. */
+  rowAlt: "#E9E9E9",
   text: "#1a1a1a",
   textMuted: "#333333",
-  textSoft: "#2b2b2b",
 } as const;
 
 export interface InvoiceTemplateData {
@@ -56,7 +63,6 @@ export interface InvoiceTemplateData {
   total: number;
   /** Identitas penerbit dari lib/invoice-config.ts. */
   issuer: InvoiceIssuer;
-  logo_base64?: string;
   /** Catatan bebas, dirender di bagian sendiri — bukan sebagai deskripsi item. */
   notes?: string | null;
 }
@@ -101,20 +107,21 @@ export function generateInvoiceHTML(data: InvoiceTemplateData): string {
       ? data.items
       : [{ description: "Transaksi Properti", amount: data.total || 0 }];
 
+  // Alamat masuk ke sel yang sama dengan deskripsi, bukan baris terpisah.
+  // Di desain referensi keduanya berada dalam satu blok abu yang sama.
   const itemRows = items
-    .map((item, index) => {
-      const zebra = index % 2 === 0 ? "row-alt" : "row-plain";
-      const addressRow = item.address
-        ? `<tr class="${zebra}">
-             <td colspan="2" class="item-address">Alamat : ${escapeHtml(item.address)}</td>
-           </tr>`
+    .map((item) => {
+      const addressLine = item.address
+        ? `<div class="item-address">Alamat : ${escapeHtml(item.address)}</div>`
         : "";
 
-      return `<tr class="${zebra}">
-                <td class="item-title">${escapeHtml(item.description)}</td>
+      return `<tr>
+                <td class="item-cell">
+                  <div class="item-title">${escapeHtml(item.description)}</div>
+                  ${addressLine}
+                </td>
                 <td class="item-price">${formatRupiah(item.amount)}</td>
-              </tr>
-              ${addressRow}`;
+              </tr>`;
     })
     .join("");
 
@@ -127,8 +134,6 @@ export function generateInvoiceHTML(data: InvoiceTemplateData): string {
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Invoice ${escapeHtml(data.invoice_number)}</title>
     <style>
-        /* Margin vertikal memberi ruang bagi halaman kedua dan seterusnya;
-           versi lama memakai margin 0 dan mengandalkan padding absolut. */
         @page { size: A4; margin: 0; }
 
         /* Tanpa ini, seluruh warna latar rontok saat dicetak di Chrome:
@@ -139,10 +144,13 @@ export function generateInvoiceHTML(data: InvoiceTemplateData): string {
           box-sizing: border-box;
         }
 
+        /* Tanpa font web: memuat Google Fonts menunda render, dan pemicu cetak
+           bisa menyala sebelum fontnya turun — hasil cetak bergeser tata letak.
+           Tumpukan sistem ini deterministik di semua mesin cetak. */
         body {
           margin: 0;
           padding: 0;
-          font-family: 'Helvetica Neue', Arial, sans-serif;
+          font-family: "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
           color: ${BRAND.text};
           background: #f1f5f9;
         }
@@ -159,84 +167,141 @@ export function generateInvoiceHTML(data: InvoiceTemplateData): string {
           background: #ffffff;
         }
 
-        .header-banner { width: 100%; height: 36mm; display: block; }
-        .content { position: relative; z-index: 2; padding: 6mm 12mm 46mm 12mm; }
+        /* ---- BANNER ATAS ----
+           Hijau: tepi bawahnya turun dari 10,5mm di kanan ke 51mm di kiri.
+           Emas: pita sejajar di bawahnya, menebal ke arah kanan. */
+        .header-banner { width: 100%; height: 57mm; display: block; }
 
-        .logo-container { position: absolute; top: 5mm; left: 12mm; z-index: 3; }
-        .logo-img { max-height: 20mm; max-width: 68mm; object-fit: contain; }
+        /* Padding bawah 48mm menyisakan ruang bagi banner kaki yang diposisikan
+           absolut, sehingga isi tidak menabraknya di halaman terakhir. */
+        .content { position: relative; z-index: 2; padding: 4mm 20mm 48mm 20mm; }
 
-        .meta-section { width: 100%; margin-bottom: 5mm; display: table; }
+        /* ---- KEPALA: Kepada yth. + INVOICE ---- */
+        .meta-section { width: 100%; display: table; margin-bottom: 12mm; }
         .client-details {
-          display: table-cell; width: 55%; vertical-align: top;
-          font-size: 13pt; line-height: 1.5; color: ${BRAND.textSoft};
+          display: table-cell; width: 52%; vertical-align: top;
+          /* Menurunkan "Kepada yth." agar sebaris dengan "No:", bukan dengan
+             judul INVOICE yang jauh lebih tinggi. */
+          padding-top: 8mm;
+          font-size: 13pt; line-height: 1.5; color: ${BRAND.text};
         }
-        .client-address { font-size: 10.5pt; color: ${BRAND.textMuted}; line-height: 1.4; }
-        .invoice-details { display: table-cell; width: 45%; vertical-align: top; text-align: right; }
+        .client-name { font-weight: 700; }
+        .client-address {
+          font-size: 10pt; color: ${BRAND.textMuted};
+          line-height: 1.4; margin-top: 1mm;
+        }
+
+        .invoice-details {
+          display: table-cell; width: 48%; vertical-align: top; text-align: right;
+        }
         .invoice-title {
-          font-size: 30pt; font-weight: 900; color: ${BRAND.dark};
-          letter-spacing: 1px; margin: 0 0 1mm 0;
+          font-size: 30pt; font-weight: 800; color: ${BRAND.dark};
+          letter-spacing: 0.5pt; line-height: 1; margin: 0 0 4mm 0;
         }
-        .invoice-meta-item { font-size: 11pt; color: ${BRAND.textMuted}; line-height: 1.4; }
+        .invoice-meta-item {
+          font-size: 12pt; color: ${BRAND.text}; line-height: 1.5;
+        }
 
-        .divider { width: 100%; height: 2px; background-color: ${BRAND.dark}; margin: 3mm 0 4mm 0; }
+        /* ---- GARIS PEMISAH ---- */
+        .divider { width: 100%; height: 0.5mm; background-color: ${BRAND.navy}; }
 
-        .invoice-table { width: 100%; border-collapse: collapse; margin-bottom: 4mm; }
+        /* ---- TABEL ITEM ----
+           border-spacing memberi jarak vertikal antar blok abu, persis seperti
+           di desain: baris-barisnya berdiri sendiri, tidak menempel. */
+        .invoice-table {
+          width: 100%;
+          border-collapse: separate;
+          border-spacing: 0 5mm;
+          margin-top: 1mm;
+        }
 
-        /* Header tabel ikut terulang di tiap halaman saat isi meluap. */
+        /* Kepala tabel ikut terulang di tiap halaman saat isi meluap. */
         .invoice-table thead { display: table-header-group; }
         .invoice-table tr { break-inside: avoid; page-break-inside: avoid; }
 
         .invoice-table th {
-          background-color: ${BRAND.dark}; color: #ffffff; font-size: 12pt;
-          font-weight: bold; padding: 3mm 4mm; text-transform: uppercase;
+          background-color: ${BRAND.dark}; color: #ffffff;
+          font-size: 14pt; font-weight: 700;
+          padding: 6mm 5mm; text-transform: uppercase; letter-spacing: 0.3pt;
         }
         .invoice-table th.left { text-align: left; }
         .invoice-table th.right { text-align: right; }
-        .invoice-table td { padding: 3mm 4mm; font-size: 11pt; vertical-align: top; }
 
-        .row-alt { background-color: ${BRAND.rowAlt}; }
-        .row-plain { background-color: #ffffff; }
-        .item-title { font-size: 12pt; color: ${BRAND.text}; font-weight: bold; }
-        .item-price { font-size: 12pt; color: ${BRAND.text}; font-weight: bold; text-align: right; }
-        .item-address { font-size: 10.5pt; color: ${BRAND.textMuted}; line-height: 1.45; }
-
-        .totals { width: 100%; margin-top: 4mm; text-align: right; }
-        .total-row { font-size: 11pt; color: ${BRAND.textMuted}; margin-bottom: 1.5mm; }
-        .total-row .label { display: inline-block; min-width: 40mm; }
-        .total-row .value { display: inline-block; min-width: 40mm; font-weight: bold; color: ${BRAND.text}; }
-        .grand-total {
-          display: inline-block; border-top: 2px solid ${BRAND.dark};
-          border-bottom: 2px solid ${BRAND.dark}; padding: 2mm 4mm;
-          background-color: ${BRAND.rowAlt}; font-size: 11.5pt;
-          font-weight: bold; color: ${BRAND.dark}; margin-top: 1mm;
+        .item-cell, .item-price {
+          background-color: ${BRAND.rowAlt};
+          padding: 4mm 5mm; vertical-align: top;
         }
-        .grand-total .label { margin-right: 7mm; color: ${BRAND.textMuted}; font-weight: normal; }
+        .item-title { font-size: 12pt; color: ${BRAND.text}; font-weight: 700; }
+        .item-address {
+          font-size: 10pt; color: ${BRAND.textMuted};
+          line-height: 1.45; margin-top: 1.5mm; font-weight: 400;
+        }
+        .item-price {
+          font-size: 12pt; color: ${BRAND.text};
+          font-weight: 700; text-align: right; white-space: nowrap;
+        }
 
-        .notes-section { margin-top: 6mm; font-size: 10.5pt; color: ${BRAND.textMuted}; line-height: 1.5; }
-        .notes-title { font-weight: bold; color: ${BRAND.dark}; margin-bottom: 1mm; }
+        /* ---- TOTAL ----
+           Kotak abu selebar 76mm, rata kanan, dengan garis tebal di bawahnya. */
+        .totals { margin-top: 6mm; }
+        .totals-box { width: 76mm; margin-left: auto; }
+        .totals-table { width: 100%; border-collapse: collapse; }
+        .totals-table td { padding: 2mm 4mm; font-size: 12pt; }
+        .t-tax td { color: ${BRAND.textMuted}; font-size: 11pt; padding-bottom: 0; }
+        .t-main td { background-color: ${BRAND.rowAlt}; color: ${BRAND.navy}; }
+        .t-label { text-align: left; }
+        .t-value { text-align: right; font-weight: 700; white-space: nowrap; }
+        .totals-underline {
+          height: 0.5mm; background-color: ${BRAND.navy}; margin-top: 3mm;
+        }
 
-        .bottom-section { width: 100%; margin-top: 10mm; display: table; break-inside: avoid; }
-        .payment-info { display: table-cell; width: 55%; vertical-align: top; font-size: 11pt; line-height: 1.6; }
-        .payment-title { font-weight: bold; color: ${BRAND.dark}; text-decoration: underline; margin-bottom: 1mm; }
-        .payment-bank { font-weight: bold; color: ${BRAND.dark}; font-size: 11.5pt; }
-        .payment-an { font-weight: bold; color: ${BRAND.dark}; }
+        /* ---- CATATAN ---- */
+        .notes-section {
+          margin-top: 8mm; font-size: 10.5pt;
+          color: ${BRAND.textMuted}; line-height: 1.5;
+        }
+        .notes-title { font-weight: 700; color: ${BRAND.navy}; margin-bottom: 1mm; }
+
+        /* ---- PEMBAYARAN + TANDA TANGAN ---- */
+        .bottom-section {
+          width: 100%; margin-top: 4mm; display: table; break-inside: avoid;
+        }
+        .payment-info {
+          display: table-cell; width: 52%; vertical-align: top;
+          font-size: 11pt; line-height: 1.6;
+        }
+        .payment-title {
+          font-weight: 700; color: ${BRAND.navy};
+          text-decoration: underline; font-size: 12pt; margin-bottom: 2mm;
+        }
+        .payment-bank { font-weight: 700; color: ${BRAND.navy}; font-size: 11.5pt; }
+        .payment-an { font-weight: 700; color: ${BRAND.navy}; }
 
         .signature-section {
-          display: table-cell; width: 45%; vertical-align: top;
-          text-align: right; position: relative;
+          display: table-cell; width: 48%; vertical-align: top; text-align: right;
         }
-        .director-title { font-size: 11pt; color: ${BRAND.textMuted}; margin-bottom: 15mm; }
-        .director-name { font-size: 11pt; color: ${BRAND.textMuted}; font-weight: 500; }
-        .watermark { position: absolute; right: 0; top: -4mm; opacity: 0.12; width: 45mm; }
+        /* 20mm ruang tanda tangan antara jabatan dan nama, sesuai desain. */
+        .director-title { font-size: 11.5pt; color: ${BRAND.text}; margin-bottom: 20mm; }
+        .director-name { font-size: 12pt; color: ${BRAND.text}; }
 
+        /* ---- BANNER KAKI ----
+           Cerminan vertikal dari banner atas: baji hijau tetap paling tebal di
+           sisi kiri, dengan pita emas tipis di atasnya. */
         .footer { position: absolute; bottom: 0; left: 0; width: 100%; }
-        .footer-banner { width: 100%; height: 33mm; display: block; }
+        .footer-banner { width: 100%; height: 60mm; display: block; }
         .footer-content {
-          position: absolute; bottom: 3mm; left: 12mm; right: 12mm;
-          color: #ffffff; font-size: 9pt; line-height: 1.7;
+          position: absolute; bottom: 11mm; left: 12mm; right: 12mm;
+          color: #ffffff; font-size: 12pt; line-height: 1.55;
         }
-        .footer-item { display: flex; align-items: center; gap: 2mm; margin-bottom: 0.5mm; }
-        .footer-icon { width: 3.2mm; height: 3.2mm; flex-shrink: 0; fill: #ffffff; }
+        /* align-items: flex-start supaya alamat yang membungkus ke beberapa
+           baris tetap rata dengan kolom teks, bukan menggantung di bawah ikon. */
+        .footer-item {
+          display: flex; align-items: flex-start; gap: 2.5mm; margin-bottom: 1mm;
+        }
+        .footer-icon {
+          width: 4.2mm; height: 4.2mm; flex-shrink: 0;
+          fill: #ffffff; margin-top: 0.8mm;
+        }
 
         /* Kendali di layar. Jaring pengaman bila cetak otomatis tak menyala,
            dan tidak pernah ikut tercetak. */
@@ -268,24 +333,16 @@ export function generateInvoiceHTML(data: InvoiceTemplateData): string {
     <div class="toolbar-spacer no-print"></div>
 
     <div class="page-container">
-        <svg class="header-banner" viewBox="0 0 800 135" preserveAspectRatio="none">
-            <polygon points="0,0 800,0 800,60 0,120" fill="${BRAND.dark}" />
-            <polygon points="0,120 800,60 800,75 0,135" fill="${BRAND.gold}" />
+        <svg class="header-banner" viewBox="0 0 800 190" preserveAspectRatio="none">
+            <polygon points="0,0 800,0 800,35 0,170" fill="${BRAND.dark}" />
+            <polygon points="0,170 800,35 800,75 0,190" fill="${BRAND.gold}" />
         </svg>
-
-        ${
-          data.logo_base64
-            ? `<div class="logo-container">
-                 <img src="${data.logo_base64}" alt="${escapeHtml(issuer.company_name)}" class="logo-img" />
-               </div>`
-            : ""
-        }
 
         <div class="content">
             <div class="meta-section">
                 <div class="client-details">
                     Kepada yth.<br>
-                    <strong>${escapeHtml(data.client_name) || "Klien Properti"}</strong>
+                    <span class="client-name">${escapeHtml(data.client_name) || "Klien Properti"}</span>
                     ${
                       data.client_address
                         ? `<div class="client-address">${escapeHtml(data.client_address)}</div>`
@@ -310,7 +367,7 @@ export function generateInvoiceHTML(data: InvoiceTemplateData): string {
                 <thead>
                     <tr>
                         <th class="left">KETERANGAN</th>
-                        <th class="right">UANG TANDA JADI / NOMINAL</th>
+                        <th class="right">UANG TANDA JADI</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -321,21 +378,26 @@ export function generateInvoiceHTML(data: InvoiceTemplateData): string {
             <div class="divider"></div>
 
             <div class="totals">
-                ${
-                  hasTax
-                    ? `<div class="total-row">
-                         <span class="label">Sub Total</span>
-                         <span class="value">${formatRupiah(data.subtotal)}</span>
-                       </div>
-                       <div class="total-row">
-                         <span class="label">PPN ${data.tax_rate}%</span>
-                         <span class="value">${formatRupiah(data.tax_amount || 0)}</span>
-                       </div>`
-                    : ""
-                }
-                <div class="grand-total">
-                    <span class="label">${hasTax ? "Total" : "Sub Total"}</span>
-                    <span>${formatRupiah(data.total)}</span>
+                <div class="totals-box">
+                    <table class="totals-table">
+                        ${
+                          hasTax
+                            ? `<tr class="t-tax">
+                                 <td class="t-label">Sub Total</td>
+                                 <td class="t-value">${formatRupiah(data.subtotal)}</td>
+                               </tr>
+                               <tr class="t-tax">
+                                 <td class="t-label">PPN ${data.tax_rate}%</td>
+                                 <td class="t-value">${formatRupiah(data.tax_amount || 0)}</td>
+                               </tr>`
+                            : ""
+                        }
+                        <tr class="t-main">
+                            <td class="t-label">${hasTax ? "Total" : "Sub Total"}</td>
+                            <td class="t-value">${formatRupiah(data.total)}</td>
+                        </tr>
+                    </table>
+                    <div class="totals-underline"></div>
                 </div>
             </div>
 
@@ -356,10 +418,6 @@ export function generateInvoiceHTML(data: InvoiceTemplateData): string {
                 </div>
 
                 <div class="signature-section">
-                    <svg class="watermark" viewBox="0 0 160 80">
-                        <text x="20" y="35" font-family="Arial" font-weight="900" font-size="16"
-                              fill="${BRAND.dark}" opacity="0.18">${escapeHtml(issuer.company_name)}</text>
-                    </svg>
                     <div class="director-title">${escapeHtml(issuer.director_title)},</div>
                     <div class="director-name">(${escapeHtml(issuer.director_name)})</div>
                 </div>
@@ -367,22 +425,22 @@ export function generateInvoiceHTML(data: InvoiceTemplateData): string {
         </div>
 
         <div class="footer">
-            <svg class="footer-banner" viewBox="0 0 800 125" preserveAspectRatio="none">
-                <polygon points="0,0 800,25 800,38 0,13" fill="${BRAND.gold}" />
-                <polygon points="0,13 800,38 800,125 0,125" fill="${BRAND.dark}" />
+            <svg class="footer-banner" viewBox="0 0 800 200" preserveAspectRatio="none">
+                <polygon points="0,2 800,127 800,167 0,22" fill="${BRAND.gold}" />
+                <polygon points="0,22 800,167 800,200 0,200" fill="${BRAND.dark}" />
             </svg>
 
             <div class="footer-content">
                 <div class="footer-item">
-                    <svg class="footer-icon" viewBox="0 0 24 24"><path d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1-9.4 0-17-7.6-17-17 0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.2.2 2.4.6 3.6.1.3 0 .7-.2 1l-2.3 2.2z"/></svg>
+                    <svg class="footer-icon" viewBox="0 0 24 24"><path d="M12 1.5A10.5 10.5 0 1 0 22.5 12 10.51 10.51 0 0 0 12 1.5zm0 1.6a8.9 8.9 0 1 1-8.9 8.9A8.91 8.91 0 0 1 12 3.1zm-3.1 3.6a1 1 0 0 0-1 1 8.5 8.5 0 0 0 8.5 8.5 1 1 0 0 0 1-1v-1.7a1 1 0 0 0-1-1 6.8 6.8 0 0 1-1.8-.3.9.9 0 0 0-.9.2l-1 1a9.4 9.4 0 0 1-3.2-3.2l1-1a.9.9 0 0 0 .2-.9 6.8 6.8 0 0 1-.3-1.8 1 1 0 0 0-1-1z"/></svg>
                     <span>${escapeHtml(issuer.phone)}</span>
                 </div>
                 <div class="footer-item">
-                    <svg class="footer-icon" viewBox="0 0 24 24"><path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4-8 5-8-5V6l8 5 8-5v2z"/></svg>
+                    <svg class="footer-icon" viewBox="0 0 24 24"><path d="M12 1.5A10.5 10.5 0 1 0 22.5 12 10.51 10.51 0 0 0 12 1.5zm0 1.6a8.9 8.9 0 1 1-8.9 8.9A8.91 8.91 0 0 1 12 3.1zM7 8.2h10a.8.8 0 0 1 .8.8v6a.8.8 0 0 1-.8.8H7a.8.8 0 0 1-.8-.8V9a.8.8 0 0 1 .8-.8zm.6 1.6L12 12.6l4.4-2.8z"/></svg>
                     <span>${escapeHtml(issuer.email)}</span>
                 </div>
                 <div class="footer-item">
-                    <svg class="footer-icon" viewBox="0 0 24 24"><path d="M12 2C8.1 2 5 5.1 5 9c0 5.2 7 13 7 13s7-7.8 7-13c0-3.9-3.1-7-7-7zm0 9.5c-1.4 0-2.5-1.1-2.5-2.5S10.6 6.5 12 6.5s2.5 1.1 2.5 2.5-1.1 2.5-2.5 2.5z"/></svg>
+                    <svg class="footer-icon" viewBox="0 0 24 24"><path d="M12 1.5A10.5 10.5 0 1 0 22.5 12 10.51 10.51 0 0 0 12 1.5zm0 1.6a8.9 8.9 0 1 1-8.9 8.9A8.91 8.91 0 0 1 12 3.1zm0 2.7a4.2 4.2 0 0 0-4.2 4.2c0 3.1 4.2 7.7 4.2 7.7s4.2-4.6 4.2-7.7A4.2 4.2 0 0 0 12 5.8zm0 2.7a1.5 1.5 0 1 1-1.5 1.5A1.5 1.5 0 0 1 12 8.5z"/></svg>
                     <span>${escapeHtml(issuer.address)}</span>
                 </div>
             </div>

@@ -11,33 +11,11 @@ import { generateInvoiceHTML } from "@/lib/templates/invoice-template";
 import { getInvoiceIssuer } from "@/lib/invoice-config";
 import { requireAuth } from "@/lib/api-auth";
 import { resolveInvoiceAmount } from "@/types/invoice.types";
-import fs from "fs/promises";
-import path from "path";
 
-/**
- * Logo di-cache setelah pembacaan pertama.
- *
- * Berkasnya ~95 KB dan tidak pernah berubah selama proses hidup, tetapi versi
- * lama membacanya dengan `fs.readFileSync` lalu mengubahnya ke base64 pada
- * SETIAP permintaan — memblokir event loop sekaligus mengulang kerja yang sama.
- * `null` berarti belum pernah dicoba; `""` berarti sudah dicoba dan tidak ada.
- */
-let logoCache: string | null = null;
-
-async function readLogoBase64(): Promise<string> {
-  if (logoCache !== null) return logoCache;
-
-  try {
-    const logoPath = path.join(process.cwd(), "public", "logo-inland.png");
-    const fileBuffer = await fs.readFile(logoPath);
-    logoCache = `data:image/png;base64,${fileBuffer.toString("base64")}`;
-  } catch {
-    // Logo tidak wajib: dokumen tetap tercetak, hanya tanpa gambar di kop.
-    logoCache = "";
-  }
-
-  return logoCache;
-}
+// Tidak ada pembacaan logo di sini. Desain invoice acuan tidak memuat logo:
+// kop halamannya murni banner hijau-emas. Versi lama membaca PNG ~95 KB dan
+// mengubahnya ke base64 pada setiap permintaan, lalu template tidak pernah
+// benar-benar membutuhkannya — biaya itu kini hilang sepenuhnya.
 
 function formatTanggalPanjang(value?: string | null): string {
   const parsed = value ? new Date(value) : new Date();
@@ -99,7 +77,6 @@ export async function GET(
     }
 
     const amount = resolveInvoiceAmount(inv);
-    const logoBase64 = await readLogoBase64();
 
     // Alamat properti bisa berupa teks biasa atau objek relasi, tergantung baris
     // mana yang terbaca. Hanya bentuk string yang layak dicetak.
@@ -128,7 +105,6 @@ export async function GET(
       // Identitas penerbit datang dari satu sumber. Versi lama hanya mengirim 6
       // dari 14 field, sisanya jatuh ke literal yang tertanam di template.
       issuer: getInvoiceIssuer(),
-      logo_base64: logoBase64 || undefined,
     });
 
     return new NextResponse(htmlContent, {

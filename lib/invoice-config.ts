@@ -28,8 +28,9 @@ export interface InvoiceIssuer {
 }
 
 /**
- * Dibaca saat modul dimuat. Aman untuk route server; jangan diimpor dari
- * komponen klien — pratinjau di sisi peramban memakai `PREVIEW_ISSUER`.
+ * Dibaca saat dipanggil, di sisi server. Jangan diimpor dari komponen klien:
+ * `process.env` tanpa awalan `NEXT_PUBLIC_` tidak tersedia di peramban, dan
+ * nilai-nilai ini memang tidak untuk dikirim ke sana.
  */
 export function getInvoiceIssuer(): InvoiceIssuer {
   return {

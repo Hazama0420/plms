@@ -5,16 +5,9 @@
 // penjagaannya berupa rate limit berlapis, bukan wajib login.
 import { NextResponse } from "next/server";
 import { aiService } from "@/services/ai.service";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { getAuthContext } from "@/lib/api-auth";
-import { getClientIp, rateLimit } from "@/lib/rate-limit";
+import { enforceAiQuota, estimateTokens } from "@/lib/ai-quota";
 import { chatMessageSchema, validate } from "@/lib/validations";
-
-const DAILY_LIMIT = 15; // Batas maksimal pesan per hari untuk non-superadmin
-
-// Rem cepat per IP: menahan banjir permintaan sebelum menyentuh database.
-const BURST_LIMIT = 10;
-const BURST_WINDOW_MS = 60_000;
 
 export async function POST(req: Request) {
   try {
@@ -35,75 +28,25 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Pesan kosong" }, { status: 400 });
     }
 
-    const clientIp = getClientIp(req);
-
-    const burst = rateLimit(`chat:${clientIp}`, BURST_LIMIT, BURST_WINDOW_MS);
-    if (!burst.allowed) {
-      return NextResponse.json(
-        {
-          error: "Terlalu banyak permintaan. Mohon tunggu sebentar.",
-          limitExceeded: true,
-        },
-        { status: 429, headers: { "Retry-After": String(burst.retryAfterSeconds) } }
-      );
-    }
-
-    // 1. Identifikasi Pengguna & Cek Role di Database.
-    //
     // Sebelumnya bagian ini memakai klien Supabase versi browser, yang di server
     // tidak pernah membaca cookie sesi. Akibatnya getUser() selalu null: kuota
     // dihitung per-IP untuk semua orang dan Super Admin tak pernah dikenali.
     const auth = await getAuthContext();
+    const isSuperAdmin = auth?.role === "super_admin";
 
-    const userRole = auth?.role ?? "viewer";
-    const userIdentifier = auth?.userId ?? clientIp;
-
-    // Penghitung kuota memakai service role: tabel ai_usage harus tetap
-    // tertutup dari klien anonim lewat RLS.
-    const supabase = createAdminClient();
-
-    // Cek apakah user adalah Super Admin
-    const isSuperAdmin = userRole === "super_admin";
-
-    // 2. JIKA BUKAN SUPER ADMIN, terapkan pembatasan rate limit harian
-    if (!isSuperAdmin) {
-      const today = new Date().toISOString().split("T")[0]; // Format: YYYY-MM-DD
-
-      const { data: usageData, error: fetchError } = await supabase
-        .from("ai_usage")
-        .select("*")
-        .eq("user_identifier", userIdentifier)
-        .eq("usage_date", today)
-        .maybeSingle();
-
-      if (usageData) {
-        if (usageData.message_count >= DAILY_LIMIT) {
-          return NextResponse.json(
-            {
-              error: `Maaf, Anda telah mencapai batas maksimal ${DAILY_LIMIT} pertanyaan gratis dengan Agnes hari ini. Silakan coba lagi besok atau hubungi tim CS kami melalui WhatsApp.`,
-              limitExceeded: true,
-            },
-            { status: 429 } // Too Many Requests
-          );
-        }
-
-        // Increment jumlah penggunaan
-        await supabase
-          .from("ai_usage")
-          .update({
-            message_count: usageData.message_count + 1,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", usageData.id);
-      } else {
-        // Buat record baru untuk hari ini
-        await supabase.from("ai_usage").insert({
-          user_identifier: userIdentifier,
-          usage_date: today,
-          message_count: 1,
-        });
-      }
-    }
+    // Batas harian, rem burst, dan anggaran token kini ditegakkan lib/ai-quota.
+    // Versi lama membaca lalu menulis ai_usage sebagai dua operasi terpisah,
+    // sehingga sepuluh permintaan paralel sama-sama lolos batas 15/hari.
+    // Perilaku yang terlihat pengguna tidak berubah: tetap 15/hari, Super Admin
+    // tetap tanpa batas.
+    const quota = await enforceAiQuota({
+      feature: "chat",
+      req,
+      userId: auth?.userId ?? null,
+      role: auth?.role ?? null,
+      estimatedTokens: estimateTokens(lastMessage),
+    });
+    if (!quota.ok) return quota.response;
 
     // 3. System prompt untuk Agnes AI
     const systemPrompt = `
@@ -115,6 +58,10 @@ ATURAN FORMAT PENULISAN:
 `;
 
     const aiResponse = await aiService.generateWithFallback(lastMessage, systemPrompt);
+
+    await quota.commit(
+      estimateTokens(lastMessage) + estimateTokens(aiResponse.text)
+    );
 
     return NextResponse.json({
       text: aiResponse.text,

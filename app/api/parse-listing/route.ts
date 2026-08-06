@@ -3,6 +3,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { aiService } from "@/services/ai.service";
 import { requireAuth } from "@/lib/api-auth";
+import { enforceAiQuota, estimateTokens } from "@/lib/ai-quota";
 
 const MAX_TEXT_LENGTH = 20_000;
 
@@ -53,7 +54,24 @@ Kembalikan hanya JSON valid, tanpa teks tambahan.`;
 
     const userPrompt = `Ekstrak informasi dari listing property berikut:\n\n${text}`;
 
+    // Batas 20.000 karakter membatasi satu permintaan, bukan jumlahnya. Kuota
+    // token harian inilah yang menahan pengiriman teks panjang berulang-ulang.
+    const quota = await enforceAiQuota({
+      feature: "parse_listing",
+      req: request,
+      userId: auth.ctx.userId,
+      role: auth.ctx.role,
+      estimatedTokens: estimateTokens(systemPrompt) + estimateTokens(userPrompt),
+    });
+    if (!quota.ok) return quota.response;
+
     const result = await aiService.generateWithFallback(userPrompt, systemPrompt);
+
+    await quota.commit(
+      estimateTokens(systemPrompt) +
+        estimateTokens(userPrompt) +
+        estimateTokens(result.text)
+    );
 
     // Parse JSON dari response AI
     let parsedData;

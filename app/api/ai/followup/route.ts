@@ -2,6 +2,7 @@
 import { aiService } from "@/services/ai.service";
 import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/api-auth";
+import { enforceAiQuota, estimateTokens } from "@/lib/ai-quota";
 import { followupSchema, validate } from "@/lib/validations";
 
 export async function POST(req: Request) {
@@ -37,8 +38,21 @@ Aturan Penting Penulisan:
 
 Hasilkan HANYA isi teks pesan tanpa pengantar, tanpa penutup dari AI, dan tanpa simbol formatting.`;
 
+    // Login saja tidak cukup: tanpa kuota, satu akun agen bisa menekan tombol
+    // "Generate Pesan" ratusan kali dan menghabiskan kredit provider.
+    const quota = await enforceAiQuota({
+      feature: "followup",
+      req,
+      userId: auth.ctx.userId,
+      role: auth.ctx.role,
+      estimatedTokens: estimateTokens(prompt),
+    });
+    if (!quota.ok) return quota.response;
+
     // Menggunakan AI Service bawaan proyek
     const { text } = await aiService.generateWithFallback(prompt);
+
+    await quota.commit(estimateTokens(prompt) + estimateTokens(text));
 
     // 🧹 Clean-up tambahan untuk memastikan tidak ada simbol markdown (*, _, #, ~) yang terikut
     let cleanText = (text || "")

@@ -2,28 +2,36 @@
 import { NextResponse } from "next/server";
 import { aiService } from "@/services/ai.service";
 import { dashboardService } from "@/services/dashboard.service";
-import { requireAuth } from "@/lib/api-auth";
+import { requireRole } from "@/lib/api-auth";
+import { enforceAiQuota, estimateTokens } from "@/lib/ai-quota";
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
-    // Ringkasan ini membocorkan metrik bisnis dan memanggil AI berbayar.
-    const auth = await requireAuth();
+    // Ringkasan ini membocorkan metrik bisnis dan memanggil AI berbayar setiap
+    // kali dashboard dibuka — pemakaian token terbesar di seluruh aplikasi.
+    // Karena itu sekarang khusus Super Admin, yang juga satu-satunya pemilik
+    // tombol pengaktifnya.
+    const auth = await requireRole(["super_admin"]);
     if (!auth.ok) return auth.response;
 
     const { supabase } = auth.ctx;
 
-    // 1. Cek apakah fitur AI sedang dinonaktifkan (OFF) oleh Admin/Super Admin
+    // 1. Fitur berbayar: harus dinyalakan secara eksplisit.
+    //
+    // Sebelumnya kondisinya `value === "false"`, sehingga baris setting yang
+    // belum ada berarti null dan AI tetap dipanggil — gagal-terbuka pada fitur
+    // berbiaya. Sekarang apa pun selain "true" berarti mati.
     const { data: settingData } = await supabase
       .from("system_settings")
       .select("value")
       .eq("key", "ai_summary_enabled")
       .maybeSingle();
-    
-    if (settingData && settingData.value === "false") {
-      return NextResponse.json({ 
-        disabled: true, 
+
+    if (settingData?.value !== "true") {
+      return NextResponse.json({
+        disabled: true,
         enabled: false,
-        summary: "Fitur AI Executive Summary sedang dinonaktifkan (OFF) oleh Admin." 
+        summary: "Fitur ini berbayar.",
       });
     }
 
@@ -57,8 +65,21 @@ ATURAN FORMATTING MUTLAK:
 - Kalimat 2: Rekomendasi tindakan operasional taktis & terukur yang harus segera dieksekusi tim agen.
 `;
 
+    // Lapis ketiga setelah role dan setting: memuat ulang dashboard berkali-kali
+    // tidak lagi berarti memanggil AI berkali-kali.
+    const quota = await enforceAiQuota({
+      feature: "dashboard_summary",
+      req,
+      userId: auth.ctx.userId,
+      role: auth.ctx.role,
+      estimatedTokens: estimateTokens(prompt),
+    });
+    if (!quota.ok) return quota.response;
+
     const aiResponse = await aiService.generateWithFallback(prompt);
-    
+
+    await quota.commit(estimateTokens(prompt) + estimateTokens(aiResponse.text));
+
     // Bersihkan karakter markdown agar teks tampil rapi
     const cleanSummary = aiResponse.text.replace(/\*\*/g, "").replace(/\*/g, "").trim();
 

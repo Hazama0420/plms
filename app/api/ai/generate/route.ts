@@ -3,6 +3,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { aiService } from "@/services/ai.service";
 import { requireAuth } from "@/lib/api-auth";
+import { enforceAiQuota, estimateTokens } from "@/lib/ai-quota";
 
 export async function POST(request: NextRequest) {
   try {
@@ -19,16 +20,36 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Satu penjaga untuk kelima action. Ditaruh sebelum percabangan supaya
+    // tidak ada cabang baru yang lolos tanpa kuota; estimasi awal diambil dari
+    // ukuran payload, lalu dikoreksi setelah AI menjawab.
+    const quota = await enforceAiQuota({
+      feature: "generate",
+      req: request,
+      userId: auth.ctx.userId,
+      role: auth.ctx.role,
+      estimatedTokens: estimateTokens(JSON.stringify(data)),
+    });
+    if (!quota.ok) return quota.response;
+
+    // Pembungkus tipis agar setiap cabang otomatis mencatat pemakaiannya.
+    const generate = async (prompt: string, systemPrompt?: string) => {
+      const result = await aiService.generateWithFallback(prompt, systemPrompt);
+      await quota.commit(
+        estimateTokens(prompt) +
+          estimateTokens(systemPrompt) +
+          estimateTokens(result.text)
+      );
+      return result;
+    };
+
     // ===== ACTION: TITLE =====
     if (action === "title") {
       const prompt = `Buat judul properti untuk ${data.type} di ${data.location}, tipe listing ${data.listingType}. Maks 60 karakter.`;
       const systemPrompt =
         "Buat judul singkat, deskriptif, dan menarik untuk listing properti.";
 
-      const { text, provider } = await aiService.generateWithFallback(
-        prompt,
-        systemPrompt
-      );
+      const { text, provider } = await generate(prompt, systemPrompt);
 
       return NextResponse.json({ success: true, data: text, provider });
     }
@@ -39,10 +60,7 @@ export async function POST(request: NextRequest) {
       const systemPrompt =
         "Deskripsi profesional, persuasif, dalam bahasa Indonesia. Sorot keunggulan dan ajak hubungi agen.";
 
-      const { text, provider } = await aiService.generateWithFallback(
-        prompt,
-        systemPrompt
-      );
+      const { text, provider } = await generate(prompt, systemPrompt);
 
       return NextResponse.json({ success: true, data: text, provider });
     }
@@ -67,10 +85,7 @@ export async function POST(request: NextRequest) {
         const prompt = `Buat deskripsi properti ${type} di ${location}. Harga: Rp${price}. Kamar: ${bedrooms}, KM: ${bathrooms}, LT: ${landArea}m², LB: ${buildingArea}m².`;
         const systemPrompt =
           "Deskripsi profesional, persuasif, dalam bahasa Indonesia. Sorot keunggulan dan ajak hubungi agen.";
-        const { text, provider } = await aiService.generateWithFallback(
-          prompt,
-          systemPrompt
-        );
+        const { text, provider } = await generate(prompt, systemPrompt);
         return NextResponse.json({ success: true, data: text, provider });
       }
 
@@ -103,10 +118,7 @@ Hanya kembalikan teks deskripsi yang sudah diperbaiki, tanpa format khusus.`;
 
       const systemPrompt = "Kamu adalah asisten AI untuk agen properti. Tugasmu memperbaiki dan melengkapi deskripsi listing property agar lebih profesional dan menarik.";
 
-      const { text, provider } = await aiService.generateWithFallback(
-        prompt,
-        systemPrompt
-      );
+      const { text, provider } = await generate(prompt, systemPrompt);
 
       return NextResponse.json({ success: true, data: text, provider });
     }
@@ -178,10 +190,7 @@ Kembalikan dalam format JSON dengan field:
 Jika ada data yang tidak ditemukan, biarkan null atau kosong.
 Hanya kembalikan JSON valid, tanpa teks tambahan.`;
 
-      const { text: result, provider } = await aiService.generateWithFallback(
-        text,
-        systemPrompt
-      );
+      const { text: result, provider } = await generate(text, systemPrompt);
 
       // Parse JSON dari hasil AI
       let parsed;
@@ -217,10 +226,7 @@ Berikan jawaban yang profesional, singkat, dan praktis. Fokus pada:
 
 Jawab dalam bahasa Indonesia.`;
 
-      const { text, provider } = await aiService.generateWithFallback(
-        message,
-        systemPrompt
-      );
+      const { text, provider } = await generate(message, systemPrompt);
 
       return NextResponse.json({ success: true, data: text, provider });
     }

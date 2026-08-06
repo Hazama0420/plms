@@ -68,29 +68,16 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { type Invoice, resolveInvoiceAmount } from "@/types/invoice.types";
 
 // ============================================================
 // TIPE DATA & KONFIGURASI STATUS
 // ============================================================
-export interface InvoiceItem {
-  id: string;
-  invoice_number: string;
-  property_id?: string;
-  client_name: string;
-  client_email?: string;
-  client_phone?: string;
-  total_amount: number;
-  status: "draft" | "sent" | "paid" | "overdue" | "cancelled" | string;
-  due_date: string;
-  issue_date?: string;
-  paid_date?: string;
-  notes?: string;
-  created_at?: string;
-  property?: {
-    title: string;
-    listing_code: string;
-  };
-}
+//
+// `InvoiceItem` dipertahankan sebagai alias supaya modul lain yang sudah
+// mengimpornya dari halaman ini tidak ikut rusak; bentuknya kini datang dari
+// types/invoice.types.ts.
+export type InvoiceItem = Invoice;
 
 const statusConfig: Record<string, { label: string; color: string; bg: string }> = {
   draft: { label: "Draft", color: "text-slate-600 dark:text-slate-400", bg: "bg-slate-100 dark:bg-slate-800 border-slate-200" },
@@ -138,9 +125,9 @@ export default function InvoicesPage() {
       if (error) {
         setInvoices([]);
       } else {
-        const mapped = (data || []).map((inv: any) => ({
+        const mapped = (data || []).map((inv: Invoice) => ({
           ...inv,
-          total_amount: Number(inv.total_amount || inv.amount || 0),
+          total_amount: resolveInvoiceAmount(inv),
         }));
         setInvoices(mapped);
       }
@@ -184,7 +171,7 @@ export default function InvoicesPage() {
     }
   };
 
-  const formatCurrency = (val: number) => {
+  const formatCurrency = (val: number | null | undefined) => {
     return new Intl.NumberFormat("id-ID", {
       style: "currency",
       currency: "IDR",

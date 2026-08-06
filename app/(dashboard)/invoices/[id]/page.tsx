@@ -14,25 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-
-// ============================================================
-// TIPE DATA
-// ============================================================
-interface Invoice {
-  id: string;
-  invoice_number: string;
-  client_name: string;
-  client_email: string | null;
-  property_id: string | null;
-  total_amount: number;
-  status: string;
-  due_date: string;
-  issue_date: string;
-  paid_date: string | null;
-  notes: string | null;
-  created_at: string;
-  property?: { id: string; title: string } | null;
-}
+import { type Invoice, resolveInvoiceAmount } from "@/types/invoice.types";
 
 const statusConfig: Record<string, { label: string; color: string; bg: string }> = {
   draft: { label: "Draft", color: "text-slate-600", bg: "bg-slate-100 dark:bg-slate-800" },
@@ -83,7 +65,9 @@ export default function InvoiceDetailPage() {
   }, [invoiceId, router]);
 
   // ===== SAFE DATE FORMATTING =====
-  const formatDateSafe = (dateStr: string | null) => {
+  // Menerima `undefined` juga: tanggal di tipe bersama bersifat opsional karena
+  // baris invoice lama bisa tidak punya issue_date sama sekali.
+  const formatDateSafe = (dateStr: string | null | undefined) => {
     if (!dateStr) return "-";
     try {
       return format(new Date(dateStr), "dd MMM yyyy", { locale: id });
@@ -92,12 +76,12 @@ export default function InvoiceDetailPage() {
     }
   };
 
-  const formatCurrency = (amount: number) => {
+  const formatCurrency = (amount: number | null | undefined) => {
     return new Intl.NumberFormat("id-ID", {
       style: "currency",
       currency: "IDR",
       minimumFractionDigits: 0,
-    }).format(amount);
+    }).format(amount ?? 0);
   };
 
   // ===== LOADING =====

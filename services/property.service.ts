@@ -356,7 +356,7 @@ const propertyService = {
           land:property_land(*),
           building:property_building(*),
           media:property_media(*),
-          assigned_user:users!assigned_to(id, full_name, email, avatar_url)
+          assigned_user:users!assigned_to(id, full_name, avatar_url)
         `
       );
 

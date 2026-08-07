@@ -407,9 +407,14 @@ export default function PropertyDetailPage() {
       if (property?.assigned_to) {
         const found = agents.find((a) => a.id === property.assigned_to);
         if (!found) {
+          // Kolom terbatas: halaman ini terbuka untuk tamu, dan hak kolom `anon`
+          // hanya mencakup id/full_name/avatar_url. Meminta email/phone/whatsapp
+          // di sini membuat PostgREST menjawab 401 untuk pengunjung anonim —
+          // kartu kontak agen selalu kosong bagi mereka. Nomor WhatsApp tujuan
+          // ditentukan server lewat POST /api/leads, bukan dari embed ini.
           const { data } = await supabase
             .from("users")
-            .select("id, full_name, email, avatar_url, phone, whatsapp")
+            .select("id, full_name, avatar_url")
             .eq("id", property.assigned_to)
             .maybeSingle();
           if (data) setFetchedAssignedAgent(data);
@@ -605,7 +610,7 @@ export default function PropertyDetailPage() {
             building:property_building(*),
             land:property_land(*),
             media:property_media(*),
-            agent:users(full_name, avatar_url, phone)
+            agent:users!assigned_to(full_name, avatar_url)
           `)
           .eq("status", "published")
           .neq("id", property.id)

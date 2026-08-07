@@ -280,7 +280,7 @@ export default function DashboardPage() {
       }
 
       // A. Fetch Properti Unggulan
-      const { data: featuredData } = await supabase
+      const { data: featuredData, error: featuredError } = await supabase
         .from("properties")
         .select(`
           *,
@@ -290,21 +290,23 @@ export default function DashboardPage() {
           building:property_building(*),
           land:property_land(*),
           media:property_media(*),
-          agent:users(full_name, avatar_url, phone)
+          agent:users!assigned_to(full_name, avatar_url)
         `)
         .eq("status", "published")
         .eq("is_featured", true)
         .order("created_at", { ascending: false })
         .limit(4);
 
-      if (featuredData && featuredData.length > 0) {
+      if (featuredError) {
+        console.error("[dashboard] Gagal memuat properti unggulan:", featuredError);
+      } else if (featuredData && featuredData.length > 0) {
         setFeaturedProperties(featuredData.map(formatPropertyItem));
       } else {
         setFeaturedProperties([]);
       }
 
       // B. Fetch Properti Terbaru
-      const { data: latestData } = await supabase
+      const { data: latestData, error: latestError } = await supabase
         .from("properties")
         .select(`
           *,
@@ -314,13 +316,15 @@ export default function DashboardPage() {
           building:property_building(*),
           land:property_land(*),
           media:property_media(*),
-          agent:users(full_name, avatar_url, phone)
+          agent:users!assigned_to(full_name, avatar_url)
         `)
         .eq("status", "published")
         .order("created_at", { ascending: false })
         .limit(4);
 
-      if (latestData && latestData.length > 0) {
+      if (latestError) {
+        console.error("[dashboard] Gagal memuat properti terbaru:", latestError);
+      } else if (latestData && latestData.length > 0) {
         setLatestProperties(latestData.map(formatPropertyItem));
       } else {
         setLatestProperties([]);

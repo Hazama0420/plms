@@ -104,8 +104,22 @@ function ensureInit(): Promise<void> | null {
 
   initPromise = OneSignal.init({
     appId,
+    // Menunjuk public/OneSignalSDKWorker.js — sekarang berisi SDK service
+    // worker v16 yang sesungguhnya, bukan satu baris importScripts ke CDN.
+    // Versi importScripts itulah sumber dua galat di konsol: "No active
+    // registration available on the ServiceWorkerRegistration" dan "Event
+    // handler of 'message' event must be added on the initial evaluation of
+    // worker script". Spesifikasi menuntut seluruh pendengar terdaftar pada
+    // evaluasi awal skrip; importScripts yang mengunduh lintas-origin
+    // menyelesaikannya terlambat, jadi pendaftarannya tidak pernah aktif.
     serviceWorkerPath: "OneSignalSDKWorker.js",
     serviceWorkerParam: { scope: "/" },
+    // Notifikasi "Thanks for subscribing!" dimatikan. Itu satu-satunya yang
+    // memanggil showNotification() segera setelah optIn — sebelum pendaftaran
+    // SW benar-benar aktif — dan ikonnya diambil dari /default-icon yang tidak
+    // ada di situs ini (404 di log). Aplikasi ini mengirim push dari server
+    // lewat lib/onesignal.ts, jadi sambutan otomatis tidak dibutuhkan.
+    welcomeNotification: { disable: true, message: "" },
   })
     .then(() => {
       setStatus(null);

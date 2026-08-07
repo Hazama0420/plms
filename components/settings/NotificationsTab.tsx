@@ -233,7 +233,29 @@ export function NotificationsTab({
         const os = getReadyOneSignal();
 
         if (os) {
-          await withTimeout(os.Notifications.requestPermission(), PUSH_TIMEOUT_MS, "OneSignal");
+          // Nilai kembalian requestPermission() WAJIB diperiksa — tipenya
+          // Promise<boolean>, dan false berarti pengguna menutup atau menolak
+          // dialog izin peramban.
+          //
+          // Sebelumnya nilai itu dibuang dan optIn() tetap dipanggil. Tanpa
+          // izin tidak ada token push yang bisa dibuat, sehingga optIn() tidak
+          // pernah selesai dan yang muncul justru "OneSignal tidak merespons
+          // dalam 8 detik" — penolakan pengguna dilaporkan sebagai layanan
+          // yang mati. Itulah galat di konsol yang mengikuti permissions.ts.
+          const granted = await withTimeout(
+            os.Notifications.requestPermission(),
+            PUSH_TIMEOUT_MS,
+            "OneSignal"
+          );
+
+          if (!granted) {
+            toast.warning("Izin notifikasi tidak diberikan.", {
+              description:
+                "Nyalakan sakelar ini lagi bila berubah pikiran, lalu pilih Izinkan pada dialog peramban.",
+            });
+            return;
+          }
+
           await withTimeout(os.User.PushSubscription.optIn(), PUSH_TIMEOUT_MS, "OneSignal");
           setIsOneSignalSubscribed(true);
           toast.success("Push Notification OneSignal berhasil diaktifkan!");

@@ -11,6 +11,24 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { canAccessRoute, normalizeRole } from "@/lib/permissions";
+import { SITE } from "@/lib/site-config";
+
+/**
+ * Host "telanjang" (apex) dari origin kanonik — `www.inlandproperty.site`
+ * menjadi `inlandproperty.site`. Satu-satunya penyimpangan host yang pernah
+ * terjadi nyata adalah pengunjung yang mengetik apex, dan hosting sudah
+ * mengalihkannya ke www. Perbandingan dibatasi ke apex saja (bukan "host mana
+ * pun yang bukan kanonik") karena URL pratinjau `*.vercel.app` harus tetap
+ * bisa dimuat — di sana push memang tidak tersedia, dan UI menjelaskannya.
+ */
+const CANONICAL_ORIGIN = new URL(SITE.url);
+const APEX_HOSTNAME = CANONICAL_ORIGIN.hostname.replace(/^www\./, "");
+
+/** Jangan pernah mengalihkan saat fallback localhost: itu hanya untuk dev. */
+const IS_LOCAL_DEV =
+  CANONICAL_ORIGIN.hostname === "localhost" ||
+  CANONICAL_ORIGIN.hostname === "127.0.0.1" ||
+  CANONICAL_ORIGIN.hostname === "0.0.0.0";
 
 /** Halaman yang boleh dibuka tanpa login. */
 const AUTH_PAGES = ["/login", "/register", "/forgot-password"];
@@ -24,8 +42,8 @@ const AUTH_PAGES = ["/login", "/register", "/forgot-password"];
  * versi sebelumnya: seluruh pencocokan path meleset sehingga tidak ada satu pun
  * halaman internal yang benar-benar terkunci.
  *
- * TIGA RUTE SENGAJA TIDAK ADA DI SINI
- * ===================================
+ * TIGA RUTE TERBUKA UNTUK TAMU
+ * ============================
  * `/dashboard`, `/properties`, dan `/kpr-calculator` terbuka untuk tamu — itu
  * etalase publiknya. Dashboard punya banner "Selamat Datang" beserta tombol
  * Masuk/Daftar khusus tamu (dashboard/page.tsx:441), dan tombol "Jelajahi
@@ -35,6 +53,11 @@ const AUTH_PAGES = ["/login", "/register", "/forgot-password"];
  *
  * Yang membatasi tamu bukan rutenya melainkan isinya — hubungi agen, ajukan
  * survei, dan seluruh menu CRM tetap menuntut akun.
+ *
+ * Ketiga rute itu tetap TERDAFTAR di matcher (lihat bawah), tetapi hanya untuk
+ * pengalihan host kanonik: pemeriksaan di awal proxy() keluar sebelum klien
+ * Supabase dibuat, jadi tamu pada host yang benar hanya menanggung satu
+ * perbandingan string — bukan satu panggilan getUser().
  */
 const PROTECTED_SECTIONS = [
   "/crm",
@@ -44,7 +67,6 @@ const PROTECTED_SECTIONS = [
   "/projects",
   "/surveys",
   "/notifications",
-  "/profile",
   "/settings",
 ];
 
@@ -78,6 +100,19 @@ function redirectWithCookies(
 export async function proxy(req: NextRequest) {
   const res = NextResponse.next();
   const path = req.nextUrl.pathname;
+
+  // 0. Satukan host ke origin kanonik SEBELUM apa pun — klien Supabase belum
+  //    dibuat, jadi tamu pada host yang benar tidak menanggung biaya apa pun.
+  //    Tanpa ini SDK OneSignal menolak init saat origin menyimpang (mis. apex
+  //    vs www), dan inisialisasi yang gagal membuat seluruh push tidak pernah
+  //    terdaftar tanpa satu pun galat di sisi server.
+  if (!IS_LOCAL_DEV && req.nextUrl.hostname === APEX_HOSTNAME) {
+    const canonical = new URL(
+      path + req.nextUrl.search,
+      CANONICAL_ORIGIN
+    );
+    return NextResponse.redirect(canonical, 308);
+  }
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -153,8 +188,9 @@ export const config = {
     "/forgot-password",
     // Halaman internal yang wajib login (URL tanpa awalan /dashboard karena
     // route group). Rute tamu — /dashboard, /properties, /kpr-calculator —
-    // sengaja tidak didaftarkan: tanpa entri di sini proxy tidak dijalankan
-    // sama sekali, jadi tamu tidak menanggung satu pun panggilan getUser().
+    // TURUT didaftarkan, tetapi hanya untuk pemeriksaan host kanonik di
+    // langkah 0 yang keluar sebelum klien Supabase dibuat: tamu tidak pernah
+    // menanggung getUser(), cukup satu perbandingan string.
     "/crm/:path*",
     "/admin/:path*",
     "/reports/:path*",
@@ -164,5 +200,9 @@ export const config = {
     "/notifications/:path*",
     "/profile/:path*",
     "/settings/:path*",
+    // Rute tamu (etalase publik) — hanya lewat pemeriksaan host, lalu lulus.
+    "/dashboard",
+    "/properties/:path*",
+    "/kpr-calculator",
   ],
 };

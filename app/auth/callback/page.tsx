@@ -15,6 +15,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
+import { BLOCKED_STATUSES } from "@/lib/permissions";
 import { toast } from "sonner";
 
 export default function AuthCallbackPage() {
@@ -22,15 +23,38 @@ export default function AuthCallbackPage() {
 
   useEffect(() => {
     const handleCallback = async () => {
-      const { error } = await supabase.auth.getSession();
+      const { data, error } = await supabase.auth.getSession();
       if (error) {
         toast.error("Gagal login dengan Google/Facebook");
         router.push("/login");
-      } else {
-        toast.success("Login berhasil!");
-        router.push("/dashboard");
-        router.refresh();
+        return;
       }
+
+      // Gerbang yang sama seperti login kata sandi: OAuth tidak boleh menjadi
+      // jalan pintas bagi akun yang belum disetujui admin.
+      const userId = data?.session?.user?.id;
+      if (userId) {
+        const { data: profile } = await supabase
+          .from("users")
+          .select("status")
+          .eq("id", userId)
+          .maybeSingle();
+
+        if (BLOCKED_STATUSES.includes(profile?.status ?? "")) {
+          await supabase.auth.signOut();
+          toast.error(
+            profile?.status === "pending"
+              ? "Akun Anda masih menunggu persetujuan admin."
+              : "Akun Anda dinonaktifkan. Hubungi admin."
+          );
+          router.push("/login");
+          return;
+        }
+      }
+
+      toast.success("Login berhasil!");
+      router.push("/dashboard");
+      router.refresh();
     };
 
     handleCallback();

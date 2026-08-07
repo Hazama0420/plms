@@ -15,6 +15,23 @@ const VALID_ROLES: UserRole[] = [
 ];
 
 /**
+ * Status akun yang tidak boleh masuk sistem.
+ *
+ * Sengaja daftar-tolak, bukan daftar-izin (`status !== 'active'`): tabel
+ * `users` tidak pernah didefinisikan di berkas migrasi mana pun — DDL-nya
+ * dibuat manual lewat SQL Editor — sehingga nilai bawaan kolom `status` tidak
+ * bisa dipastikan dari repositori ini. Akun lama yang `status`-nya null akan
+ * ikut terkunci oleh daftar-izin, termasuk admin. Yang ditolak di sini hanya
+ * dua nilai yang memang ditulis eksplisit oleh alur pendaftaran.
+ */
+export const BLOCKED_STATUSES = ["pending", "suspended"];
+
+/** Apakah akun dengan status ini ditolak masuk? Nilai null/kosong lolos. */
+export function isBlockedStatus(raw: unknown): boolean {
+  return BLOCKED_STATUSES.includes(String(raw ?? "").toLowerCase().trim());
+}
+
+/**
  * Menyeragamkan penulisan role dari database.
  * Kolom `users.role` di produksi masih memuat variasi "superadmin" & "super_admin".
  * Nilai yang tidak dikenal diturunkan ke "viewer" (role paling tidak berdaya).
@@ -138,7 +155,6 @@ export function canAccessRoute(userRole: UserRole | null | undefined, route: str
 
   // Halaman personal & utilitas — semua user yang sudah login boleh
   if (
-    matchesSection(route, "profile") ||
     matchesSection(route, "settings") ||
     matchesSection(route, "notifications") ||
     matchesSection(route, "kpr-calculator") ||

@@ -85,6 +85,8 @@ export interface UserWithRole {
   full_name: string;
   avatar_url?: string;
   role: UserRole;
+  status?: string;
+  is_approved?: boolean;
   created_at: string;
   updated_at: string;
 }

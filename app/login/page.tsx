@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { supabase } from "@/lib/supabase/client";
+import { BLOCKED_STATUSES } from "@/lib/permissions";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -62,7 +63,7 @@ export default function LoginPage() {
     setError(null);
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data: authData, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
@@ -79,6 +80,31 @@ export default function LoginPage() {
           toast.error(error.message);
         }
         return;
+      }
+
+      // Cegah akun dengan status pending/suspended masuk, meskipun Supabase Auth
+      // meloloskan kredensialnya. Sesi yang sudah terbentuk segera dihapus.
+      if (authData?.user) {
+        const { data: profile } = await supabase
+          .from("users")
+          .select("status")
+          .eq("id", authData.user.id)
+          .maybeSingle();
+
+        const blocked = BLOCKED_STATUSES.includes(profile?.status ?? "");
+
+        if (blocked) {
+          await supabase.auth.signOut();
+
+          if (profile?.status === "pending") {
+            setError("Akun Anda masih menunggu persetujuan admin. Anda akan dihubungi melalui email atau WhatsApp setelah disetujui.");
+            toast.warning("Akun pending — menunggu persetujuan admin.");
+          } else {
+            setError("Akun Anda saat ini dinonaktifkan. Silakan hubungi admin untuk informasi lebih lanjut.");
+            toast.error("Akun dinonaktifkan.");
+          }
+          return;
+        }
       }
 
       toast.success("Login berhasil! Selamat datang.");

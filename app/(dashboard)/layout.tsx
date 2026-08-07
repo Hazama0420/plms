@@ -121,8 +121,16 @@ export default function DashboardLayout({
             yang fixed di mobile, ruang itu dikembalikan sebagai padding di
             dalam footer — jadi latar hijaunya tetap menutup penuh sampai dasar,
             tidak menyisakan celah abu-abu di belakang BottomNav.
+
+            Nilai pb-nya diturunkan dari tinggi BottomNav yang sebenarnya
+            (h-15 = 3.75rem) ditambah safe-area iOS, bukan angka bulat yang
+            dikira-kira. pb-20 sebelumnya menutupi 80px untuk navigasi 60px:
+            20px hijau berlebih yang tidak menutupi apa pun dan hanya membuat
+            footer terlihat lebih tinggi. Padanan tepatnya juga menghilangkan
+            celah di ponsel dengan safe-area besar, yang tidak tertangani angka
+            statis. Berhenti di md, tempat BottomNav memang disembunyikan.
           */}
-          <SiteFooter className="mt-8 -mx-4 -mb-28 pb-20 sm:-mb-24 sm:pb-16 md:-mx-6 md:-mb-6 md:pb-0" />
+          <SiteFooter className="mt-6 -mx-4 -mb-28 pb-[calc(3.75rem+env(safe-area-inset-bottom))] sm:mt-8 sm:-mb-24 md:-mx-6 md:-mb-6 md:pb-0" />
 
         </main>
 

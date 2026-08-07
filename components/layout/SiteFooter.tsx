@@ -23,27 +23,35 @@ export function SiteFooter({ className }: { className?: string }) {
   return (
     <footer
       role="contentinfo"
-      className={cn("w-full select-none bg-[#0E2C24]", className)}
+      // TANPA w-full. Pemanggil membatalkan padding <main> lewat -mx-4, dan
+      // margin negatif hanya melebarkan boks yang lebarnya auto — pada w-full
+      // ia cuma menggeser boksnya ke kiri, menyisakan celah selebar padding di
+      // kanan. <footer> sudah display:block, jadi lebar penuh tetap didapat.
+      className={cn("select-none bg-[#0E2C24]", className)}
     >
       {/* Garis emas tipis — motif yang sama dengan kop invoice */}
       <div className="h-1 w-full bg-[#E2B23B]" />
 
-      <div className="mx-auto max-w-6xl px-5 py-8 sm:px-8 sm:py-10">
+      {/* px-4 di mobile menyamai p-4 milik <main> supaya teks footer lurus
+          dengan konten di atasnya, bukan menjorok 4px seperti sebelumnya. */}
+      <div className="mx-auto max-w-6xl px-4 py-5 sm:px-8 sm:py-10">
         {/* Baris merek + hotline */}
-        <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
-          <div className="space-y-1.5">
-            <p className="flex items-center gap-1.5 text-lg font-extrabold tracking-tight">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-5">
+          <div className="space-y-0.5 sm:space-y-1.5">
+            <p className="flex items-center gap-1.5 text-base font-extrabold tracking-tight sm:text-lg">
               <span className="text-[#E2B23B]">Inland</span>
               <span className="text-white">Property</span>
             </p>
-            <p className="text-xs font-medium text-white/60">{SITE.tagline}</p>
+            <p className="text-[11px] font-medium text-white/60 sm:text-xs">
+              {SITE.tagline}
+            </p>
           </div>
 
           <a
             href={WHATSAPP_HREF}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex w-fit items-center gap-2 rounded-xl border border-white/20 bg-white/5 px-3.5 py-2.5 text-xs font-semibold text-white transition-colors hover:bg-white/15 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#E2B23B]"
+            className="inline-flex w-fit items-center gap-2 rounded-lg border border-white/20 bg-white/5 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-white/15 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#E2B23B] sm:rounded-xl sm:px-3.5 sm:py-2.5"
             title={`Hubungi Inland Property di WhatsApp ${SITE.whatsapp}`}
           >
             <MessageCircle className="h-4 w-4 text-[#E2B23B]" />
@@ -52,15 +60,22 @@ export function SiteFooter({ className }: { className?: string }) {
         </div>
 
         {/* Tautan dokumen legal */}
+        {/*
+          Dua kolom di mobile, satu baris menyamping dari sm ke atas. Empat
+          tautan bertumpuk vertikal menghabiskan 160px sendirian — digridkan
+          jadi 2x2 tingginya kira-kira separuh, dan tiap sel tetap punya area
+          sentuh sendiri. Sengaja bukan flex-wrap dengan pemisah titik: tautan
+          11px yang berdampingan hanya dipisah 8px terlalu mudah salah sentuh.
+        */}
         <nav
           aria-label="Tautan dokumen legal"
-          className="mt-7 flex flex-col gap-y-0.5 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-2"
+          className="mt-4 grid grid-cols-2 gap-x-3 sm:mt-7 sm:flex sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-2"
         >
           {LEGAL_LINKS.map((link, i) => (
             <span key={link.href} className="flex items-center">
               <Link
                 href={link.href}
-                className="inline-flex min-h-10 items-center text-xs font-medium text-white/75 transition-colors hover:text-white hover:underline underline-offset-4 sm:min-h-0 sm:py-1"
+                className="inline-flex min-h-9 items-center text-[11px] font-medium leading-tight text-white/75 transition-colors hover:text-white hover:underline underline-offset-4 sm:min-h-0 sm:py-1 sm:text-xs"
               >
                 {link.label}
               </Link>
@@ -78,8 +93,8 @@ export function SiteFooter({ className }: { className?: string }) {
         </nav>
 
         {/* Hak cipta */}
-        <div className="mt-6 border-t border-white/10 pt-5">
-          <p className="text-xs text-white/55">
+        <div className="mt-4 border-t border-white/10 pt-3 sm:mt-6 sm:pt-5">
+          <p className="text-[11px] text-white/55 sm:text-xs">
             &copy; {SITE.copyrightYear} {SITE.name}. Hak cipta dilindungi.
           </p>
         </div>

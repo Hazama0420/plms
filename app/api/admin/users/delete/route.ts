@@ -1,10 +1,21 @@
 // app/api/admin/users/delete/route.ts
+//
+// Penghapusan akun permanen: melepas relasi di tabel operasional, menghapus
+// baris public.users, lalu menghapus akun auth.users.
+//
+// Otorisasi lewat requireRole(["super_admin"]) di lib/api-auth.ts. Versi
+// sebelumnya membangun klien sesi sendiri dan mencocokkan role secara manual —
+// jalur itu melewatkan pemeriksaan status akun yang dilakukan getAuthContext().
+
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-import { createServerClient } from "@supabase/ssr";
-import { cookies } from "next/headers";
+import { requireRole } from "@/lib/api-auth";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { recordAudit } from "@/lib/audit-log";
 
 export async function POST(req: Request) {
+  const auth = await requireRole(["super_admin"]);
+  if (!auth.ok) return auth.response;
+
   try {
     const { targetUserId } = await req.json();
 
@@ -12,82 +23,54 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Target User ID wajib diisi" }, { status: 400 });
     }
 
-    // 1. Verifikasi Sesi Pengirim Request dengan @supabase/ssr
-    const cookieStore = await cookies();
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          getAll() {
-            return cookieStore.getAll();
-          },
-          setAll(cookiesToSet) {
-            try {
-              cookiesToSet.forEach(({ name, value, options }) =>
-                cookieStore.set(name, value, options)
-              );
-            } catch {}
-          },
-        },
-      }
-    );
-
-    // Dapatkan & verifikasi user dari server Auth
-    const { data: { user: currentUser }, error: authUserError } = await supabase.auth.getUser();
-
-    if (authUserError || !currentUser) {
-      return NextResponse.json({ error: "Unauthorized / Sesi Berakhir" }, { status: 401 });
-    }
-
-    // Cek Role Pengirim di tabel users & user_metadata
-    const { data: profile } = await supabase
-      .from("users")
-      .select("role")
-      .eq("id", currentUser.id)
-      .maybeSingle();
-
-    const senderRole = (profile?.role || currentUser.user_metadata?.role || "").toLowerCase();
-    const isSuperAdmin = senderRole === "super_admin" || senderRole === "superadmin";
-
-    if (!isSuperAdmin) {
-      return NextResponse.json(
-        { error: "Hanya Super Admin yang diizinkan menghapus user!" },
-        { status: 403 }
-      );
-    }
-
-    if (currentUser.id === targetUserId) {
+    if (auth.ctx.userId === targetUserId) {
       return NextResponse.json(
         { error: "Anda tidak dapat menghapus akun Anda sendiri!" },
         { status: 400 }
       );
     }
 
-    // 2. Inisialisasi Supabase Admin Client dengan Service Role Key
-    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    if (!serviceRoleKey) {
+    const supabaseAdmin = createAdminClient();
+
+    // Lindungi akun Super Admin.
+    //
+    // Role target dibaca dengan service role, bukan dengan klien sesi: policy
+    // users_select memang mengizinkan orang dalam membaca baris ini, tetapi
+    // keputusan otorisasi tidak boleh bergantung pada policy yang bisa berubah.
+    //
+    // Berlaku juga bagi Super Admin lain. Role ini memegang seluruh kewenangan
+    // sistem, dan penghapusannya menyentuh auth.users — tidak bisa dibatalkan.
+    // Bila memang perlu dihapus, turunkan rolenya lebih dulu lewat
+    // PUT /api/admin/users.
+    const { data: targetProfile, error: targetError } = await supabaseAdmin
+      .from("users")
+      .select("id, email, role")
+      .eq("id", targetUserId)
+      .maybeSingle();
+
+    if (targetError) {
       return NextResponse.json(
-        {
-          error:
-            "Server Configuration Error: SUPABASE_SERVICE_ROLE_KEY belum dikonfigurasi di file .env.local",
-        },
+        { error: `Gagal memeriksa akun target: ${targetError.message}` },
         { status: 500 }
       );
     }
 
-    const supabaseAdmin = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      serviceRoleKey,
-      {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false,
-        },
-      }
-    );
+    if (!targetProfile) {
+      return NextResponse.json({ error: "Pengguna tidak ditemukan." }, { status: 404 });
+    }
 
-    // 3. Unassign / Lepaskan relasi Foreign Key di berbagai tabel
+    const targetRole = (targetProfile.role || "").toLowerCase();
+    if (targetRole === "super_admin" || targetRole === "superadmin") {
+      return NextResponse.json(
+        {
+          error:
+            "Akun Super Admin tidak dapat dihapus. Turunkan rolenya lebih dulu bila memang perlu dihapus.",
+        },
+        { status: 403 }
+      );
+    }
+
+    // Unassign / Lepaskan relasi Foreign Key di berbagai tabel
     try {
       await supabaseAdmin.from("properties").update({ assigned_to: null }).eq("assigned_to", targetUserId);
       await supabaseAdmin.from("crm_leads").update({ assigned_to: null }).eq("assigned_to", targetUserId);
@@ -97,7 +80,7 @@ export async function POST(req: Request) {
       console.warn("Unassign FK minor notice:", e);
     }
 
-    // 4. Hapus data di public.users terlebih dahulu
+    // Hapus data di public.users terlebih dahulu
     const { error: publicDeleteError } = await supabaseAdmin
       .from("users")
       .delete()
@@ -111,7 +94,7 @@ export async function POST(req: Request) {
       );
     }
 
-    // 5. Hapus User dari Auth Supabase (auth.users)
+    // Hapus User dari Auth Supabase (auth.users)
     const { error: deleteAuthError } = await supabaseAdmin.auth.admin.deleteUser(targetUserId);
 
     if (deleteAuthError) {
@@ -126,15 +109,25 @@ export async function POST(req: Request) {
       );
     }
 
+    // Dicatat setelah penghapusan berhasil, dan sengaja menyalin email serta
+    // role target: barisnya sudah tidak ada, jadi tanpa salinan ini catatan
+    // auditnya hanya berisi sebuah uuid tanpa arti.
+    await recordAudit({
+      actor: auth.ctx,
+      action: "user.delete",
+      targetId: targetUserId,
+      targetEmail: targetProfile.email,
+      targetRole: targetProfile.role,
+      detail: { permanent: true, auth_user_deleted: true },
+    });
+
     return NextResponse.json({
       success: true,
       message: "User berhasil dihapus secara permanen dari sistem.",
     });
-  } catch (error: any) {
-    console.error("API User Delete Exception:", error);
-    return NextResponse.json(
-      { error: error.message || "Terjadi kesalahan pada server" },
-      { status: 500 }
-    );
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    console.error("API User Delete Exception:", detail);
+    return NextResponse.json({ error: detail }, { status: 500 });
   }
 }

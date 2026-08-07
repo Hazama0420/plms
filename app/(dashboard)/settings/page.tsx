@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabase/client";
 import { reportService } from "@/services/report.service";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { SUPPORT_MESSAGE_MAX, SUPPORT_MESSAGE_MIN } from "@/lib/support-config";
 
 import {
   Settings,
@@ -16,6 +17,7 @@ import {
   Bell,
   LogOut,
   MessageSquare,
+  MessageCircle,
   Sparkles,
 } from "lucide-react";
 
@@ -635,44 +637,50 @@ export default function SettingsPage() {
   };
 
   // ===== SEND CHAT TO ADMIN HANDLER =====
+  //
+  // Dikirim lewat /api/support, bukan insert langsung dari peramban. Satu pesan
+  // harus menjadi satu baris notifikasi untuk SETIAP admin, dan RLS melarang
+  // klien menulis baris atas nama akun lain — lihat komentar di route-nya.
   const handleSendAdminMessage = async () => {
-    if (!adminMessage.trim()) {
-      toast.error("Pesan bantuan wajib diisi");
+    const message = adminMessage.trim();
+
+    // Cermin dari supportMessageSchema di lib/validations.ts. Tanpa ini, pesan
+    // 1-9 karakter lolos di sini lalu ditolak server dengan "Data tidak valid."
+    if (message.length < SUPPORT_MESSAGE_MIN) {
+      toast.error(`Pesan terlalu singkat`, {
+        description: `Ceritakan kendala Anda minimal ${SUPPORT_MESSAGE_MIN} karakter agar admin bisa menindaklanjuti.`,
+      });
       return;
     }
 
     setSendingMessage(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const res = await fetch("/api/support", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message }),
+      });
 
-      if (!user) {
-        toast.error("Sesi Anda telah berakhir. Silakan login kembali.");
-        setSendingMessage(false);
-        return;
+      const json = await res.json();
+
+      if (!res.ok || !json.success) {
+        // validate() menjawab 400 dengan `error` generik ("Data tidak valid.")
+        // dan alasan sebenarnya di `details`. Membaca `error` saja membuat
+        // pengirim melihat penolakan tanpa tahu apa yang harus diperbaiki.
+        const detail = Array.isArray(json.details) ? json.details.join(" ") : null;
+        throw new Error(detail ?? json.error ?? "Gagal mengirim pesan bantuan.");
       }
 
-      const { error: insertError } = await supabase
-        .from("support_tickets")
-        .insert({
-          user_id: user.id,
-          user_name: profile.full_name || user.email?.split("@")[0] || "User",
-          user_email: user.email || userEmail,
-          message: adminMessage,
-          status: "open",
-        });
-
-      if (insertError) throw new Error(insertError.message || "Gagal menyimpan ke database");
-
       toast.success("Pesan bantuan berhasil terkirim ke Admin!", {
-        description: "Pesan Anda telah tersimpan di halaman Support Admin.",
+        description: "Admin akan menerima notifikasi dan menindaklanjuti pesan Anda.",
       });
 
       setAdminMessage("");
       setIsChatAdminOpen(false);
-    } catch (error: any) {
+    } catch (error) {
       console.error("Gagal mengirim pesan admin:", error);
       toast.error("Gagal mengirim pesan", {
-        description: error.message || "Terjadi kesalahan saat menyimpan data.",
+        description: error instanceof Error ? error.message : "Terjadi kesalahan saat mengirim data.",
       });
     } finally {
       setSendingMessage(false);
@@ -912,7 +920,9 @@ export default function SettingsPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2 self-start sm:self-auto">
+        {/* Tiga tombol tidak muat berdampingan di lebar 375px, jadi barisnya
+            dibiarkan membungkus alih-alih memaksa teksnya terpotong. */}
+        <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
           <Button
             variant="default"
             size="sm"
@@ -921,6 +931,18 @@ export default function SettingsPage() {
           >
             <MessageSquare className="w-3.5 h-3.5" />
             Chat Admin Kantor
+          </Button>
+
+          {/* Jalur cadangan bila pesan internal tidak terkirim — mis. belum ada
+              admin terdaftar, yang membuat /api/support menjawab 503. */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={openWhatsAppAdmin}
+            className="text-xs h-9 gap-1.5 cursor-pointer"
+          >
+            <MessageCircle className="w-3.5 h-3.5" />
+            WhatsApp Admin
           </Button>
 
           <Button
@@ -1025,8 +1047,6 @@ export default function SettingsPage() {
             formatJoinDate={formatJoinDate}
             formatCurrency={formatCurrency}
             toWhatsAppLink={toWhatsAppLink}
-            openWhatsAppAdmin={openWhatsAppAdmin}
-            setIsChatAdminOpen={setIsChatAdminOpen}
             handleCopy={handleCopy}
           />
         </TabsContent>

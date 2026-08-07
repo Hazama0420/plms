@@ -25,7 +25,8 @@ export type NotificationUiType =
   | "announcement"
   | "assignment"
   | "property_update"
-  | "lead";
+  | "lead"
+  | "support";
 
 /** Kunci di `users.preferences` yang dapat membungkam sebuah event. */
 export type NotificationPrefKey =
@@ -44,6 +45,9 @@ export type NotificationEventName =
   | "survey.scheduled" // agen buat jadwal        → client pengaju
   | "survey.rejected" // pengajuan ditolak       → client pengaju
   | "survey.reminder" // T-1 jam sebelum survei  → agen + client
+  | "support.request" // user minta bantuan     → semua admin
+  | "account.registered" // agen baru mendaftar     → semua admin
+  | "account.approved" // akun disetujui/aktif    → pemilik akun
   | "announcement"; // siaran admin            → sesuai targetRole
 
 export interface EventSpec {
@@ -72,6 +76,17 @@ export const EVENT_SPECS: Record<NotificationEventName, EventSpec> = {
   // Sengaja memakai reminder_alerts, bukan survey_alerts: pengguna yang
   // mematikan "pengingat" memang bermaksud mematikan yang jenis ini.
   "survey.reminder": { uiType: "reminder", prefKey: "reminder_alerts" },
+
+  // Pesan bantuan dari pengguna ke seluruh admin. Tanpa prefKey: admin tidak
+  // boleh bisa membungkam permintaan bantuan lewat halaman Pengaturan — pesan
+  // yang tidak sampai akan terlihat seperti fitur yang rusak bagi pengirimnya.
+  "support.request": { uiType: "support", prefKey: null },
+
+  // Alur akun. Keduanya tanpa prefKey dengan alasan yang sama seperti
+  // support.request: admin tidak boleh membungkam antrean persetujuan, dan
+  // pemilik akun harus tahu akunnya sudah aktif.
+  "account.registered": { uiType: "task", prefKey: null },
+  "account.approved": { uiType: "announcement", prefKey: null },
 
   // Pengumuman resmi admin sengaja tanpa prefKey: informasi kebijakan tidak
   // boleh bisa dibungkam lewat halaman Pengaturan.

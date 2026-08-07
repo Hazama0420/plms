@@ -17,6 +17,50 @@ import {
   EVENT_SPECS,
   type NotificationEventName,
 } from "@/lib/notification-events";
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+/**
+ * Ejaan role admin sebagaimana TERSIMPAN di kolom `users.role`.
+ *
+ * Bukan hasil normalizeRole(): penyeragaman itu memetakan nilai yang KELUAR
+ * dari database menjadi satu bentuk aplikasi, sedangkan daftar ini dipakai
+ * sebagai filter `.in()` yang masuk KE database — nilainya harus persis seperti
+ * yang tersimpan. Data produksi memuat kedua ejaan Super Admin, dan kueri yang
+ * hanya mencocokkan "super_admin" diam-diam melewatkan sebagian admin.
+ */
+const ADMIN_ROLE_SPELLINGS = ["super_admin", "superadmin", "admin"];
+
+/**
+ * Bentuk siap-pakai untuk kueri lain yang perlu menyertakan admin di dalam
+ * kelompok peran yang lebih luas — mis. ROLE_GROUPS.internal pada endpoint
+ * pengumuman. Dibagikan agar ejaan Super Admin diperbaiki di satu tempat saja.
+ */
+export const ADMIN_ROLES_FOR_QUERY: readonly string[] = ADMIN_ROLE_SPELLINGS;
+
+/**
+ * Daftar id seluruh admin — penerima untuk kejadian yang menuntut tindakan
+ * administratif (permintaan bantuan, pendaftaran agen baru, pengumuman).
+ *
+ * Mengembalikan array kosong bila kueri gagal; pemanggil yang menganggap
+ * "tidak ada admin" sebagai kondisi galat harus memeriksanya sendiri — helper
+ * ini sengaja tidak melempar agar satu kegagalan notifikasi tidak menjatuhkan
+ * alur utama yang memanggilnya.
+ */
+export async function getAdminRecipientIds(
+  client: SupabaseClient
+): Promise<string[]> {
+  const { data, error } = await client
+    .from("users")
+    .select("id")
+    .in("role", ADMIN_ROLE_SPELLINGS);
+
+  if (error) {
+    console.error("[notifikasi] Gagal mengambil daftar admin:", error.message);
+    return [];
+  }
+
+  return (data ?? []).map((row) => row.id as string).filter(Boolean);
+}
 
 export interface NotifyEventParams {
   event: NotificationEventName;

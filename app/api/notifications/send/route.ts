@@ -14,11 +14,18 @@ import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/api-auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendPushToUsers } from "@/lib/onesignal";
+import { ADMIN_ROLES_FOR_QUERY } from "@/lib/notification-helper";
 import { notificationSendSchema, validate } from "@/lib/validations";
 
-/** Peran yang tercakup oleh tiap pilihan targetRole. */
+/**
+ * Peran yang tercakup oleh tiap pilihan targetRole.
+ *
+ * Bagian adminnya diambil dari ADMIN_ROLES_FOR_QUERY: kolom `users.role` memuat
+ * dua ejaan Super Admin, dan daftar yang ditulis manual di sini melewatkan
+ * pemegang ejaan "superadmin" dari setiap pengumuman internal.
+ */
 const ROLE_GROUPS: Record<"internal" | "viewer" | "all", string[] | null> = {
-  internal: ["super_admin", "admin", "agent", "marketing"],
+  internal: [...ADMIN_ROLES_FOR_QUERY, "agent", "marketing"],
   viewer: ["viewer"],
   all: null, // null berarti tanpa penyaringan peran
 };

@@ -27,6 +27,7 @@ const TYPE_ICONS: Record<string, string> = {
   assignment: "👤",
   property_update: "🏠",
   lead: "🎯",
+  support: "🎧",
 };
 
 const TYPE_LABELS: Record<string, string> = {
@@ -36,6 +37,7 @@ const TYPE_LABELS: Record<string, string> = {
   assignment: "Penugasan",
   property_update: "Update Properti",
   lead: "Prospek Lead",
+  support: "Bantuan",
 };
 
 export function NotificationBell() {

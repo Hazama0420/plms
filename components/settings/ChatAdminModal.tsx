@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
+import { SUPPORT_MESSAGE_MAX, SUPPORT_MESSAGE_MIN } from "@/lib/support-config";
 import {
   Dialog,
   DialogContent,
@@ -35,6 +37,11 @@ export function ChatAdminModal({
   sendingMessage,
   handleSendAdminMessage,
 }: ChatAdminModalProps) {
+  // Server memvalidasi hasil trim, jadi panjang yang dihitung di sini harus
+  // ikut di-trim — kalau tidak, sepuluh spasi akan terlihat memenuhi syarat.
+  const trimmedLength = adminMessage.trim().length;
+  const tooShort = trimmedLength < SUPPORT_MESSAGE_MIN;
+
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md rounded-2xl">
@@ -64,8 +71,26 @@ export function ChatAdminModal({
               value={adminMessage}
               onChange={(e) => setAdminMessage(e.target.value)}
               rows={4}
+              maxLength={SUPPORT_MESSAGE_MAX}
               className="text-xs mt-1"
             />
+            {/* Batas minimum ditampilkan sejak awal, bukan hanya saat gagal:
+                tombol yang mati tanpa penjelasan terbaca seperti fitur rusak. */}
+            <div className="flex items-center justify-between gap-2 mt-1.5">
+              <p
+                className={cn(
+                  "text-[11px]",
+                  tooShort ? "text-amber-600 dark:text-amber-500" : "text-muted-foreground"
+                )}
+              >
+                {tooShort
+                  ? `Minimal ${SUPPORT_MESSAGE_MIN} karakter (kurang ${SUPPORT_MESSAGE_MIN - trimmedLength} lagi).`
+                  : "Siap dikirim ke seluruh admin kantor."}
+              </p>
+              <span className="text-[11px] text-muted-foreground tabular-nums shrink-0">
+                {trimmedLength}/{SUPPORT_MESSAGE_MAX}
+              </span>
+            </div>
           </div>
         </div>
 
@@ -82,7 +107,7 @@ export function ChatAdminModal({
           <Button
             type="button"
             size="sm"
-            disabled={sendingMessage || !adminMessage.trim()}
+            disabled={sendingMessage || tooShort}
             onClick={handleSendAdminMessage}
             className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs gap-1.5 cursor-pointer"
           >

@@ -13,15 +13,54 @@
 import { useEffect } from "react";
 import OneSignal from "react-onesignal";
 import { supabase } from "@/lib/supabase/client";
+import { SITE } from "@/lib/site-config";
 
 // Disimpan di tingkat modul, bukan useRef, agar tetap satu kali walau React
 // Strict Mode menjalankan efek dua kali saat pengembangan.
 let initPromise: Promise<void> | null = null;
 
-// Menandai bahwa init sudah dicoba dan gagal — biasanya karena pemblokir iklan
-// menahan cdn.onesignal.com. Dipakai untuk melewati seluruh pemanggilan API
-// OneSignal sesudahnya, alih-alih mengulang percobaan yang pasti gagal.
-let initFailed = false;
+/**
+ * Mengapa OneSignal tidak (belum) siap:
+ * - `"origin"` — init sengaja dilewati karena window.location.origin berbeda
+ *   dari SITE.url. Inisialisasi yang tetap dijalankan akan ditolak SDK dan
+ *   membuat seluruh pemanggilan berikutnya menggantung selamanya — itulah yang
+ *   membuat sakelar langganan berputar tanpa selesai.
+ * - `"load"` — init dicoba dan gagal (umumnya pemblokir iklan menahan
+ *   cdn.onesignal.com). SDK-nya tidak pernah siap; pemanggilan diulang hanya
+ *   akan melempar galat yang sama.
+ * - `null` — belum ada masalah: belum dicoba, berhasil, atau dilewati di
+ *   localhost.
+ */
+export type OneSignalStatus = "origin" | "load" | null;
+
+let initStatus: OneSignalStatus = null;
+
+type StatusListener = (status: OneSignalStatus) => void;
+const statusListeners = new Set<StatusListener>();
+
+/**
+ * Berlangganan perubahan status. Provider ada di root layout, jadi efeknya
+ * berjalan SETELAH efek halaman — komponen yang membaca status hanya sekali di
+ * mount bisa mendapat null yang basi. Langganan ini membuat UI ikut berubah
+ * begitu status ditetapkan.
+ */
+export function subscribeOneSignalStatus(listener: StatusListener): () => void {
+  statusListeners.add(listener);
+  return () => {
+    statusListeners.delete(listener);
+  };
+}
+
+/** Pembaca status untuk UI — dipakai NotificationsTab untuk menerangkan
+ * keadaan sakelar alih-alih menebak dari bentuk objek SDK. */
+export function getOneSignalStatus(): OneSignalStatus {
+  return initStatus;
+}
+
+function setStatus(status: OneSignalStatus) {
+  initStatus = status;
+  statusListeners.forEach((listener) => listener(status));
+}
 
 /**
  * Menginisialisasi OneSignal paling banyak sekali per pemuatan halaman.
@@ -46,19 +85,35 @@ function ensureInit(): Promise<void> | null {
     return null;
   }
 
+  // Pemeriksaan origin SEBELUM init, bukan sesudah gagal. SDK v16 menolak init
+  // saat origin tidak cocok dengan Site URL di dasbor, dan init yang ditolak
+  // meninggalkan SDK dalam keadaan yang membuat setiap pemanggilan berikutnya
+  // menggantung selamanya — sumber sakelar yang berputar. Nilai pembandingnya
+  // SITE.url, yang di produksi harus diisi NEXT_PUBLIC_SITE_URL dengan nilai
+  // yang sama persis dengan Site URL di dasbor OneSignal.
+  if (window.location.origin !== SITE.url) {
+    console.warn(
+      `OneSignal dilewati: origin peramban "${window.location.origin}" tidak sama ` +
+        `dengan SITE.url "${SITE.url}". Isi NEXT_PUBLIC_SITE_URL dengan origin ` +
+        "yang sungguh-sungguh dimuat, dan pastikan Site URL di dasbor OneSignal " +
+        "bernilai sama."
+    );
+    setStatus("origin");
+    return null;
+  }
+
   initPromise = OneSignal.init({
     appId,
-    allowLocalhostAsSecureOrigin: true,
     serviceWorkerPath: "OneSignalSDKWorker.js",
     serviceWorkerParam: { scope: "/" },
   })
     .then(() => {
-      initFailed = false;
+      setStatus(null);
     })
     .catch((err) => {
       // Skrip SDK bisa gagal dimuat karena pemblokir iklan — cdn.onesignal.com
       // ada di hampir semua daftar blokir. Kegagalannya dicatat sekali di sini
-      // lalu diingat lewat initFailed; tanpa penanda itu, setiap perubahan
+      // lalu diingat lewat initStatus; tanpa penanda itu, setiap perubahan
       // status auth mencoba OneSignal.login() pada SDK yang tidak pernah ada
       // dan melempar galat yang sama berulang kali.
       //
@@ -66,7 +121,7 @@ function ensureInit(): Promise<void> | null {
       // penyelaras External ID, dan gagalnya push tidak boleh menghentikan
       // aplikasi.
       console.error("Gagal inisialisasi OneSignal:", err);
-      initFailed = true;
+      setStatus("load");
       initPromise = null;
     });
 
@@ -90,8 +145,8 @@ export function OneSignalProvider({ children }: { children: React.ReactNode }) {
       await ready;
 
       // Init gagal (umumnya diblokir pemblokir iklan) — SDK-nya tidak pernah
-      // ada, jadi login()/logout() hanya akan melempar galat yang sama.
-      if (initFailed || !active || lastSynced === userId) return;
+      // siap, jadi login()/logout() hanya akan melempar galat yang sama.
+      if (initStatus !== null || !active || lastSynced === userId) return;
 
       try {
         if (userId) {

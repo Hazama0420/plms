@@ -23,6 +23,11 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
+import {
+  getOneSignalStatus,
+  subscribeOneSignalStatus,
+  type OneSignalStatus,
+} from "@/components/providers/onesignal-provider";
 
 declare global {
   interface Window {
@@ -67,11 +72,15 @@ interface NotificationsTabProps {
  * SDK-nya tidak pernah termuat — pemblokir iklan menahan cdn.onesignal.com di
  * hampir semua daftar blokir. Tanpa batas waktu, `await` di dalam toggle tidak
  * pernah selesai, blok `finally` tidak pernah dijalankan, dan sakelarnya
- * berputar selamanya. Persis itu yang terjadi di domain produksi sementara di
- * localhost tampak normal — di sana OneSignal memang sengaja dilewati
- * (onesignal-provider.tsx:32), jadi toggle langsung memakai Notification API
- * bawaan peramban.
+ * berputar selamanya.
+ *
+ * Ini jaring pengaman, bukan jalur normal: dua mode kegagalan yang benar-benar
+ * pernah terjadi — origin tidak cocok dan SDK gagal dimuat — sekarang dikenali
+ * lebih dulu lewat getOneSignalStatus(), sehingga tidak ada lagi yang perlu
+ * ditunggu sampai batas waktu habis.
  */
+const PUSH_TIMEOUT_MS = 8_000;
+
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return Promise.race([
     promise,
@@ -84,10 +93,16 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 /**
  * Mengembalikan objek OneSignal bila benar-benar siap dipakai, bukan sekadar ada.
  *
- * `window.OneSignal` sudah terisi stub oleh react-onesignal begitu modulnya
- * dimuat, jadi pengecekan `if (window.OneSignal)` saja lolos walaupun SDK
- * aslinya gagal diunduh. Yang menentukan adalah tersedianya metode yang hendak
- * dipanggil.
+ * Ada dua mode kegagalan yang berbeda, dan keduanya harus ditolak di sini:
+ *
+ * 1. Skrip SDK gagal diunduh (pemblokir iklan). Metode yang hendak dipanggil
+ *    tidak ada, jadi pemeriksaan `typeof ... === "function"` menangkapnya.
+ * 2. Skrip termuat PENUH tetapi init ditolak — misalnya origin peramban tidak
+ *    cocok dengan Site URL di dasbor OneSignal. Di sini seluruh metode ada dan
+ *    berupa fungsi, sehingga pemeriksaan bentuk objek lolos; yang terjadi
+ *    kemudian adalah setiap pemanggilan menggantung selamanya di belakang
+ *    promise init yang tidak pernah selesai. Inilah sumber sakelar berputar,
+ *    dan hanya status dari provider yang bisa membedakannya.
  *
  * Objeknya dikembalikan — bukan boolean — supaya pemanggil punya satu rujukan
  * yang sudah pasti ada. Predikat boolean tidak mempersempit tipe
@@ -95,6 +110,8 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
  * berarti membaca nilai yang bisa saja sudah berubah.
  */
 function getReadyOneSignal(): any | null {
+  if (getOneSignalStatus() !== null) return null;
+
   const os = typeof window !== "undefined" ? window.OneSignal : undefined;
   const ready =
     typeof os?.Notifications?.requestPermission === "function" &&
@@ -117,6 +134,23 @@ export function NotificationsTab({
   const [permissionState, setPermissionState] = useState<NotificationPermission | "loading">("loading");
   const [loadingPush, setLoadingPush] = useState(false);
 
+  // Status dari provider (root layout). Dibaca lewat langganan, bukan sekali di
+  // mount: efek provider berjalan setelah efek halaman, jadi pembacaan awal bisa
+  // mendapat null yang basi — dan null vs "origin" menentukan apa yang
+  // ditampilkan sakelar di bawah.
+  const [oneSignalStatus, setOneSignalStatus] = useState<OneSignalStatus>(
+    () => getOneSignalStatus()
+  );
+
+  useEffect(() => {
+    return subscribeOneSignalStatus(setOneSignalStatus);
+  }, []);
+
+  // Origin peramban tidak cocok dengan SITE.url — push tidak akan pernah
+  // terdaftar di alamat ini. Sakelar dimatikan dengan penjelasan, bukan dibiarkan
+  // berputar 15 detik lalu gagal.
+  const originBlocked = oneSignalStatus === "origin";
+
   useEffect(() => {
     if (typeof window === "undefined" || !("Notification" in window)) {
       setIsPushSupported(false);
@@ -126,7 +160,16 @@ export function NotificationsTab({
 
     setPermissionState(Notification.permission);
 
-    const pushSub = window.OneSignal?.User?.PushSubscription;
+    // Di SDK v16 getter `User` MELEMPAR bila init belum selesai (mis. setelah
+    // init ditolak karena origin). Optional chaining tidak menahan getter yang
+    // melempar — tanpa try/catch, halaman Pengaturan bisa jatuh hanya karena
+    // OneSignal tidak siap.
+    let pushSub: any = undefined;
+    try {
+      pushSub = window.OneSignal?.User?.PushSubscription;
+    } catch {
+      pushSub = undefined;
+    }
 
     if (pushSub) {
       setIsOneSignalSubscribed(pushSub.optedIn ?? false);
@@ -168,6 +211,13 @@ export function NotificationsTab({
       return;
     }
 
+    if (originBlocked) {
+      toast.error("Layanan push tidak tersedia di alamat ini.", {
+        description: "Buka situs melalui alamat utama (bukan pratayang atau domain lain) untuk mengaktifkan notifikasi.",
+      });
+      return;
+    }
+
     setLoadingPush(true);
     try {
       if (enabled) {
@@ -183,8 +233,8 @@ export function NotificationsTab({
         const os = getReadyOneSignal();
 
         if (os) {
-          await withTimeout(os.Notifications.requestPermission(), 15_000, "OneSignal");
-          await withTimeout(os.User.PushSubscription.optIn(), 15_000, "OneSignal");
+          await withTimeout(os.Notifications.requestPermission(), PUSH_TIMEOUT_MS, "OneSignal");
+          await withTimeout(os.User.PushSubscription.optIn(), PUSH_TIMEOUT_MS, "OneSignal");
           setIsOneSignalSubscribed(true);
           toast.success("Push Notification OneSignal berhasil diaktifkan!");
         } else {
@@ -210,7 +260,7 @@ export function NotificationsTab({
 
         if (os) {
           try {
-            await withTimeout(os.User.PushSubscription.optOut(), 15_000, "OneSignal");
+            await withTimeout(os.User.PushSubscription.optOut(), PUSH_TIMEOUT_MS, "OneSignal");
           } catch (err) {
             // Mematikan sakelar tidak boleh gagal hanya karena SDK tidak
             // merespons — preferensinya tetap disimpan di basis data, dan
@@ -251,6 +301,10 @@ export function NotificationsTab({
               <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200 border-emerald-300 text-[10px] gap-1">
                 <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Aktif & Terhubung
               </Badge>
+            ) : originBlocked ? (
+              <Badge variant="outline" className="text-[10px] gap-1 text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-900/60">
+                <ShieldAlert className="w-3 h-3" /> Tidak Tersedia di Alamat Ini
+              </Badge>
             ) : permissionState === "denied" ? (
               <Badge variant="destructive" className="text-[10px] gap-1">
                 <XCircle className="w-3 h-3" /> Diblokir Browser
@@ -286,11 +340,26 @@ export function NotificationsTab({
               {loadingPush && <Loader2 className="w-4 h-4 animate-spin text-emerald-600" />}
               <Switch
                 checked={isOneSignalSubscribed}
-                disabled={loadingPush || !isPushSupported}
+                disabled={loadingPush || !isPushSupported || originBlocked}
                 onCheckedChange={handleTogglePushNotification}
               />
             </div>
           </div>
+
+          {originBlocked && (
+            <div className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 flex items-start gap-3 text-xs text-amber-900 dark:text-amber-300">
+              <ShieldAlert className="w-4 h-4 shrink-0 text-amber-600 mt-0.5" />
+              <div className="space-y-1">
+                <p className="font-bold text-[11px]">Layanan Push Tidak Tersedia di Alamat Ini</p>
+                <p className="text-[11px] leading-relaxed text-amber-800/90 dark:text-amber-400">
+                  Alamat yang sedang Anda buka berbeda dari alamat utama yang terdaftar
+                  di layanan push, sehingga perangkat ini tidak bisa didaftarkan. Buka
+                  situs melalui alamat utamanya untuk mengaktifkan notifikasi.
+                  Notifikasi lonceng di dalam aplikasi tetap berjalan seperti biasa.
+                </p>
+              </div>
+            </div>
+          )}
 
           {permissionState === "denied" && (
             <div className="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/50 flex items-start gap-3 text-xs text-rose-800 dark:text-rose-300">

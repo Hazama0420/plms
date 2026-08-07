@@ -158,6 +158,22 @@ export default function RegisterAgentPage() {
         if (dbError) {
           console.warn("Detail profil agen tersimpan di Metadata tetapi gagal di tabel users:", dbError.message);
         }
+
+        // 4. Beri tahu admin bahwa ada permohonan yang menunggu persetujuan.
+        //
+        // Dijalankan setelah upsert karena route memverifikasi barisnya di tabel
+        // `users` lebih dulu. Kegagalannya sengaja tidak dilempar: pendaftarannya
+        // sendiri sudah berhasil, dan akunnya tetap muncul di antrean
+        // persetujuan di /admin/users meski notifikasinya tidak sampai.
+        try {
+          await fetch("/api/auth/agent-registered", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ userId: authData.user.id }),
+          });
+        } catch (notifyErr) {
+          console.warn("Notifikasi pendaftaran agen gagal dikirim:", notifyErr);
+        }
       }
 
       setAgentPendingSubmitted(true);

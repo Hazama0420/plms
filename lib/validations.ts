@@ -160,6 +160,28 @@ const leadAliases = z.preprocess((raw) => {
 
 export const leadInsertSchema = leadAliases;
 
+// --- /api/leads/[id]/assign (PATCH, agen ke atas) ---
+//
+// Penugasan agen penanggung jawab untuk sebuah lead. Bentuknya meniru
+// propertyAssignSchema di bawah, dengan satu tambahan: `kind`.
+//
+// Rute ini ada karena notifikasi lead kini diproduksi aplikasi, bukan lagi
+// trigger basis data (M-17). services/crm.service.ts memakai klien peramban
+// sehingga tidak bisa memanggil notifyEvent() yang menuntut service role.
+//
+// `kind` HANYA memilih event mana yang dipakai — "created" untuk lead yang baru
+// dibuat untuk seorang agen (ikon 🎯 Prospek Lead), "reassigned" untuk lead yang
+// berpindah tangan (ikon 👤 Penugasan). Ia tidak pernah menentukan penerima:
+// penerimanya selalu dibaca ulang dari baris hasil UPDATE, sehingga pemanggil
+// tidak punya jalan mengirimi orang sembarangan.
+export const leadAssignSchema = z.object({
+  /** null berarti melepas penugasan; tidak ada notifikasi yang dikirim. */
+  assigned_to: uuidSchema.nullable(),
+  kind: z.enum(["created", "reassigned"], {
+    error: "kind wajib salah satu dari: created, reassigned.",
+  }),
+});
+
 // --- /api/chat (POST, publik — widget chat di layout root) ---
 //
 // AIChatWidget mengirim seluruh riwayat percakapan setiap kali, sementara route

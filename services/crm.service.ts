@@ -63,6 +63,44 @@ async function sendWaNotification(
   }
 }
 
+// ⚡ Helper internal untuk memicu notifikasi lonceng + push saat lead ditugaskan.
+//
+// Berkas ini memakai klien peramban (baris 2), sedangkan notifyEvent() menuntut
+// SUPABASE_SERVICE_ROLE_KEY yang server-only — jadi notifikasinya tidak bisa
+// dikirim dari sini secara langsung. Rute PATCH /api/leads/[id]/assign yang
+// mengerjakannya, dengan penerima dibaca ulang dari basis data supaya pemanggil
+// tidak bisa menentukan sendiri siapa yang dinotifikasi.
+//
+// Bentuknya sengaja sama dengan sendWaNotification di atas: satu fetch, galat
+// dicatat bukan dilempar, sehingga notifikasi yang gagal tidak pernah
+// menggagalkan penyimpanan lead yang sudah berhasil.
+async function sendAssignNotification(
+  leadId: string,
+  assignedTo: string,
+  kind: "created" | "reassigned"
+) {
+  if (!leadId || !assignedTo) return;
+  try {
+    const res = await fetch(`/api/leads/${leadId}/assign`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ assigned_to: assignedTo, kind }),
+    });
+
+    // Rute bisa menolak (403 dari RLS, 404 lead tidak terlihat) tanpa melempar.
+    // Tanpa baris ini penolakan itu tidak meninggalkan jejak sama sekali, dan
+    // notifikasi yang tidak pernah terkirim akan terlihat persis seperti sukses.
+    if (!res.ok) {
+      console.error(
+        `Gagal memicu notifikasi penugasan lead (${res.status}):`,
+        await res.text().catch(() => "")
+      );
+    }
+  } catch (err) {
+    console.error("Gagal memicu notifikasi penugasan lead:", err);
+  }
+}
+
 // ============================================================
 // CRM SERVICE
 // ============================================================
@@ -309,6 +347,16 @@ export const crmService = {
       } catch (waErr) {
         console.error("Gagal mengalirkan WA otomatis di createLead:", waErr);
       }
+
+      // ⚡ NOTIFIKASI LONCENG + PUSH (M-17)
+      // Sejak trigger on_lead_created_notify dipensiunkan, jalur inilah yang
+      // memberi tahu agen bahwa ada lead baru atas namanya. Berbeda dengan
+      // trigger yang digantikannya, jalur ini menghormati sakelar lead_alerts
+      // dan ikut mengirim push OneSignal.
+      //
+      // Kolom assigned_to sudah terisi oleh INSERT di atas, jadi rutenya tidak
+      // menulis ulang nilai yang sama — ia hanya mengirim notifikasinya.
+      await sendAssignNotification(lead.id, lead.assigned_to, "created");
     }
 
     return lead as CRMLead;
@@ -338,6 +386,18 @@ export const crmService = {
         updatedLead.contact?.phone || updatedLead.contact?.whatsapp,
         updatedLead.interest_type || "Properti Pilihan"
       );
+
+      // ⚡ NOTIFIKASI LONCENG + PUSH (M-17)
+      // Lead yang berpindah tangan memakai kind "reassigned" (👤 Penugasan),
+      // bukan 🎯 Prospek Lead — keduanya tunduk pada sakelar lead_alerts yang
+      // sama.
+      //
+      // Penjaganya sengaja penjaga WhatsApp yang sudah ada, bukan penjaga baru.
+      // Trigger lama menyala setiap kali kolom assigned_to DISEBUT di klausa
+      // SET, dan halaman Edit Lead selalu mengirimnya — jadi setiap penyimpanan
+      // formulir dulu menghasilkan notifikasi meski agennya tidak berganti.
+      // Memakai penjaga ini menghentikan pengulangan tersebut.
+      await sendAssignNotification(id, data.assigned_to, "reassigned");
     }
 
     return updatedLead;

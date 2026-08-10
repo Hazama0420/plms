@@ -150,9 +150,9 @@ export function OneSignalProvider({ children }: { children: React.ReactNode }) {
     let active = true;
 
     // undefined berarti "belum pernah diselaraskan" — dibedakan dari null yang
-    // berarti "sudah diselaraskan, dan saat itu tidak ada yang login". Berkat
-    // pembedaan ini, pemuatan halaman pertama sesudah logout tetap memanggil
-    // logout() untuk melepas External ID yang masih tersimpan SDK.
+    // berarti "sudah diselaraskan, dan saat itu tidak ada yang login". Pembedaan
+    // itu membuat SIGNED_OUT yang datang sebagai kabar pertama pada sebuah
+    // pemuatan halaman tetap dijalankan, alih-alih dianggap "sudah null".
     let lastSynced: string | null | undefined = undefined;
 
     const sync = async (userId: string | null) => {
@@ -176,15 +176,47 @@ export function OneSignalProvider({ children }: { children: React.ReactNode }) {
 
     // getUser() memverifikasi token ke server Auth, sedangkan getSession()
     // hanya membaca cookie. Di sini yang dibutuhkan memang identitas yang sah.
+    //
+    // Nilai `error` WAJIB dibaca. Pada supabase-js v2 kegagalan jaringan TIDAK
+    // menolak promise-nya, melainkan kembali sebagai
+    // { data: { user: null }, error } — bentuk yang sama persis dengan "tidak
+    // ada yang login". Kode lama membuang `error` dan hanya membaca data.user,
+    // jadi satu gangguan jaringan sesaat terbaca sebagai logout dan MELEPAS
+    // External ID perangkat ini secara permanen: langganannya tetap hidup di
+    // OneSignal, tetapi tidak lagi bisa dialamatkan ke akun mana pun. Itulah
+    // yang membuat 4 dari 5 perangkat kehilangan external_user_id-nya.
+    //
+    // Karena itu jalur ini hanya boleh MENAUTKAN. Pelepasan tautan diserahkan
+    // sepenuhnya ke onAuthStateChange di bawah, satu-satunya yang bisa
+    // membedakan "keluar" dari "tidak bisa bertanya".
     void supabase.auth
       .getUser()
-      .then(({ data }) => sync(data.user?.id ?? null))
-      .catch(() => sync(null));
+      .then(({ data, error }) => {
+        if (error || !data.user) return;
+        void sync(data.user.id);
+      })
+      .catch(() => {
+        // Identitas tidak diketahui — bukan berarti tidak ada yang login.
+      });
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      void sync(session?.user?.id ?? null);
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      // SIGNED_OUT satu-satunya kabar yang benar-benar berarti "perangkat ini
+      // bukan milik siapa pun lagi". Supabase memancarkannya pada logout yang
+      // disengaja maupun saat refresh token ditolak, jadi sesi yang kedaluwarsa
+      // tetap tertangani.
+      if (event === "SIGNED_OUT") {
+        void sync(null);
+        return;
+      }
+
+      // Kabar lain dengan session kosong TIDAK melepas tautan. INITIAL_SESSION
+      // bernilai null terjadi pada setiap pemuatan halaman publik oleh
+      // pengunjung anonim — provider ini ada di root layout — dan dulu ikut
+      // memicu logout() pada perangkat yang sebenarnya baik-baik saja.
+      const userId = session?.user?.id;
+      if (userId) void sync(userId);
     });
 
     return () => {

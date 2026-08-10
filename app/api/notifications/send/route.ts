@@ -104,6 +104,7 @@ export async function POST(req: Request) {
       push: {
         delivered: push.recipients,
         ok: push.success,
+        outcome: push.outcome,
         ...(push.skipped ? { note: push.skipped } : {}),
         ...(push.error ? { error: push.error } : {}),
       },

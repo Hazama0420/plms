@@ -70,9 +70,12 @@ export async function POST(request: Request) {
       success: true,
       targeted: userIds.length,
       delivered: push.recipients,
-      // Nol perangkat bukan kegagalan: penerima mungkin belum pernah menekan
-      // "Izinkan", atau External ID-nya belum terdaftar karena belum pernah
+      // Yang dibaca `outcome` dan `delivered`, BUKAN `success`: nol perangkat
+      // tetap dilaporkan sebagai success agar respons endpoint ini tidak
+      // berubah bentuk. "no_recipient" berarti penerima belum pernah menekan
+      // "Izinkan", atau External ID-nya belum tertaut karena belum pernah
       // membuka aplikasi sejak penautan akun diaktifkan.
+      outcome: push.outcome,
       ...(push.skipped ? { note: push.skipped } : {}),
     });
   } catch (error) {

@@ -258,25 +258,35 @@ export function NotificationsTab({
 
           await withTimeout(os.User.PushSubscription.optIn(), PUSH_TIMEOUT_MS, "OneSignal");
           setIsOneSignalSubscribed(true);
+          // Preferensi disimpan HANYA di sini — sesudah optIn() yang
+          // sungguh-sungguh berhasil, jadi `push_notifications: true` selalu
+          // berarti ada langganan OneSignal yang nyata di perangkat ini.
+          persistPreferences({ push_notifications: true });
           toast.success("Push Notification OneSignal berhasil diaktifkan!");
         } else {
           // Jalur cadangan: izin diminta lewat Notification API bawaan. Perangkat
           // ini tidak akan menerima push dari server (OneSignal tidak mengenalnya),
           // tapi setidaknya sakelarnya selesai dan pengguna tahu keadaannya.
+          //
+          // Preferensinya sengaja TIDAK disimpan. Menyimpan
+          // `push_notifications: true` di sini akan membuat basis data mengaku
+          // perangkat ini bisa dihubungi padahal OneSignal tidak mengenalnya:
+          // lib/notification-helper.ts akan memasukkan akun ini ke daftar tujuan
+          // push selamanya, dan setiap kiriman berakhir nol penerima tanpa ada
+          // yang tahu. Itu persis keadaan palsu yang sedang kita hindari.
           const result = await Notification.requestPermission();
           setPermissionState(result);
           if (result === "granted") {
-            setIsOneSignalSubscribed(true);
-            toast.success("Izin notifikasi diberikan", {
+            toast.warning("Izin peramban diberikan, tetapi push perangkat belum aktif", {
               description:
-                "Layanan OneSignal tidak dapat dihubungi — kemungkinan diblokir pemblokir iklan. Notifikasi lonceng di dalam aplikasi tetap berjalan.",
+                "Layanan OneSignal tidak dapat dihubungi — kemungkinan diblokir pemblokir iklan. " +
+                "Nonaktifkan pemblokir untuk situs ini lalu coba lagi. Notifikasi lonceng di dalam aplikasi tetap berjalan.",
             });
           } else {
             toast.warning("Izin notifikasi tidak diberikan.");
-            return;
           }
+          return;
         }
-        persistPreferences({ push_notifications: true });
       } else {
         const os = getReadyOneSignal();
 

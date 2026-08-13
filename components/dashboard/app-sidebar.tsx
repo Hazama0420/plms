@@ -155,10 +155,7 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
   const [userFullName, setUserFullName] = useState("");
   const [userAvatar, setUserAvatar] = useState("");
   const [pendingRequestCount, setPendingRequestCount] = useState(0);
-  const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({
-    crm: true,
-    admin: true,
-  });
+  const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({});
 
   const isLoading = userLoading || (!!user && roleLoading);
   const isViewer = !user || userRole === "viewer";
@@ -324,14 +321,9 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
                 : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
             )}
           >
-            {/* 1. Klik area teks/ikon langsung navigasi ke item.href */}
+            {/* 1. Klik area teks/ikon toggle sub-menu */}
             <button
-              onClick={() => {
-                navigateAndClose(item.href);
-                if (!isExpanded) {
-                  setExpandedItems((prev) => ({ ...prev, [key]: true }));
-                }
-              }}
+              onClick={() => toggleExpand(key)}
               className="flex items-center gap-2.5 flex-1 text-left cursor-pointer"
             >
               <item.icon size={17} className={cn((active || hasChildActive) && "text-emerald-600 dark:text-emerald-400")} />

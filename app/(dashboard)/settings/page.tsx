@@ -364,13 +364,13 @@ export default function SettingsPage() {
           avatar_url: data?.avatar_url || "",
           role: data?.role || "viewer",
           created_at: user.created_at || "",
-          bio: data?.bio || data?.branding?.bio || "",
-          specialization: data?.specialization || data?.branding?.specialization || "",
-          arebi_number: data?.arebi_number || data?.branding?.arebi_number || "",
-          instagram_url: data?.instagram_url || data?.branding?.instagram_url || "",
-          tiktok_url: data?.tiktok_url || data?.branding?.tiktok_url || "",
-          facebook_url: data?.facebook_url || data?.branding?.facebook_url || "",
-          linkedin_url: data?.linkedin_url || data?.branding?.linkedin_url || "",
+          bio: data?.bio || "",
+          specialization: data?.specialization || "",
+          arebi_number: data?.arebi_number || "",
+          instagram_url: data?.instagram_url || "",
+          tiktok_url: data?.tiktok_url || "",
+          facebook_url: data?.facebook_url || "",
+          linkedin_url: data?.linkedin_url || "",
         });
 
         if (data?.preferences) {
@@ -566,10 +566,7 @@ export default function SettingsPage() {
 
       const { error } = await supabase
         .from("users")
-        .update({
-          ...brandingPayload,
-          branding: brandingPayload,
-        })
+        .update(brandingPayload)
         .eq("id", userId);
 
       if (error) throw error;

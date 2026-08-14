@@ -70,9 +70,13 @@ export default function CreateFollowupPage() {
   const leadRef = useRef<HTMLDivElement>(null);
   const agentRef = useRef<HTMLDivElement>(null);
 
+  const requestedLeadId = typeof window === "undefined"
+    ? ""
+    : new URLSearchParams(window.location.search).get("lead_id") ?? "";
+
   // Form State
   const [form, setForm] = useState({
-    lead_id: "",
+    lead_id: requestedLeadId,
     assigned_to: "",
     followup_date: "",
     notes: "",

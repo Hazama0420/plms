@@ -149,26 +149,20 @@ export default function FollowupDetailPage() {
 
     setSaving(true);
     try {
-      await crmService.updateFollowup(followupId, { status });
+      const result = await crmService.updateFollowup(followupId, { status });
 
-      // 🔴 Catat log aktivitas di crm_activities
-      const leadId = followup?.lead_id;
-      const leadName = followup?.lead?.contact?.full_name || followup?.lead?.full_name || "Klien";
       const statusLabel = statusConfig[status]?.label || status;
-
-      if (currentUserId && leadId) {
-        await supabase.from("crm_activities").insert([
-          {
-            lead_id: leadId,
-            user_id: currentUserId,
-            activity_type: "Status Update",
-            notes: `Status follow-up dengan ${leadName} diperbarui menjadi: '${statusLabel}'`,
-            created_at: new Date().toISOString(),
+      if (result.lifecycle.shouldOfferNextFollowup) {
+        toast.success(`Status berhasil diperbarui menjadi ${statusLabel}`, {
+          description: "Buat Follow-Up berikutnya agar Lead tetap tertangani.",
+          action: {
+            label: "Buat berikutnya",
+            onClick: () => router.push(`/crm/followups/create?lead_id=${result.lifecycle.leadId}`),
           },
-        ]);
+        });
+      } else {
+        toast.success(`Status berhasil diperbarui menjadi ${statusLabel}`);
       }
-
-      toast.success(`Status berhasil diperbarui menjadi ${statusLabel}`);
       await fetchData();
     } catch (error: any) {
       console.error("Error updating status:", error);

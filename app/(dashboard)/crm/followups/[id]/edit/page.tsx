@@ -290,10 +290,10 @@ export default function EditFollowupPage() {
         ? form.assigned_to
         : (form.assigned_to || currentUserId);
 
-      await crmService.updateFollowup(followupId, {
-        assigned_to: targetAssignedTo ?? undefined,
+      const result = await crmService.updateFollowup(followupId, {
+        ...(isAdmin && targetAssignedTo ? { assigned_to: targetAssignedTo } : {}),
         followup_date: form.followup_date,
-        status: form.status as any,
+        status: form.status as "pending" | "completed" | "cancelled",
         notes: form.notes || undefined,
       });
 
@@ -314,7 +314,17 @@ export default function EditFollowupPage() {
         ]);
       }
 
-      toast.success("Agenda follow-up berhasil diperbarui!");
+      if (result.lifecycle.shouldOfferNextFollowup) {
+        toast.success("Agenda follow-up berhasil diperbarui!", {
+          description: "Buat Follow-Up berikutnya agar Lead tetap tertangani.",
+          action: {
+            label: "Buat berikutnya",
+            onClick: () => router.push(`/crm/followups/create?lead_id=${result.lifecycle.leadId}`),
+          },
+        });
+      } else {
+        toast.success("Agenda follow-up berhasil diperbarui!");
+      }
       router.push(`/crm/followups/${followupId}`);
       router.refresh();
     } catch (error: any) {

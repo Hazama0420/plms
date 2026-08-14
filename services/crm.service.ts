@@ -1,6 +1,6 @@
 // services/crm.service.ts
 import { supabase } from "@/lib/supabase/client";
-import type { CRMContact, CRMLead, LeadStatus } from "@/types/crm.types";
+import type { CRMContact, CRMFollowup, CRMLead, LeadStatus } from "@/types/crm.types";
 
 // ============================================================
 // TIPE UNTUK RELASI (didefinisikan di sini agar service konsisten)
@@ -753,42 +753,32 @@ export const crmService = {
     notes?: string;
     status?: "pending" | "completed" | "cancelled";
     assigned_to?: string;
-  }) {
-    const updateData: any = {
-      ...data,
-      updated_at: new Date().toISOString(),
+  }): Promise<{
+    data: CRMFollowup;
+    lifecycle: {
+      didTransitionToCompleted: boolean;
+      shouldOfferNextFollowup: boolean;
+      leadId: string;
     };
+  }> {
+    const res = await fetch(`/api/followups/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    const result = await res.json();
+    if (!res.ok || !result.success) throw new Error(result.error || "Gagal memperbarui Follow-Up");
 
-    if (data.status === "completed") {
-      updateData.completed_at = new Date().toISOString();
+    if (result.lifecycle.didTransitionToCompleted) {
+      await this.logActivity({
+        lead_id: result.lifecycle.leadId,
+        activity_type: "followup_completed",
+        notes: "Follow-up selesai",
+      });
     }
 
-    const { error } = await supabase
-      .from("crm_followups")
-      .update(updateData)
-      .eq("id", id);
-
-    if (error) throw new Error(error.message);
-
-    if (data.status === "completed") {
-      const { data: followup } = await supabase
-        .from("crm_followups")
-        .select("lead_id")
-        .eq("id", id)
-        .single();
-
-      if (followup) {
-        await this.logActivity({
-          lead_id: followup.lead_id,
-          activity_type: "followup_completed",
-          notes: "Follow-up selesai",
-        });
-      }
-    }
-
-    return await this.getFollowupById(id);
+    return { data: result.data, lifecycle: result.lifecycle };
   },
-
   async deleteFollowup(id: string) {
     const { error } = await supabase
       .from("crm_followups")

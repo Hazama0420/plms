@@ -4,15 +4,7 @@
 // atau klien Supabase, karena file ini juga dipakai dari proxy.ts yang berjalan
 // di luar konteks request Server Component.
 
-import { UserRole, Permission, ROLE_PERMISSIONS } from "@/types/user.types";
-
-const VALID_ROLES: UserRole[] = [
-  "super_admin",
-  "admin",
-  "agent",
-  "marketing",
-  "viewer",
-];
+import { UserRole, Permission, ROLE_PERMISSIONS, VALID_ROLES } from "@/types/user.types";
 
 /**
  * Status akun yang tidak boleh masuk sistem.
@@ -78,6 +70,7 @@ export function hasMinRole(userRole: UserRole | null | undefined, minRole: UserR
     super_admin: 100,
     admin: 80,
     agent: 50,
+    commissioner: 40,
     marketing: 30,
     viewer: 10,
   };

@@ -79,6 +79,7 @@ export interface PropertyItem {
   is_featured?: boolean;
   uploader_name: string;
   uploader_avatar: string;
+  slug?: string;
 }
 
 const DEFAULT_FALLBACK_IMAGE =
@@ -218,6 +219,7 @@ const mapPropertyItem = (
     is_featured: p.is_featured || false,
     uploader_name: uploaderName,
     uploader_avatar: uploaderAvatar,
+    slug: p.slug || undefined,
   };
 };
 
@@ -577,9 +579,9 @@ function PropertiesCatalogContent() {
     }).format(val || 0);
   };
 
-  const goToDetail = (id: string, e?: React.MouseEvent) => {
+  const goToDetail = (prop: PropertyItem, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    router.push(`/properties/${id}`);
+    router.push(`/properties/${prop.slug || prop.id}`);
   };
 
   const handleWhatsAppClick = (property: PropertyItem, e?: React.MouseEvent) => {
@@ -806,7 +808,7 @@ function PropertiesCatalogContent() {
             return (
               <Card
                 key={prop.id}
-                onClick={() => goToDetail(prop.id)}
+                onClick={() => goToDetail(prop)}
                 className="group border border-border/80 shadow-2xs hover:shadow-lg hover:border-emerald-500/50 hover:-translate-y-0.5 transition-all duration-200 rounded-2xl overflow-hidden cursor-pointer flex flex-col justify-between bg-card"
               >
                 <div>
@@ -989,7 +991,7 @@ function PropertiesCatalogContent() {
                   const showNoAgentWarning = !isGuestOrViewer && !prop.assigned_to;
 
                   return (
-                    <TableRow key={prop.id} className="hover:bg-muted/40 border-border/60 cursor-pointer" onClick={() => goToDetail(prop.id)}>
+                    <TableRow key={prop.id} className="hover:bg-muted/40 border-border/60 cursor-pointer" onClick={() => goToDetail(prop)}>
                       <TableCell className="font-medium py-3 px-3.5">
                         <div className="flex items-center gap-2.5">
                           <WatermarkedImage

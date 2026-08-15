@@ -59,7 +59,7 @@ export default function EditPropertyPage({ params }: EditPropertyPageProps) {
 
         if (userRole === "reviewer" || (!isAdmin && !isOwner)) {
           toast.error("Anda tidak memiliki izin untuk mengedit listingan ini.");
-          router.push(`/properties/${propertyId}`);
+          router.push(`/properties/${data.slug || propertyId}`);
           return;
         }
 

@@ -181,3 +181,25 @@ html.compact-mode .card-content {
 ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
 }
+
+/* ============================================================ */
+/* FADE-IN UP ANIMATION                                         */
+/* ============================================================ */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(20px) scale(0.985); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  @keyframes fadeInUp {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+}
+
+.fade-in-up   { animation: fadeInUp 0.55s cubic-bezier(0.22,1,0.36,1) both; }
+.fade-in-up-1 { animation: fadeInUp 0.55s 0.06s cubic-bezier(0.22,1,0.36,1) both; }
+.fade-in-up-2 { animation: fadeInUp 0.60s 0.12s cubic-bezier(0.22,1,0.36,1) both; }
+.fade-in-up-3 { animation: fadeInUp 0.60s 0.18s cubic-bezier(0.22,1,0.36,1) both; }
+.fade-in-up-4 { animation: fadeInUp 0.65s 0.24s cubic-bezier(0.22,1,0.36,1) both; }
+.fade-in-up-5 { animation: fadeInUp 0.65s 0.30s cubic-bezier(0.22,1,0.36,1) both; }

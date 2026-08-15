@@ -4,9 +4,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import propertyService, { type PropertyFilter } from "@/services/property.service";
 import { supabase } from "@/lib/supabase/client";
-import type { AdvancedFilter } from "@/types/property.types";
-
-type Property = any;
+import type { AdvancedFilter, Property } from "@/types/property.types";
 
 const DEFAULT_FILTERS: PropertyFilter = {
   page: 1,

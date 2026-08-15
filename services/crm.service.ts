@@ -243,52 +243,54 @@ export const crmService = {
     };
   },
 
-  async getLeadById(id: string): Promise<LeadWithRelations> {
-    const { data, error } = await supabase
-      .from("crm_leads")
-      .select(`
-        *,
-        contact:crm_contacts(*),
-        assigned_user:users!assigned_to(id, full_name, email, avatar_url),
-        interests:crm_interests(
-          id,
-          property_id,
-          interest_level,
-          notes,
-          property:properties(id, title, listing_code, status, price:property_price(selling_price, rental_price))
-        )
-      `)
-      .eq("id", id)
-      .single();
+ async getLeadById(id: string): Promise<LeadWithRelations | null> {
+  const { data, error } = await supabase
+    .from("crm_leads")
+    .select(`
+      *,
+      contact:crm_contacts(*),
+      assigned_user:users!assigned_to(id, full_name, email, avatar_url),
+      interests:crm_interests(
+        id,
+        property_id,
+        interest_level,
+        notes,
+        property:properties(id, title, listing_code, status, price:property_price(selling_price, rental_price))
+      )
+    `)
+    .eq("id", id)
+    .maybeSingle(); // ganti dari .single() agar tidak error jika data tidak ada
 
-    if (error) throw new Error(error.message);
+  if (error) throw new Error(error.message);
+  if (!data) return null; // lead tidak ditemukan
 
-    if (!data.contact) {
-      const { data: contactData, error: contactError } = await supabase
-        .from("crm_contacts")
-        .select("*")
-        .eq("id", data.contact_id)
-        .single();
+  // fallback jika relasi contact tidak ikut terambil (misal RLS menyembunyikan)
+  if (!data.contact && (data as any).contact_id) {
+    const { data: contactData, error: contactError } = await supabase
+      .from("crm_contacts")
+      .select("*")
+      .eq("id", (data as any).contact_id)
+      .maybeSingle();
 
-      if (contactError || !contactData) {
-        throw new Error("Contact not found for lead " + id);
-      }
-      data.contact = contactData;
+    if (!contactError && contactData) {
+      (data as any).contact = contactData;
     }
+  }
 
-    if (data.assigned_user && !data.assigned_user.id) {
-      const { data: userData } = await supabase
-        .from("users")
-        .select("id, full_name, email, avatar_url")
-        .eq("id", data.assigned_to)
-        .maybeSingle();
-      if (userData) {
-        data.assigned_user = userData;
-      }
+  // fallback assigned_user jika null
+  if (data.assigned_user && !data.assigned_user.id) {
+    const { data: userData } = await supabase
+      .from("users")
+      .select("id, full_name, email, avatar_url")
+      .eq("id", (data as any).assigned_to)
+      .maybeSingle();
+    if (userData) {
+      (data as any).assigned_user = userData;
     }
+  }
 
-    return data as LeadWithRelations;
-  },
+  return data as LeadWithRelations;
+},
 
   async createLead(data: {
     contact_id: string;
@@ -363,25 +365,50 @@ export const crmService = {
   },
 
   async updateLead(id: string, data: Partial<CRMLead>) {
+    const {
+      status,
+      lost_reason: _lostReason,
+      lost_explanation: _lostExplanation,
+      deal_state: _dealState,
+      deal_submitted_at: _dealSubmittedAt,
+      deal_verified_at: _dealVerifiedAt,
+      deal_rejection_reason: _dealRejectionReason,
+      ...leadData
+    } = data;
+
+    if (status) {
+      const response = await fetch(`/api/leads/${id}/status`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || "Gagal memperbarui status Lead");
+      }
+    }
+
     // Cek agen lama
     const oldLead = await this.getLeadById(id).catch(() => null);
 
-    const { error } = await supabase
-      .from("crm_leads")
-      .update({
-        ...data,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", id);
+    const { error } = Object.keys(leadData).length
+      ? await supabase
+          .from("crm_leads")
+          .update({
+            ...leadData,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", id)
+      : { error: null };
 
     if (error) throw new Error(error.message);
 
     const updatedLead = await this.getLeadById(id);
 
     // ⚡ OTOMATISASI WHATSAPP JIKA AGEN DIUBAH / DITUGASKAN BARU
-    if (data.assigned_to && data.assigned_to !== oldLead?.assigned_to) {
+    if (leadData.assigned_to && leadData.assigned_to !== oldLead?.assigned_to && updatedLead) {
       await sendWaNotification(
-        data.assigned_to,
+        leadData.assigned_to,
         updatedLead.contact?.full_name,
         updatedLead.contact?.phone || updatedLead.contact?.whatsapp,
         updatedLead.interest_type || "Properti Pilihan"
@@ -397,30 +424,23 @@ export const crmService = {
       // SET, dan halaman Edit Lead selalu mengirimnya — jadi setiap penyimpanan
       // formulir dulu menghasilkan notifikasi meski agennya tidak berganti.
       // Memakai penjaga ini menghentikan pengulangan tersebut.
-      await sendAssignNotification(id, data.assigned_to, "reassigned");
+      await sendAssignNotification(id, leadData.assigned_to, "reassigned");
     }
 
     return updatedLead;
   },
 
   async updateStatus(id: string, status: LeadStatus) {
-    const { error } = await supabase
-      .from("crm_leads")
-      .update({
-        status,
-        updated_at: new Date().toISOString()
-      })
-      .eq("id", id);
-
-    if (error) throw new Error(error.message);
-
-    await this.logActivity({
-      lead_id: id,
-      activity_type: "status_change",
-      notes: `Status berubah menjadi ${status}`,
+    const response = await fetch(`/api/leads/${id}/status`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
     });
-
-    return await this.getLeadById(id);
+    const result = await response.json();
+    if (!response.ok || !result.success) {
+      throw new Error(result.error || "Gagal memperbarui status Lead");
+    }
+    return result.data;
   },
 
   async deleteLead(id: string) {
@@ -536,30 +556,14 @@ export const crmService = {
   // AGENTS (USERS)
   // ============================================================
   async getAgents() {
-    try {
-      const { data, error } = await supabase
-        .from("users")
-        .select("id, full_name, email, avatar_url")
-        .order("full_name", { ascending: true });
+    const { data, error } = await supabase
+      .from("users")
+      .select("id, full_name, email, avatar_url")
+      .order("full_name", { ascending: true });
 
-      if (error) {
-        console.warn("Tabel users error / belum dibuat, menggunakan mock data");
-        return [
-          { id: "1", full_name: "Admin", email: "admin@plms.com", avatar_url: null },
-          { id: "2", full_name: "Agent 1", email: "agent1@plms.com", avatar_url: null },
-          { id: "3", full_name: "Agent 2", email: "agent2@plms.com", avatar_url: null },
-        ];
-      }
+    if (error) throw new Error(error.message);
 
-      return data || [];
-    } catch (error) {
-      console.error("Error fetching agents:", error);
-      return [
-        { id: "1", full_name: "Admin", email: "admin@plms.com", avatar_url: null },
-        { id: "2", full_name: "Agent 1", email: "agent1@plms.com", avatar_url: null },
-        { id: "3", full_name: "Agent 2", email: "agent2@plms.com", avatar_url: null },
-      ];
-    }
+    return data || [];
   },
 
   async getAgentById(id: string) {
@@ -615,7 +619,7 @@ export const crmService = {
   async getFollowups(filters: {
     lead_id?: string;
     assigned_to?: string;
-    status?: "pending" | "completed" | "cancelled";
+    status?: "pending" | "completed" | "cancelled" | "overdue";
     page?: number;
     limit?: number;
   } = {}) {
@@ -751,7 +755,7 @@ export const crmService = {
   async updateFollowup(id: string, data: {
     followup_date?: string;
     notes?: string;
-    status?: "pending" | "completed" | "cancelled";
+    status?: "pending" | "completed" | "cancelled" | "overdue";
     assigned_to?: string;
   }): Promise<{
     data: CRMFollowup;
@@ -779,13 +783,11 @@ export const crmService = {
 
     return { data: result.data, lifecycle: result.lifecycle };
   },
-  async deleteFollowup(id: string) {
-    const { error } = await supabase
-      .from("crm_followups")
-      .delete()
-      .eq("id", id);
 
-    if (error) throw new Error(error.message);
+  async deleteFollowup(id: string) {
+    const res = await fetch(`/api/followups/${id}`, { method: "DELETE" });
+    const result = await res.json();
+    if (!res.ok || !result.success) throw new Error(result.error || "Gagal menghapus Follow-Up");
     return true;
   },
 
@@ -917,6 +919,7 @@ export const crmService = {
     for (const leadId of leadIds) {
       try {
         const lead = await this.getLeadById(leadId);
+        if (!lead) continue;
         await sendWaNotification(
           assignedTo,
           lead.contact?.full_name,

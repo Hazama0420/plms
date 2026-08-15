@@ -6,17 +6,22 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from("users")
-    .select("id, full_name, avatar_url, role, bio, arebi_number")
+    .select("id, full_name, avatar_url, role, bio")
     .in("role", ["agent", "admin"])
-    .eq("status", "active")
-    .eq("is_approved", true)
+    .or("status.is.null,status.not.in.(pending,suspended)")
+    .or("is_approved.is.null,is_approved.eq.true")
     .order("role")
-    .order("full_name")
-    .limit(12);
+    .order("full_name");
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error("[agents/public] Query error:", error);
+    return NextResponse.json(
+      { error: error.message },
+      { status: 500 }
+    );
   }
 
-  return NextResponse.json({ data: data ?? [] });
+  return NextResponse.json({
+    data: data ?? [],
+  });
 }

@@ -58,7 +58,15 @@ export default function RootLayout({
         >
           <OneSignalProvider>
             {children}
-            <Toaster richColors position="top-right" />
+            <Toaster
+              richColors
+              position="top-center"
+              expand={false}
+              toastOptions={{
+                style: { maxWidth: "340px" },
+                classNames: { title: "text-xs", description: "text-[11px] line-clamp-2" },
+              }}
+            />
             
             {/* Widget Chatbot Agnes AI */}
             <AIChatWidget />

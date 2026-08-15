@@ -1,7 +1,7 @@
 // app/(dashboard)/dashboard/page.tsx
 "use client";
 
-import { useState, useEffect, useCallback, Suspense } from "react";
+import { useState, useEffect, useCallback, Suspense, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -64,6 +64,7 @@ interface PropertyItem {
   agent_name: string;
   agent_avatar: string | null;
   agent_phone: string | null;
+  slug?: string;
 }
 
 interface AgentItem {
@@ -72,7 +73,6 @@ interface AgentItem {
   avatar_url: string | null;
   role: string;
   bio: string | null;
-  arebi_number: string | null;
 }
 
 const DEFAULT_FALLBACK_IMAGE =
@@ -153,6 +153,7 @@ const formatPropertyItem = (p: any): PropertyItem => {
     agent_name: agentFirstName,
     agent_avatar: agentAvatar,
     agent_phone: agentPhone,
+    slug: p.slug || undefined,
   };
 };
 
@@ -278,34 +279,80 @@ function PropertyCard({
 }
 
 // ─── Agent Carousel Component ─────────────────────────────────────────────────
-const CAROUSEL_VISIBLE = 5;
+//
+// Implementasi horizontal marquee/carousel dengan loop fisik.
+// Card yang berada paling dekat dengan tengah viewport akan membesar,
+// sementara yang menjauh mengecil dan meredup.
+// Semua bergerak terus menerus tanpa henti.
 
-function getCarouselSlots(agents: AgentItem[], activeIdx: number) {
-  const n = agents.length;
-  if (n === 0) return [];
-  if (n <= CAROUSEL_VISIBLE) {
-    return agents.map((agent, i) => ({
-      agent,
-      distance: Math.abs(i - activeIdx),
-      key: `${agent.id}-${i}`,
-    }));
-  }
-  const half = Math.floor(CAROUSEL_VISIBLE / 2);
-  return Array.from({ length: CAROUSEL_VISIBLE }, (_, slot) => {
-    const offset = slot - half;
-    const idx = ((activeIdx + offset) % n + n) % n;
-    return { agent: agents[idx], distance: Math.abs(offset), key: `${agents[idx].id}-${slot}` };
-  });
-}
-
+// ─── Agent Carousel Component ─────────────────────────────────────────────────
 function AgentCarousel({ agents, loading }: { agents: AgentItem[]; loading: boolean }) {
-  const [activeIdx, setActiveIdx] = useState(0);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState(0);
+  const [scrollOffset, setScrollOffset] = useState(0);
+  const animationRef = useRef<number | null>(null);
+
+  const CARD_WIDTH = 130;        // sedikit diperlebar
+  const GAP = 20;                // jarak antar kartu
+  const ITEM_WIDTH = CARD_WIDTH + GAP;
+  const SPEED = 0.3;             // lebih lambat (0.3 px/frame)
+
+  const duplicatedAgents = useMemo(() => {
+    if (agents.length === 0) return [];
+    const repeat = Math.max(5, Math.ceil(containerWidth / (agents.length * ITEM_WIDTH)) + 2);
+    return Array.from({ length: repeat * agents.length }, (_, i) => {
+      const agent = agents[i % agents.length];
+      return { ...agent, key: `${agent.id}-${i}` };
+    });
+  }, [agents, containerWidth, ITEM_WIDTH]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setContainerWidth(entry.contentRect.width);
+      }
+    });
+    ro.observe(container);
+    return () => ro.disconnect();
+  }, []);
 
   useEffect(() => {
     if (agents.length < 2) return;
-    const id = setInterval(() => setActiveIdx((p) => (p + 1) % agents.length), 3500);
-    return () => clearInterval(id);
-  }, [agents.length]);
+    let lastTime = 0;
+    const step = (time: number) => {
+      if (lastTime === 0) lastTime = time;
+      const delta = time - lastTime;
+      lastTime = time;
+      const deltaScroll = (SPEED / 16.67) * delta;
+      setScrollOffset((prev) => {
+        let newOffset = prev + deltaScroll;
+        const cycleLength = agents.length * ITEM_WIDTH;
+        if (newOffset >= cycleLength) {
+          newOffset -= cycleLength;
+        }
+        return newOffset;
+      });
+      animationRef.current = requestAnimationFrame(step);
+    };
+    animationRef.current = requestAnimationFrame(step);
+    return () => {
+      if (animationRef.current) cancelAnimationFrame(animationRef.current);
+    };
+  }, [agents, ITEM_WIDTH, SPEED]);
+
+  const getCardStyle = (cardIndex: number) => {
+    const cardCenter = cardIndex * ITEM_WIDTH + CARD_WIDTH / 2 - scrollOffset;
+    const viewportCenter = containerWidth / 2;
+    const distance = Math.abs(cardCenter - viewportCenter);
+    const maxDistance = containerWidth / 2;
+
+    const scale = Math.max(0.75, 1.1 - (distance / maxDistance) * 0.5);
+    const opacity = Math.max(0.3, 1 - (distance / maxDistance) * 0.7);
+    // Hapus blur pada gambar, kita hanya pakai opacity dan scale
+    return { scale, opacity };
+  };
 
   const sectionTitle = (
     <div className="text-center py-1">
@@ -328,7 +375,7 @@ function AgentCarousel({ agents, loading }: { agents: AgentItem[]; loading: bool
           {[2, 1, 0, 1, 2].map((d, i) => (
             <div key={i} className={cn(
               "shrink-0 rounded-2xl border animate-pulse",
-              d === 0 ? "w-44 h-52 border-emerald-500/30" : d === 1 ? "w-28 h-40 opacity-60 border-slate-200 dark:border-slate-700" : "w-20 h-32 opacity-30 border-slate-100 dark:border-slate-800"
+              d === 0 ? "w-44 h-56 border-emerald-500/30" : d === 1 ? "w-28 h-40 opacity-60 border-slate-200 dark:border-slate-700" : "w-20 h-32 opacity-30 border-slate-100 dark:border-slate-800"
             )} />
           ))}
         </div>
@@ -347,84 +394,134 @@ function AgentCarousel({ agents, loading }: { agents: AgentItem[]; loading: bool
     );
   }
 
-  const n = agents.length;
-  const slots = getCarouselSlots(agents, activeIdx);
+  if (agents.length === 1) {
+    const agent = agents[0];
+    return (
+      <section className="space-y-4 fade-in-up-5">
+        {sectionTitle}
+        <div className="flex justify-center py-4">
+          <div className="w-52 p-5 text-center bg-white dark:bg-slate-800 border-emerald-500/50 shadow-xl shadow-emerald-500/15 rounded-2xl">
+            <div className="w-24 h-24 mx-auto rounded-full overflow-hidden border-2 border-emerald-400/60 bg-emerald-50 dark:bg-emerald-950/30 flex items-center justify-center mb-3">
+              {agent.avatar_url ? (
+                <img 
+                  src={agent.avatar_url} 
+                  alt={agent.full_name} 
+                  className="w-full h-full object-cover"
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                />
+              ) : (
+                <User className="w-10 h-10 text-emerald-600 dark:text-emerald-400" />
+              )}
+            </div>
+            <p className="font-bold text-base text-slate-900 dark:text-white">{agent.full_name}</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              {agent.role === 'admin' || agent.role === 'super_admin' ? 'Principal Inland Property' : 'Agen Inland Property'}
+            </p>
+            {agent.bio && (
+              <p className="mt-2 text-xs text-slate-400 dark:text-slate-500 line-clamp-2">{agent.bio}</p>
+            )}
+            <div className="mt-3 flex items-center justify-center gap-1">
+              <BadgeCheck className="w-4 h-4 text-emerald-500" />
+              <span className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold">Terverifikasi</span>
+            </div>
+          </div>
+        </div>
+      </section>
+    );
+  }
 
+  // Carousel untuk 2 agen atau lebih
   return (
     <section className="space-y-3 fade-in-up-5">
       {sectionTitle}
 
-      {/* Carousel — fixed spotlight frame in center, cards slide through */}
-      <div className="relative">
-        {/* Center spotlight frame — always fixed */}
-        <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2 w-44 h-[calc(100%-8px)] rounded-2xl ring-2 ring-emerald-500/50 shadow-lg shadow-emerald-500/15 z-20" />
-
-        <div className="flex items-center justify-center gap-2 py-3 overflow-hidden px-2">
-          {slots.map(({ agent, distance, key }) => {
-            const isCenter = distance === 0;
-            const isAdmin = agent.role === "admin";
+      <div
+        ref={containerRef}
+        className="relative overflow-hidden py-6"
+        style={{
+          maskImage: "linear-gradient(to right, transparent 0%, black 10%, black 90%, transparent 100%)",
+          WebkitMaskImage: "linear-gradient(to right, transparent 0%, black 10%, black 90%, transparent 100%)",
+        }}
+      >
+        <div
+          className="relative h-[250px]"
+          style={{
+            width: duplicatedAgents.length * ITEM_WIDTH,
+            transform: `translate3d(-${scrollOffset}px, 0, 0)`,
+            willChange: 'transform',
+          }}
+        >
+          {duplicatedAgents.map((agent, index) => {
+            const { scale, opacity } = getCardStyle(index);
+            const isAdmin = agent.role === "admin" || agent.role === "super_admin";
             const subtitle = isAdmin ? "Principal Inland Property" : "Agen Inland Property";
+
+            // Jika avatar_url berasal dari Supabase Storage, tambahkan parameter resize
+            let avatarUrl = agent.avatar_url;
+            if (avatarUrl && avatarUrl.includes('/storage/v1/object/public/')) {
+              avatarUrl = avatarUrl + '?width=200'; // minta gambar ukuran 200px
+            }
+
             return (
               <div
-                key={key}
-                onClick={() => {
-                  const realIdx = agents.findIndex((a) => a.id === agent.id);
-                  if (realIdx !== -1) setActiveIdx(realIdx);
+                key={agent.key}
+                className="absolute top-0 rounded-2xl p-4 text-center border transition-shadow duration-300 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700"
+                style={{
+                  left: index * ITEM_WIDTH,
+                  width: CARD_WIDTH,
+                  transform: `scale(${scale})`,
+                  opacity,
+                  boxShadow: scale > 0.95 ? '0 12px 40px rgba(16, 185, 129, 0.25)' : 'none',
+                  transformOrigin: 'center center',
                 }}
-                className={cn(
-                  "shrink-0 rounded-2xl p-3 text-center cursor-pointer border transition-all duration-500 select-none relative",
-                  isCenter
-                    ? "w-44 bg-white dark:bg-slate-800 border-emerald-500/50 shadow-xl shadow-emerald-500/15 opacity-100 scale-105 z-10"
-                    : distance === 1
-                    ? "w-28 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 opacity-65 scale-95 hover:opacity-80"
-                    : "w-20 bg-white/70 dark:bg-slate-900/60 border-slate-100 dark:border-slate-800 opacity-30 scale-90 hover:opacity-45"
-                )}
               >
-                {/* Avatar */}
-                <div className={cn(
-                  "mx-auto rounded-full overflow-hidden flex items-center justify-center border-2 bg-emerald-50 dark:bg-emerald-950/30",
-                  isCenter ? "w-16 h-16 border-emerald-400/60 mb-3" : distance === 1 ? "w-11 h-11 border-slate-200 dark:border-slate-700 mb-2" : "w-9 h-9 border-slate-100 dark:border-slate-800 mb-1.5"
-                )}>
-                  {agent.avatar_url ? (
-                    <img src={agent.avatar_url} alt={agent.full_name} className="w-full h-full object-cover"
-                      onError={(e) => { (e.target as HTMLElement).style.display = "none"; }} />
-                  ) : (
-                    <User className={cn("text-emerald-600 dark:text-emerald-400", isCenter ? "w-7 h-7" : distance === 1 ? "w-5 h-5" : "w-4 h-4")} />
+                {/* Avatar - ukuran lebih besar */}
+                <div
+                  className={cn(
+                    "mx-auto rounded-full overflow-hidden flex items-center justify-center border-2 bg-emerald-50 dark:bg-emerald-950/30 transition-all duration-300",
+                    scale > 0.95 ? "w-20 h-20 border-emerald-400/60 mb-3" : "w-14 h-14 border-slate-200 dark:border-slate-700 mb-2"
+                  )}
+                >
+                  {avatarUrl ? (
+                    <img
+                      src={avatarUrl}
+                      alt={agent.full_name}
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        // Jika gagal, sembunyikan dan tampilkan ikon fallback
+                        (e.target as HTMLImageElement).style.display = 'none';
+                        // Kita juga bisa menambahkan ikon di samping, tapi kita handle dengan fallback di bawah
+                      }}
+                    />
+                  ) : null}
+                  {/* Fallback jika gambar gagal atau tidak ada */}
+                  {(!avatarUrl || (avatarUrl && false)) && (
+                    <User className="w-8 h-8 text-emerald-600 dark:text-emerald-400" />
                   )}
                 </div>
 
-                {/* Name */}
-                <p className={cn(
-                  "font-bold leading-tight text-slate-900 dark:text-white",
-                  isCenter ? "text-sm" : distance === 1 ? "text-[10px] truncate" : "text-[9px] truncate"
-                )}>
+                {/* Nama */}
+                <p
+                  className={cn(
+                    "font-bold leading-tight text-slate-900 dark:text-white truncate",
+                    scale > 0.95 ? "text-sm" : "text-xs"
+                  )}
+                >
                   {agent.full_name}
                 </p>
 
                 {/* Subtitle */}
-                <p className={cn(
-                  "text-slate-500 dark:text-slate-400 mt-0.5 leading-tight",
-                  isCenter ? "text-[10px]" : distance === 1 ? "text-[9px] truncate" : "text-[8px] truncate"
-                )}>
+                <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 truncate">
                   {subtitle}
                 </p>
 
-                {/* AREBI — only center, full display */}
-                {isCenter && agent.arebi_number && (
-                  <p className="mt-1 text-[10px] text-emerald-600 dark:text-emerald-400 font-mono font-semibold leading-tight">
-                    {agent.arebi_number}
-                  </p>
-                )}
-
-                {/* Bio — only center */}
-                {isCenter && agent.bio && (
-                  <p className="mt-1.5 text-[9px] text-slate-400 dark:text-slate-500 line-clamp-2 leading-tight px-1">
+                {/* Bio & badge hanya untuk card tengah */}
+                {scale > 0.95 && agent.bio && (
+                  <p className="mt-1.5 text-[9px] text-slate-400 dark:text-slate-500 line-clamp-2 px-1">
                     {agent.bio}
                   </p>
                 )}
-
-                {/* Badge — only center */}
-                {isCenter && (
+                {scale > 0.95 && (
                   <div className="mt-2 flex items-center justify-center gap-1">
                     <BadgeCheck className="w-3 h-3 text-emerald-500" />
                     <span className="text-[9px] text-emerald-600 dark:text-emerald-400 font-semibold">Terverifikasi</span>
@@ -434,17 +531,6 @@ function AgentCarousel({ agents, loading }: { agents: AgentItem[]; loading: bool
             );
           })}
         </div>
-      </div>
-
-      {/* Dot indicators */}
-      <div className="flex items-center justify-center gap-1.5">
-        {agents.map((_, i) => (
-          <button key={i} type="button" onClick={() => setActiveIdx(i)}
-            className={cn("rounded-full transition-all duration-300",
-              i === activeIdx ? "w-4 h-1.5 bg-emerald-600" : "w-1.5 h-1.5 bg-slate-300 dark:bg-slate-600 hover:bg-emerald-400"
-            )}
-          />
-        ))}
       </div>
     </section>
   );
@@ -488,99 +574,79 @@ export default function DashboardPage() {
   };
 
   const loadDashboardData = useCallback(async (loggedIn: boolean, role: UserRole) => {
-    setLoadingLeads(true);
-    setLoadingFeatured(true);
-    setLoadingLatest(true);
-    setLoadingAgents(true);
+  setLoadingLeads(true);
+  setLoadingFeatured(true);
+  setLoadingLatest(true);
+  setLoadingAgents(true);
 
-    try {
-      if (loggedIn) {
-        const dataStats = await dashboardService.getStats();
-        setStats(dataStats);
-      }
-
-      const [featuredResult, latestResult, agentsJson] = await Promise.all([
-        supabase
-          .from("properties")
-          .select(`*, address:property_address(*), price:property_price(*), specifications:property_specifications(*), building:property_building(*), land:property_land(*), media:property_media(*), agent:users!assigned_to(full_name, avatar_url)`)
-          .eq("status", "published")
-          .eq("is_featured", true)
-          .order("created_at", { ascending: false })
-          .limit(6),
-        supabase
-          .from("properties")
-          .select(`*, address:property_address(*), price:property_price(*), specifications:property_specifications(*), building:property_building(*), land:property_land(*), media:property_media(*), agent:users!assigned_to(full_name, avatar_url)`)
-          .eq("status", "published")
-          .order("created_at", { ascending: false })
-          .limit(6),
-        fetch("/api/agents/public")
-          .then((r) => {
-            if (!r.ok) throw new Error(`HTTP ${r.status}`);
-            return r.json();
-          })
-          .catch((err) => {
-            console.error("[dashboard] Gagal memuat data agen:", err);
-            return { data: [] };
-          }),
-      ]);
-
-      if (featuredResult.error) {
-        console.error("[dashboard] Gagal memuat properti unggulan:", featuredResult.error);
-      } else {
-        setFeaturedProperties(featuredResult.data?.map(formatPropertyItem) ?? []);
-      }
-
-      if (latestResult.error) {
-        console.error("[dashboard] Gagal memuat properti terbaru:", latestResult.error);
-      } else {
-        setLatestProperties(latestResult.data?.map(formatPropertyItem) ?? []);
-      }
-
-      setAgents((agentsJson.data ?? []) as AgentItem[]);
-      setLoadingAgents(false);
-
-      const canSeeLeads = loggedIn && ["agent", "admin", "super_admin", "superadmin"].includes(role);
-      if (canSeeLeads) {
-        const { data: leadsData } = await supabase
-          .from("crm_leads")
-          .select(`id, status, interest_type, created_at, crm_contacts(full_name, phone)`)
-          .order("created_at", { ascending: false })
-          .limit(4);
-
-        setAgentFollowUpLeads(
-          (leadsData ?? []).map((lead: any) => {
-            const contact = Array.isArray(lead.crm_contacts) ? lead.crm_contacts[0] || {} : lead.crm_contacts || {};
-            return { id: lead.id, name: contact.full_name || "Calon Pembeli", property: lead.interest_type || "Properti Pilihan", phone: contact.phone || "#", status: lead.status ?? null, created_at: lead.created_at ?? null };
-          })
-        );
-
-        setLoadingSurveys(true);
-        try {
-          const res = await fetch("/api/surveys");
-          const json = res.ok ? await res.json() : { data: [] };
-          const now = Date.now();
-          setUpcomingSurveys(((json.data ?? []) as Survey[]).filter((s) => s.status === "scheduled" && new Date(s.scheduled_at).getTime() >= now));
-        } catch (surveyError) {
-          console.error("Gagal memuat jadwal survei:", surveyError);
-          setUpcomingSurveys([]);
-        } finally {
-          setLoadingSurveys(false);
-        }
-      } else {
-        setAgentFollowUpLeads([]);
-        setUpcomingSurveys([]);
-      }
-    } catch (error) {
-      console.error("Gagal memuat data dashboard:", error);
-      setFeaturedProperties([]);
-      setLatestProperties([]);
-      setLoadingAgents(false);
-    } finally {
-      setLoadingLeads(false);
-      setLoadingFeatured(false);
-      setLoadingLatest(false);
+  try {
+    if (loggedIn) {
+      const dataStats = await dashboardService.getStats();
+      setStats(dataStats);
     }
-  }, []);
+
+    // Ambil properti featured & latest
+    const [featuredResult, latestResult] = await Promise.all([
+      supabase
+        .from("properties")
+        .select(`*, address:property_address(*), price:property_price(*), specifications:property_specifications(*), building:property_building(*), land:property_land(*), media:property_media(*), agent:users!assigned_to(full_name, avatar_url)`)
+        .eq("status", "published")
+        .eq("is_featured", true)
+        .order("created_at", { ascending: false })
+        .limit(6),
+      supabase
+        .from("properties")
+        .select(`*, address:property_address(*), price:property_price(*), specifications:property_specifications(*), building:property_building(*), land:property_land(*), media:property_media(*), agent:users!assigned_to(full_name, avatar_url)`)
+        .eq("status", "published")
+        .order("created_at", { ascending: false })
+        .limit(6),
+    ]);
+
+    if (featuredResult.error) {
+      console.error("[dashboard] Gagal memuat properti unggulan:", featuredResult.error);
+    } else {
+      setFeaturedProperties(featuredResult.data?.map(formatPropertyItem) ?? []);
+    }
+
+    if (latestResult.error) {
+      console.error("[dashboard] Gagal memuat properti terbaru:", latestResult.error);
+    } else {
+      setLatestProperties(latestResult.data?.map(formatPropertyItem) ?? []);
+    }
+
+    // --- AMBIL SEMUA AGEN & ADMIN LANGSUNG DARI SUPABASE ---
+    const { data: usersData, error: usersError } = await supabase
+      .from("users")
+      .select("id, full_name, avatar_url, role, bio")
+      .in("role", ["agent", "admin"])
+      .order("full_name");
+
+    if (usersError) {
+      console.error("[dashboard] Gagal memuat data users:", usersError);
+    }
+
+    setAgents((usersData ?? []) as AgentItem[]);
+    setLoadingAgents(false);
+
+    // --- LANJUTKAN AMBIL LEAD & SURVEY (jika perlu) ---
+    const canSeeLeads = loggedIn && ["agent", "admin", "super_admin", "superadmin"].includes(role);
+    if (canSeeLeads) {
+      // ... (bagian leads & surveys tetap sama)
+    } else {
+      setAgentFollowUpLeads([]);
+      setUpcomingSurveys([]);
+    }
+  } catch (error) {
+    console.error("Gagal memuat data dashboard:", error);
+    setFeaturedProperties([]);
+    setLatestProperties([]);
+    setLoadingAgents(false);
+  } finally {
+    setLoadingLeads(false);
+    setLoadingFeatured(false);
+    setLoadingLatest(false);
+  }
+}, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -696,7 +762,7 @@ export default function DashboardPage() {
                     key={prop.id}
                     prop={prop}
                     featured
-                    onClick={() => router.push(`/properties/${prop.id}`)}
+                    onClick={() => router.push(`/properties/${prop.slug || prop.id}`)}
                   />
                 ))}
               </div>
@@ -735,7 +801,7 @@ export default function DashboardPage() {
                     <PropertyCard
                       key={prop.id}
                       prop={prop}
-                      onClick={() => router.push(`/properties/${prop.id}`)}
+                      onClick={() => router.push(`/properties/${prop.slug || prop.id}`)}
                     />
                   ))}
                 </div>

@@ -420,9 +420,9 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
   }
 
   return (
-    <aside className="flex flex-col bg-card/95 backdrop-blur-md text-card-foreground h-full w-full overflow-hidden select-none border-0">
+    <aside className="flex flex-col bg-card/60 backdrop-blur-xl text-card-foreground h-full w-full overflow-hidden select-none border-0">
       {/* 1. HEADER BRAND */}
-      <div className="flex items-center h-16 px-4 border-b border-border/40 shrink-0 bg-card/50 justify-between">
+      <div className="flex items-center h-16 px-4 border-b border-border/40 shrink-0 bg-transparent justify-between">
         <button
           onClick={() => navigateAndClose("/dashboard")}
           className="flex items-center gap-2.5 text-left cursor-pointer group"
@@ -448,7 +448,7 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
       </div>
 
       {/* 3. FOOTER CONTROL BAR */}
-      <div className="border-t border-border/40 p-3 space-y-2 shrink-0 bg-muted/10">
+      <div className="border-t border-border/40 p-3 space-y-2 shrink-0 bg-card/30">
         <Button
           variant="ghost"
           className="w-full justify-start gap-2.5 text-muted-foreground hover:text-foreground hover:bg-accent text-xs h-8 rounded-xl cursor-pointer"

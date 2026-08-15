@@ -37,8 +37,10 @@ export type NotificationPrefKey =
 
 export type NotificationEventName =
   | "lead.created" // prospek baru masuk      → agen penanggung jawab
+  | "lead.unassigned" // prospek tanpa agen      → semua admin
   | "lead.assigned" // lead dialihkan          → agen baru
   | "followup.created" // agenda follow-up dibuat → penanggung jawab
+  | "followup.overdue" // agenda melewati waktu → penanggung jawab
   | "property.assigned" // listing ditugaskan      → agen baru
   | "property.status" // status listing berubah  → agen + pembuat listing
   | "survey.requested" // client ajukan survei    → agen properti
@@ -64,8 +66,23 @@ export const EVENT_SPECS: Record<NotificationEventName, EventSpec> = {
   "lead.created": { uiType: "lead", prefKey: "lead_alerts" },
   "lead.assigned": { uiType: "assignment", prefKey: "lead_alerts" },
   "followup.created": { uiType: "reminder", prefKey: "reminder_alerts" },
+  "followup.overdue": { uiType: "task", prefKey: "reminder_alerts" },
   "property.assigned": { uiType: "assignment", prefKey: "property_updates" },
   "property.status": { uiType: "property_update", prefKey: "property_updates" },
+
+  // Prospek masuk tanpa agen penanggung jawab (M-18). Penerimanya seluruh admin,
+  // bukan seorang agen — memang tidak ada agen untuk dikirimi.
+  //
+  // uiType "task", bukan "lead": ini bukan kabar bahwa ada prospek baru,
+  // melainkan pekerjaan yang menunggu — seseorang harus menugaskannya.
+  //
+  // Tanpa prefKey, dengan alasan yang sama seperti support.request dan
+  // account.registered di bawah: sakelar "lead_alerts" akan membuat satu admin
+  // yang mematikannya kehilangan satu-satunya pemberitahuan yang ada untuk
+  // keadaan ini, dan prospek yang tidak tertangani adalah calon pembeli yang
+  // hilang tanpa jejak. Inilah tepatnya cacat yang M-18 tutup, jadi jangan
+  // menyediakan kembali cara membungkamnya.
+  "lead.unassigned": { uiType: "task", prefKey: null },
 
   // Alur survei. Pengajuan dan penolakan memakai "task" karena keduanya menuntut
   // tindakan penerimanya; konfirmasi jadwal memakai "reminder" agar tampil

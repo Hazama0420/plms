@@ -11,6 +11,7 @@ import {
   Settings,
   Calculator,
   LogIn,
+  CalendarDays,
 } from "lucide-react";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useUser } from "@/hooks/use-user";
@@ -23,12 +24,13 @@ export function BottomNav() {
 
   const isGuest = !user;
   const isAgentOrAdmin = userRole && ["super_admin", "admin", "agent", "marketing"].includes(userRole);
+  const isViewer = !!user && !isAgentOrAdmin;
 
   // Daftar item navigasi dinamis berdasarkan status login / role
   const NAV_ITEMS = [
     {
       icon: LayoutDashboard,
-      label: "Dashboard",
+      label: "Beranda",
       href: "/dashboard",
       exact: true,
     },
@@ -41,25 +43,15 @@ export function BottomNav() {
     isAgentOrAdmin
       ? { icon: Users, label: "Leads", href: "/crm/leads" }
       : { icon: Calculator, label: "KPR", href: "/kpr-calculator" },
-    {
-      icon: FileText,
-      label: "Invoice",
-      href: "/invoices",
-      hideForGuest: true,
-    },
-    // 🟢 KONDISI PERBAIKAN: Jika belum login (Guest) tampilkan "Login", jika sudah tampilkan "Pengaturan"
+    // Invoice hanya untuk agen/admin; viewer dan guest melihat Survei
+    (isGuest || isViewer)
+      ? { icon: CalendarDays, label: "Survei", href: "/surveys" }
+      : { icon: FileText, label: "Invoice", href: "/invoices" },
+    // Jika belum login tampilkan "Login", jika sudah tampilkan "Pengaturan"
     isGuest
-      ? {
-          icon: LogIn,
-          label: "Login",
-          href: "/login",
-        }
-      : {
-          icon: Settings,
-          label: "Pengaturan",
-          href: "/settings",
-        },
-  ].filter((item) => !(isGuest && "hideForGuest" in item && item.hideForGuest));
+      ? { icon: LogIn, label: "Login", href: "/login" }
+      : { icon: Settings, label: "Pengaturan", href: "/settings" },
+  ];
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-card/90 backdrop-blur-lg border-t border-border/60 shadow-lg pb-[env(safe-area-inset-bottom)]">

@@ -56,6 +56,7 @@ interface SystemTabProps {
   os: string;
   formatDateTime: (dateStr: string | null) => string;
   lastSignInAt: string | null;
+  isViewer?: boolean;
 }
 
 export function SystemTab({
@@ -79,6 +80,7 @@ export function SystemTab({
   os,
   formatDateTime,
   lastSignInAt,
+  isViewer = false,
 }: SystemTabProps) {
   // --- STATE LOKAL TAMBAHAN UNTUK NOTIFIKASI TOAST & AUTO-SAVE ---
   const [toastPosition, setToastPosition] = useState<string>("bottom-right");
@@ -299,6 +301,7 @@ export function SystemTab({
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
             {/* Download Backup JSON */}
+            {!isViewer && (
             <div className="p-4 bg-sky-50/50 dark:bg-sky-950/20 rounded-xl border border-sky-200/60 dark:border-sky-900/40 flex flex-col justify-between gap-3">
               <div>
                 <h4 className="font-bold text-xs text-sky-900 dark:text-sky-300 flex items-center gap-1.5">
@@ -317,6 +320,7 @@ export function SystemTab({
                 <Download className="w-3.5 h-3.5" /> Unduh Data JSON
               </Button>
             </div>
+            )}
 
             {/* Clear Cache */}
             <div className="p-4 bg-amber-50/40 dark:bg-amber-950/20 rounded-xl border border-amber-200/60 dark:border-amber-900/40 flex flex-col justify-between gap-3">

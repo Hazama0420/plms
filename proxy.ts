@@ -107,10 +107,7 @@ export async function proxy(req: NextRequest) {
   //    vs www), dan inisialisasi yang gagal membuat seluruh push tidak pernah
   //    terdaftar tanpa satu pun galat di sisi server.
   if (!IS_LOCAL_DEV && req.nextUrl.hostname === APEX_HOSTNAME) {
-    const canonical = new URL(
-      path + req.nextUrl.search,
-      CANONICAL_ORIGIN
-    );
+    const canonical = new URL(path + req.nextUrl.search, CANONICAL_ORIGIN);
     return NextResponse.redirect(canonical, 308);
   }
 
@@ -138,43 +135,69 @@ export async function proxy(req: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // 1. Tamu membuka halaman internal -> lempar ke login, simpan tujuan asalnya.
-  if (!user && isProtectedPage(path)) {
-    const loginUrl = new URL("/login", req.url);
-    loginUrl.searchParams.set("redirectTo", path + req.nextUrl.search);
-    const redirect = NextResponse.redirect(loginUrl);
-    for (const cookie of res.cookies.getAll()) redirect.cookies.set(cookie);
-    return redirect;
+  // ─────────────────────────────────────────────────────────────────────────
+  // 1. Tamu (tidak ada user) — hanya boleh mengakses halaman publik & auth.
+  // ─────────────────────────────────────────────────────────────────────────
+  if (!user) {
+    // Halaman /pending-approval juga dilindungi: tanpa login tidak mungkin
+    // tahu statusnya. Jadi perlakukan seperti protected page.
+    if (isProtectedPage(path) || path === "/pending-approval") {
+      const loginUrl = new URL("/login", req.url);
+      loginUrl.searchParams.set("redirectTo", path + req.nextUrl.search);
+      const redirect = NextResponse.redirect(loginUrl);
+      for (const cookie of res.cookies.getAll()) redirect.cookies.set(cookie);
+      return redirect;
+    }
+    // Tamu di halaman auth / publik — lanjutkan.
+    return res;
   }
 
-  // 2. Sudah login tapi membuka halaman login/register -> lempar ke dashboard.
-  if (user && isAuthPage(path)) {
+  // ─────────────────────────────────────────────────────────────────────────
+  // 2. User sudah login — ambil status + role untuk keputusan lebih lanjut.
+  // ─────────────────────────────────────────────────────────────────────────
+  const { data: profile, error: profileError } = await supabase
+    .from("users")
+    .select("role, status")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (profileError) {
+    console.error("[proxy] Gagal membaca data user:", profileError.message);
+    return path === "/dashboard" ? res : redirectWithCookies("/dashboard", req, res);
+  }
+
+  const role = normalizeRole(profile?.role ?? user.user_metadata?.role);
+  const status = (profile?.status ?? "active").toLowerCase().trim();
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // 2a. Status PENDING — hanya boleh mengakses /pending-approval
+  // ─────────────────────────────────────────────────────────────────────────
+  if (status === "pending") {
+    if (path === "/pending-approval") {
+      return res; // biarkan halaman ini tampil
+    }
+    return redirectWithCookies("/pending-approval", req, res);
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // 2b. Status SUSPENDED — tendang ke login dengan alasan
+  // ─────────────────────────────────────────────────────────────────────────
+  if (status === "suspended") {
+    const loginUrl = new URL("/login", req.url);
+    loginUrl.searchParams.set("reason", "suspended");
+    return redirectWithCookies(loginUrl.toString(), req, res);
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // 2c. User AKTIF — aturan standar: jangan biarkan di halaman auth,
+  //     periksa akses rute.
+  // ─────────────────────────────────────────────────────────────────────────
+  if (isAuthPage(path)) {
     return redirectWithCookies("/dashboard", req, res);
   }
 
-  // 3. Sudah login: cek apakah role-nya berhak atas halaman ini.
-  if (user && isProtectedPage(path)) {
-    const { data: profile, error } = await supabase
-      .from("users")
-      .select("role")
-      .eq("id", user.id)
-      .maybeSingle();
-
-    if (error) {
-      // Gagal membaca role = tidak bisa memastikan hak akses.
-      // Versi lama menelan error ini dan meloloskan request (fail-open).
-      // Sekarang fail-closed: alihkan ke dashboard yang aman untuk semua role.
-      console.error("[proxy] Gagal membaca role user:", error.message);
-      return path === "/dashboard"
-        ? res
-        : redirectWithCookies("/dashboard", req, res);
-    }
-
-    const role = normalizeRole(profile?.role ?? user.user_metadata?.role);
-
-    if (!canAccessRoute(role, path)) {
-      return redirectWithCookies("/dashboard", req, res);
-    }
+  if (isProtectedPage(path) && !canAccessRoute(role, path)) {
+    return redirectWithCookies("/dashboard", req, res);
   }
 
   return res;
@@ -186,11 +209,9 @@ export const config = {
     "/login",
     "/register/:path*",
     "/forgot-password",
-    // Halaman internal yang wajib login (URL tanpa awalan /dashboard karena
-    // route group). Rute tamu — /dashboard, /properties, /kpr-calculator —
-    // TURUT didaftarkan, tetapi hanya untuk pemeriksaan host kanonik di
-    // langkah 0 yang keluar sebelum klien Supabase dibuat: tamu tidak pernah
-    // menanggung getUser(), cukup satu perbandingan string.
+    // Halaman menunggu persetujuan
+    "/pending-approval",
+    // Halaman internal yang wajib login
     "/crm/:path*",
     "/admin/:path*",
     "/reports/:path*",

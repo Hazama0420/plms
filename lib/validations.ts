@@ -249,19 +249,24 @@ export const supportMessageSchema = z.object({
     ),
 });
 
-// --- /api/auth/agent-registered (POST, tanpa autentikasi) ---
+// Tambahkan di bawah agentRegisteredSchema
+// --- /api/auth/register-agent (POST, publik — pendaftaran agen) ---
 //
-// Pemberitahuan ke admin bahwa ada permohonan agen baru. Dipanggil oleh halaman
-// /register/agent segera setelah barisnya tersimpan.
-//
-// Rute ini TIDAK dapat memakai requireAuth(): akun yang baru mendaftar
-// berstatus "pending", dan gerbang status di getAuthContext() menolaknya —
-// justru itulah keadaan yang hendak dilaporkan. Karena itu satu-satunya isi
-// yang diterima adalah `userId`, dan route memverifikasinya sendiri ke tabel
-// `users` (harus ada, berperan agent, dan masih pending) sebelum mengirim apa
-// pun. Nama serta email penerima dibaca dari baris itu, bukan dari body.
-export const agentRegisteredSchema = z.object({
-  userId: uuidSchema,
+// Dipanggil oleh halaman /register/agent setelah upload KTP berhasil. Rute ini
+// memakai service role sehingga tidak terhalang RLS users_insert, dan
+// menangani pembuatan akun Auth, penyisipan profil, serta notifikasi ke admin
+// dalam satu panggilan.
+export const registerAgentSchema = z.object({
+  fullName: z.string().trim().min(2, "Nama minimal 2 karakter.").max(120),
+  email: z.email("Format email tidak valid."),
+  phone: phoneSchema,
+  password: z.string().min(6, "Password minimal 6 karakter."),
+  address: z.string().trim().min(5, "Alamat terlalu pendek.").max(500),
+  ktpUrl: z.string().url("URL KTP tidak valid."),
+  socials: z.array(z.string().max(50)).max(10).optional().default([]),
+  experience: z.string().max(50).optional().default("Tidak ada"),
+  vehicle: z.string().max(50).optional().default("Motor"),
+  reason: z.string().max(500).optional().default(""),
 });
 
 // --- /api/notifications/push-test (POST, Admin & Super Admin) ---

@@ -1109,6 +1109,7 @@ export default function SettingsPage() {
             os={os}
             formatDateTime={formatDateTime}
             lastSignInAt={lastSignInAt}
+            isViewer={!isInternalUser}
           />
         </TabsContent>
       </Tabs>

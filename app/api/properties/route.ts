@@ -72,7 +72,20 @@ export async function POST(request: NextRequest) {
       listing_type: body.listing_type || "jual",
       property_category: body.property_status || body.property_category || null,
       status: publish.status,
-      listing_code: body.listing_code || `PR-${Date.now().toString().slice(-6)}`,
+      listing_code: await (async () => {
+        if (body.listing_code) return body.listing_code;
+        const { data: seqData } = await supabase.rpc("next_listing_number");
+        const seqNum = String(seqData ?? 1).padStart(6, "0");
+        const { data: agentRow } = await supabase
+          .from("users").select("created_at").eq("id", assignedTo).maybeSingle();
+        const { count: agentRank } = await supabase
+          .from("users")
+          .select("*", { count: "exact", head: true })
+          .in("role", ["super_admin", "admin", "agent"])
+          .lte("created_at", agentRow?.created_at ?? new Date().toISOString());
+        const agentCode = String(agentRank ?? 1).padStart(2, "0");
+        return `IP-${seqNum}${agentCode}`;
+      })(),
       description: body.description || "",
       selling_point: body.selling_point || "",
       rental_period: body.rental_period || null,

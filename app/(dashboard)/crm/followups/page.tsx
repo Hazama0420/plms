@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase/client";
+import { crmService } from "@/services/crm.service";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -65,7 +66,7 @@ export interface FollowUpItem {
   lead_id: string;
   notes: string | null;
   followup_date: string;
-  status: "pending" | "completed" | "cancelled" | string;
+  status: "pending" | "completed" | "cancelled" | "overdue" | string;
   completed_at: string | null;
   created_at: string;
   updated_at: string;
@@ -89,6 +90,10 @@ const statusConfig: Record<string, { label: string; color: string }> = {
   cancelled: {
     label: "Dibatalkan",
     color: "bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20",
+  },
+  overdue: {
+    label: "Overdue",
+    color: "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20",
   },
 };
 
@@ -175,26 +180,26 @@ export default function FollowupsPage() {
 
       // 4. Fetch Follow-ups
       let query = supabase
-        .from("crm_followups")
-        .select(`
-          *,
-          lead:crm_leads (
-            id,
-            budget,
-            interest_type,
-            contact:crm_contacts (
-              full_name,
-              phone,
-              email
-            )
-          ),
-          assigned_user:users (
-            id,
-            full_name,
-            email
-          )
-        `)
-        .order("followup_date", { ascending: true });
+  .from("crm_followups")
+  .select(`
+    *,
+    lead:crm_leads (
+      id,
+      budget,
+      interest_type,
+      contact:crm_contacts (
+        full_name,
+        phone,
+        email
+      )
+    ),
+    assigned_user:users!assigned_to (
+      id,
+      full_name,
+      email
+    )
+  `)
+  .order("followup_date", { ascending: true });
 
       // Jika role Agent, filter hanya agenda miliknya
       if (!isUserAdmin) {
@@ -264,43 +269,34 @@ export default function FollowupsPage() {
 
     const isCompleted = item.status === "completed";
     const newStatus = isCompleted ? "pending" : "completed";
-    const completedAt = isCompleted ? null : new Date().toISOString();
-
     setFollowups((prev) =>
       prev.map((f) =>
-        f.id === item.id ? { ...f, status: newStatus, completed_at: completedAt } : f
+        f.id === item.id ? { ...f, status: newStatus, completed_at: isCompleted ? null : new Date().toISOString() } : f
       )
     );
 
     try {
-      const { error } = await supabase
-        .from("crm_followups")
-        .update({
-          status: newStatus,
-          completed_at: completedAt,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", item.id);
+      const result = await crmService.updateFollowup(item.id, { status: newStatus });
 
-      if (error) throw error;
-
-      if (currentUserId && item.lead_id) {
-        await supabase.from("crm_activities").insert([
-          {
-            lead_id: item.lead_id,
-            user_id: currentUserId,
-            activity_type: "Status Update",
-            notes: `Status follow-up dengan ${item.lead_name} diubah menjadi ${newStatus === "completed" ? "Selesai" : "Pending"}`,
-            created_at: new Date().toISOString(),
-          },
-        ]);
-      }
-
-      toast.success(
-        isCompleted
-          ? "Status dikembalikan ke Pending"
-          : `Follow-up dengan ${item.lead_name} selesai!`
+      setFollowups((prev) =>
+        prev.map((followup) => followup.id === item.id ? { ...followup, ...result.data } : followup)
       );
+
+      if (result.lifecycle.shouldOfferNextFollowup) {
+        toast.success(`Follow-up dengan ${item.lead_name} selesai!`, {
+          description: "Buat Follow-Up berikutnya agar Lead tetap tertangani.",
+          action: {
+            label: "Buat berikutnya",
+            onClick: () => router.push(`/crm/followups/create?lead_id=${result.lifecycle.leadId}`),
+          },
+        });
+      } else {
+        toast.success(
+          isCompleted
+            ? "Status dikembalikan ke Pending"
+            : `Follow-up dengan ${item.lead_name} selesai!`
+        );
+      }
     } catch (err: any) {
       toast.error("Gagal memperbarui status: " + err.message);
       loadData();
@@ -319,8 +315,7 @@ export default function FollowupsPage() {
     if (!confirm(`Yakin ingin menghapus jadwal follow-up dengan "${item.lead_name}"?`)) return;
 
     try {
-      const { error } = await supabase.from("crm_followups").delete().eq("id", item.id);
-      if (error) throw error;
+      await crmService.deleteFollowup(item.id);
 
       if (currentUserId && item.lead_id) {
         await supabase.from("crm_activities").insert([
@@ -457,6 +452,7 @@ export default function FollowupsPage() {
     const pending = followups.filter((f) => f.status === "pending").length;
     const completed = followups.filter((f) => f.status === "completed").length;
     const overdue = followups.filter((f) => {
+      if (f.status === "overdue") return true;
       if (f.status !== "pending" || !f.followup_date) return false;
       const date = new Date(f.followup_date);
       return isBefore(date, new Date()) && !isToday(date);
@@ -478,6 +474,7 @@ export default function FollowupsPage() {
       if (activeTab === "pending") return item.status === "pending";
       if (activeTab === "completed") return item.status === "completed";
       if (activeTab === "overdue") {
+        if (item.status === "overdue") return true;
         if (item.status !== "pending" || !item.followup_date) return false;
         const d = new Date(item.followup_date);
         return isBefore(d, new Date()) && !isToday(d);

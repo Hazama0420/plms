@@ -284,6 +284,7 @@ export function ProfileTab({
                   )}
                 </div>
 
+                {profile.role !== 'viewer' && (
                 <div className="space-y-1.5">
                   <Label htmlFor="company" className="font-semibold text-sm flex items-center gap-1.5">
                     <Building2 size={14} className="text-muted-foreground" />
@@ -297,6 +298,7 @@ export function ProfileTab({
                     className="h-11 text-sm"
                   />
                 </div>
+                )}
               </div>
 
               <div className="pt-2">

@@ -7,8 +7,8 @@ export type LeadStatus =
   | "new"
   | "contacted"
   | "qualified"
-  | "negotiation"
   | "proposal"
+  | "negotiation"
   | "won"
   | "lost";
 
@@ -41,6 +41,12 @@ export interface CRMLead {
   interest_type?: string | null;
   budget?: number | null;
   notes?: string | null; // ✅ tambahkan jika belum
+  lost_reason?: LostReason | null;
+  lost_explanation?: string | null;
+  deal_state?: DealState | null;
+  deal_submitted_at?: string | null;
+  deal_verified_at?: string | null;
+  deal_rejection_reason?: string | null;
   created_at: string;
   updated_at: string;
   contact?: CRMContact;
@@ -68,6 +74,18 @@ export interface CRMLead {
   }[];
 }
 
+export type LostReason =
+  | "customer_not_responding"
+  | "budget_mismatch"
+  | "not_interested"
+  | "chose_another_property"
+  | "purchase_postponed"
+  | "property_unsuitable"
+  | "duplicate"
+  | "other";
+
+export type DealState = "none" | "submitted" | "pending_verification" | "verified" | "rejected";
+
 // ============================================================
 // FOLLOW-UP
 // ============================================================
@@ -77,8 +95,9 @@ export interface CRMFollowup {
   assigned_to: string;
   followup_date: string;
   notes?: string | null;
-  status: "pending" | "completed" | "cancelled";
+  status: "pending" | "completed" | "cancelled" | "overdue";
   completed_at?: string | null;
+  completed_by?: string | null;
   created_at: string;
   updated_at: string;
   lead?: CRMLead;

@@ -1,12 +1,11 @@
 // app/login/page.tsx
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, useMemo } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { supabase } from "@/lib/supabase/client";
-import { BLOCKED_STATUSES } from "@/lib/permissions";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,6 +23,7 @@ import {
   AlertCircle,
   User,
   ArrowRight,
+  Ban,
 } from "lucide-react";
 
 // ===== GOOGLE ICON (SVG) =====
@@ -50,6 +50,17 @@ const GoogleIcon = () => (
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // ─── Deteksi client-side rendering ──────────────────────────────────────
+  const [isClient, setIsClient] = useState(false);
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
+
+  // ─── Baca alasan redirect (dari proxy) ──────────────────────────────────
+  const reason = useMemo(() => searchParams.get("reason"), [searchParams]);
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -63,7 +74,7 @@ export default function LoginPage() {
     setError(null);
 
     try {
-      const { data: authData, error } = await supabase.auth.signInWithPassword({
+      const { error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
@@ -80,31 +91,6 @@ export default function LoginPage() {
           toast.error(error.message);
         }
         return;
-      }
-
-      // Cegah akun dengan status pending/suspended masuk, meskipun Supabase Auth
-      // meloloskan kredensialnya. Sesi yang sudah terbentuk segera dihapus.
-      if (authData?.user) {
-        const { data: profile } = await supabase
-          .from("users")
-          .select("status")
-          .eq("id", authData.user.id)
-          .maybeSingle();
-
-        const blocked = BLOCKED_STATUSES.includes(profile?.status ?? "");
-
-        if (blocked) {
-          await supabase.auth.signOut();
-
-          if (profile?.status === "pending") {
-            setError("Akun Anda masih menunggu persetujuan admin. Anda akan dihubungi melalui email atau WhatsApp setelah disetujui.");
-            toast.warning("Akun pending — menunggu persetujuan admin.");
-          } else {
-            setError("Akun Anda saat ini dinonaktifkan. Silakan hubungi admin untuk informasi lebih lanjut.");
-            toast.error("Akun dinonaktifkan.");
-          }
-          return;
-        }
       }
 
       toast.success("Login berhasil! Selamat datang.");
@@ -147,24 +133,25 @@ export default function LoginPage() {
     }
   };
 
+  // ─── Jangan render apa pun sampai di browser ────────────────────────────
+  if (!isClient) {
+    return null; // atau bisa diganti dengan loading spinner kosong
+  }
+
   return (
     <div
       className="relative min-h-screen flex items-center justify-center p-4 bg-cover bg-center bg-no-repeat select-none"
       style={{
-        backgroundImage: "url('/bg-login.webp')", // Gambar Kota Dipertahankan
+        backgroundImage: "url('/bg-login.webp')",
         backgroundAttachment: "fixed",
       }}
     >
-      {/* OVERLAY TERTUTUP HALUS SEHINGGA PEMANDANGAN KOTA TETAP TERLIHAT INDAH */}
       <div className="absolute inset-0 bg-slate-950/40 backdrop-blur-[2px]" />
 
-      {/* KARTU LOGIN: GLASSMORPHISM PAS (TIDAK TERLALU GELAP & TIDAK TERLALU TERANG) */}
       <Card className="relative z-10 max-w-md w-full border border-white/20 shadow-2xl rounded-3xl bg-slate-900/65 backdrop-blur-xl text-slate-100 overflow-hidden my-auto transition-all">
-        {/* AKSEN EMERALD ATAS */}
         <div className="h-1.5 w-full bg-emerald-500/90 shadow-sm" />
 
         <CardHeader className="text-center space-y-1.5 pt-6 pb-2 px-6 sm:px-8">
-          {/* LOGO PERUSAHAAN */}
           <div className="mx-auto flex items-center justify-center">
             <Image
               src="/logo.png"
@@ -176,7 +163,6 @@ export default function LoginPage() {
             />
           </div>
 
-          {/* TEKS JUDUL */}
           <div className="space-y-0.5">
             <CardTitle className="text-2xl font-black tracking-tight text-white">
               <span className="text-emerald-400">Inland</span>{" "}
@@ -189,8 +175,23 @@ export default function LoginPage() {
         </CardHeader>
 
         <CardContent className="space-y-4 pb-8 px-6 sm:px-8">
+          {/* ───────── BANNER KHUSUS UNTUK AKUN SUSPENDED ───────── */}
+          {reason === "suspended" && (
+            <div className="p-3 bg-rose-500/20 border border-rose-500/30 rounded-2xl text-xs text-rose-200 flex items-start gap-2.5 backdrop-blur-md">
+              <Ban className="h-4 w-4 shrink-0 mt-0.5 text-rose-400" />
+              <div className="flex-1">
+                <p className="font-medium">
+                  Akun Anda dinonaktifkan oleh admin.
+                </p>
+                <p className="text-[11px] text-slate-300 mt-0.5 leading-relaxed">
+                  Silakan hubungi administrator Inland Property untuk informasi lebih lanjut.
+                </p>
+              </div>
+            </div>
+          )}
+
           <form onSubmit={handleLogin} className="space-y-3.5">
-            {/* PESAN ERROR */}
+            {/* PESAN ERROR (dari login gagal) */}
             {error && (
               <div className="p-3 bg-rose-500/20 border border-rose-500/30 rounded-2xl text-xs text-rose-200 flex items-start gap-2.5 backdrop-blur-md">
                 <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-rose-400" />

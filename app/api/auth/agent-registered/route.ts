@@ -11,7 +11,10 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getAdminRecipientIds, notifyEvent } from "@/lib/notification-helper";
-import { agentRegisteredSchema, validate } from "@/lib/validations";
+import { validate } from "@/lib/validations";
+import { z } from "zod";
+
+const agentRegisteredSchema = z.object({ userId: z.string().uuid() });
 
 export async function POST(req: Request) {
   try {

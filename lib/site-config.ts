@@ -9,6 +9,12 @@ import { normalizeWhatsAppNumber } from "@/lib/whatsapp-link";
 export const SITE = {
   name: "Inland Property",
   tagline: "Property Listing & CRM Management System",
+  address: "Jl. Hartono Raya, Ruko Blok R No. 36. Modernland. Kota Tangerang",
+  email: "consultaninlandproperty@gmail.com",
+  instagram: "https://www.instagram.com/inlandproperty.id",
+  tiktok: "https://www.tiktok.com/@inlandproperty.id",
+  facebook: "https://www.facebook.com/inlandproperty.id",
+  youtube: "https://www.youtube.com/@inlandproperty",
   /**
    * Origin kanonik situs, dipakai sebagai `metadataBase`, dasar sitemap, dan
    * canonical URL di setiap halaman publik.

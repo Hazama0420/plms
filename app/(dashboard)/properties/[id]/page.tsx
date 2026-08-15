@@ -262,6 +262,7 @@ export default function PropertyDetailPage() {
   const [updating, setUpdating] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [activeImage, setActiveImage] = useState<string>("");
+  const [showAgentPopup, setShowAgentPopup] = useState(false);
 
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
 
@@ -481,7 +482,12 @@ export default function PropertyDetailPage() {
     return isCreator || isUserOwner || isAssigned;
   }, [currentUser, property, userRole]);
 
-  // Nama wilayah dibaca langsung dari `property_address`. Sebelumnya helper ini
+  useEffect(() => {
+    if (canEdit || !property) return;
+    const timer = setTimeout(() => setShowAgentPopup(true), 7000);
+    return () => clearTimeout(timer);
+  }, [canEdit, property]);
+
   // masih mencocokkan uuid ke lima tabel master; tabel itu sudah ditinggalkan
   // dan pencocokannya justru mengosongkan lokasi.
   const resolveLocationName = (addressObj: any, nameKeys: string[]): string => {
@@ -932,7 +938,7 @@ export default function PropertyDetailPage() {
       </div>
 
       {!canEdit && (
-        <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-2xl flex items-center gap-2.5 text-amber-800 dark:text-amber-300 text-[11px] backdrop-blur-sm">
+        <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-2xl flex items-center gap-2.5 text-amber-800 dark:text-amber-300 text-[11px] backdrop-blur-sm hidden">
           <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0" />
           <span>Halaman ini ditampilkan dalam mode baca saja (Read-Only).</span>
         </div>
@@ -1644,6 +1650,56 @@ export default function PropertyDetailPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+      )}
+
+      {/* AGENT CONTACT POPUP — centered card, mengikuti scroll */}
+      {showAgentPopup && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center pointer-events-none">
+          <div className="w-[268px] sm:w-[288px] pointer-events-auto animate-in slide-in-from-bottom-4 fade-in duration-300">
+            <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-slate-900 shadow-[0_8px_32px_rgba(0,0,0,0.16)] border border-slate-200/80 dark:border-slate-700/60">
+              <div className="h-0.5 w-full bg-gradient-to-r from-emerald-500 via-emerald-400 to-teal-400" />
+              <div className="p-4">
+                <button
+                  onClick={() => setShowAgentPopup(false)}
+                  className="absolute top-3 right-3 p-1 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                >
+                  <span className="sr-only">Tutup</span>
+                  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                </button>
+                <div className="flex items-center gap-3 mb-3 pr-4">
+                  <div className="relative shrink-0">
+                    <div className="w-11 h-11 rounded-xl overflow-hidden bg-emerald-50 ring-2 ring-emerald-500/20 flex items-center justify-center">
+                      {assignedAgent?.avatar_url ? (
+                        <img src={assignedAgent.avatar_url} alt={assignedAgent?.full_name || "Agen"} className="w-full h-full object-cover" />
+                      ) : (
+                        <User className="w-6 h-6 text-emerald-600" />
+                      )}
+                    </div>
+                    <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-500 border-2 border-white dark:border-slate-900" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-slate-900 dark:text-white truncate leading-tight">{assignedAgent?.full_name || "Agen Inland"}</p>
+                    <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium mt-0.5">Agen Properti · Online</p>
+                  </div>
+                </div>
+                <div className="mb-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 px-3 py-2.5">
+                  <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                    Halo! Saya siap membantu Anda mendapatkan informasi lebih lanjut tentang properti ini.
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowAgentPopup(false);
+                    requestContact({ id: property!.id, title: property!.title, listing_code: property!.listing_code });
+                  }}
+                  className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-semibold px-4 py-2.5 rounded-xl transition-colors cursor-pointer"
+                >
+                  <MessageCircle className="w-3.5 h-3.5" /> Hubungi via WhatsApp
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

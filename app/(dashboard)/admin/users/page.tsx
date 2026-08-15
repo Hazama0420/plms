@@ -76,6 +76,7 @@ const ROLE_ICONS: Record<UserRole, React.ReactNode> = {
   admin: <ShieldCheck className="h-3.5 w-3.5 text-purple-500" />,
   agent: <Shield className="h-3.5 w-3.5 text-emerald-500" />,
   marketing: <ShieldEllipsis className="h-3.5 w-3.5 text-amber-500" />,
+  commissioner: <ShieldCheck className="h-3.5 w-3.5 text-blue-500" />,
   viewer: <Eye className="h-3.5 w-3.5 text-slate-400" />,
 };
 
@@ -84,6 +85,7 @@ const ROLE_BADGE_STYLE: Record<UserRole, string> = {
   admin: "bg-purple-500/10 text-purple-600 border-purple-500/30 dark:bg-purple-950/40 dark:text-purple-400",
   agent: "bg-emerald-500/10 text-emerald-600 border-emerald-500/30 dark:bg-emerald-950/40 dark:text-emerald-400",
   marketing: "bg-amber-500/10 text-amber-600 border-amber-500/30 dark:bg-amber-950/40 dark:text-amber-400",
+  commissioner: "bg-blue-500/10 text-blue-600 border-blue-500/30 dark:bg-blue-950/40 dark:text-blue-400",
   viewer: "bg-slate-500/10 text-slate-600 border-slate-500/30 dark:bg-slate-800 dark:text-slate-400",
 };
 

@@ -29,16 +29,6 @@ import {
   type OneSignalStatus,
 } from "@/components/providers/onesignal-provider";
 
-declare global {
-  interface Window {
-    // Gunakan as any atau pastikan tidak bentrok dengan mengabaikan error baris ini
-    //@ts-ignore
-    OneSignal?: any;
-    //@ts-ignore
-    OneSignalDeferred?: any[];
-  }
-}
-
 /**
  * Sakelar notifikasi yang dikenal halaman Pengaturan.
  *

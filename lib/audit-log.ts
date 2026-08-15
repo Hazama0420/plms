@@ -7,7 +7,6 @@
 // sehingga tidak ada jalur lain yang bisa menulisnya — termasuk dari peramban.
 
 import { createAdminClient } from "@/lib/supabase/admin";
-import type { AuthContext } from "@/lib/api-auth";
 
 /** Aksi yang dicatat. Sengaja union eksplisit, bukan string bebas: nilai yang
  *  salah ketik akan hilang dari tampilan tanpa jejak galat. */
@@ -16,11 +15,22 @@ export type AuditAction =
   | "user.status_change"
   | "user.delete"
   | "logs.delete"
-  | "settings.ai_toggle";
+  | "settings.ai_toggle"
+  | "lead.pipeline_changed"
+  | "lead.marked_lost"
+  | "deal.submitted"
+  | "deal.verified"
+  | "deal.rejected"
+  | "followup.created"
+  | "followup.updated"
+  | "followup.completed"
+  | "followup.cancelled"
+  | "followup.deleted"
+  | "followup.overdue";
 
 export interface AuditEntry {
   /** Konteks dari requireRole()/requireAuth() — id, email, dan role pelaku. */
-  actor: Pick<AuthContext, "userId" | "email" | "role">;
+  actor: { userId: string | null; email: string | null; role: string };
   action: AuditAction;
   targetId?: string | null;
   targetEmail?: string | null;

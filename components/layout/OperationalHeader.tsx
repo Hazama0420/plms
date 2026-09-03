@@ -20,6 +20,7 @@ import { LanguageSwitcher } from "@/components/layout/language-switcher";
 import { NotificationBell } from "@/components/notification-bell";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useUser } from "@/hooks/use-user";
+import { useTranslation } from "@/hooks/use-translation";
 import { supabase } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
@@ -30,17 +31,17 @@ interface OperationalHeaderProps {
 }
 
 const ROUTE_LABELS: Record<string, string> = {
-  dashboard: "Beranda",
-  properties: "Direktori Properti",
-  create: "Tambah Baru",
+  dashboard: "navigation.dashboard",
+  properties: "navigation.properties",
+  create: "common.add",
   edit: "Edit",
-  "kpr-calculator": "Kalkulator KPR",
-  crm: "CRM Pipeline",
-  leads: "Leads",
-  followups: "Follow-up",
-  surveys: "Jadwal Survei",
+  "kpr-calculator": "navigation.kpr",
+  crm: "navigation.crm",
+  leads: "crm.leads",
+  followups: "crm.followUp",
+  surveys: "crm.surveys",
   invoices: "Invoice & Keuangan",
-  projects: "Proyek Konstruksi",
+  projects: "navigation.projects",
   reports: "Laporan & Analytics",
   admin: "Admin",
   users: "User Management",
@@ -48,7 +49,7 @@ const ROUTE_LABELS: Record<string, string> = {
   logs: "System Logs",
   ai: "AI Management",
   notifications: "Notifikasi",
-  settings: "Pengaturan & Akun",
+  settings: "navigation.settings",
 };
 
 const ROLE_DISPLAY: Record<string, { label: string; color: string }> = {
@@ -67,6 +68,7 @@ export function OperationalHeader({
   const pathname = usePathname();
   const { user } = useUser();
   const { userRole } = usePermissions();
+  const { t } = useTranslation();
 
   const [userName, setUserName] = useState<string>("Staf");
   const [userAvatar, setUserAvatar] = useState<string>("");
@@ -119,20 +121,20 @@ export function OperationalHeader({
   // Derive breadcrumb crumbs from pathname segments
   const breadcrumbs = useMemo(() => {
     if (!pathname || pathname === "/" || pathname === "/dashboard") {
-      return [{ label: "Beranda", href: "/dashboard", isCurrent: true }];
+      return [{ label: t("navigation.dashboard"), href: "/dashboard", isCurrent: true }];
     }
 
     const segments = pathname.split("/").filter(Boolean);
     const crumbs: { label: string; href: string; isCurrent: boolean }[] = [
-      { label: "Beranda", href: "/dashboard", isCurrent: false },
+      { label: t("navigation.dashboard"), href: "/dashboard", isCurrent: false },
     ];
 
     let currentHref = "";
-    segments.forEach((segment, idx) => {
-      currentHref += `/${segment}`;
-      const isCurrent = idx === segments.length - 1;
-      const mapped = ROUTE_LABELS[segment.toLowerCase()] || (segment.length > 16 ? `${segment.slice(0, 8)}...` : segment);
-      crumbs.push({
+      segments.forEach((segment, idx) => {
+        currentHref += `/${segment}`;
+        const isCurrent = idx === segments.length - 1;
+        const mapped = ROUTE_LABELS[segment.toLowerCase()] ? (t(ROUTE_LABELS[segment.toLowerCase()] as any) !== ROUTE_LABELS[segment.toLowerCase()] ? t(ROUTE_LABELS[segment.toLowerCase()] as any) : ROUTE_LABELS[segment.toLowerCase()]) : (segment.length > 16 ? `${segment.slice(0, 8)}...` : segment);
+        crumbs.push({
         label: mapped,
         href: currentHref,
         isCurrent,

@@ -16,11 +16,13 @@ import {
 import { usePermissions } from "@/hooks/use-permissions";
 import { useUser } from "@/hooks/use-user";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "@/hooks/use-translation";
 
 export function BottomNav() {
   const pathname = usePathname();
   const { user } = useUser();
   const { userRole } = usePermissions();
+  const { t } = useTranslation();
 
   const isGuest = !user;
   const isAgentOrAdmin = userRole && ["super_admin", "admin", "agent", "marketing"].includes(userRole);
@@ -30,27 +32,27 @@ export function BottomNav() {
   const NAV_ITEMS = [
     {
       icon: LayoutDashboard,
-      label: "Beranda",
+      label: t("navigation.dashboard"),
       href: "/dashboard",
       exact: true,
     },
     {
       icon: Building2,
-      label: "Properti",
+      label: t("navigation.properties"),
       href: "/properties",
     },
     // Jika agen/admin tampilkan CRM Leads, jika guest/viewer tampilkan Kalkulator KPR
     isAgentOrAdmin
-      ? { icon: Users, label: "Leads", href: "/crm/leads" }
-      : { icon: Calculator, label: "KPR", href: "/kpr-calculator" },
+      ? { icon: Users, label: t("crm.leads"), href: "/crm/leads" }
+      : { icon: Calculator, label: t("navigation.kpr"), href: "/kpr-calculator" },
     // Invoice hanya untuk agen/admin; viewer dan guest melihat Survei
     (isGuest || isViewer)
-      ? { icon: CalendarDays, label: "Survei", href: "/surveys" }
+      ? { icon: CalendarDays, label: t("navigation.surveys"), href: "/surveys" }
       : { icon: FileText, label: "Invoice", href: "/invoices" },
     // Jika belum login tampilkan "Login", jika sudah tampilkan "Pengaturan"
     isGuest
-      ? { icon: LogIn, label: "Login", href: "/login" }
-      : { icon: Settings, label: "Pengaturan", href: "/settings" },
+      ? { icon: LogIn, label: t("navigation.login"), href: "/login" }
+      : { icon: Settings, label: t("navigation.settings"), href: "/settings" },
   ];
 
   return (

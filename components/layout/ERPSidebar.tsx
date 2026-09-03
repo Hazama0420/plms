@@ -43,6 +43,7 @@ import { usePermissions } from "@/hooks/use-permissions";
 import { useUser } from "@/hooks/use-user";
 import { supabase } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "@/hooks/use-translation";
 
 export interface ERPSidebarProps {
   isCollapsed?: boolean;
@@ -67,113 +68,7 @@ interface NavGroup {
   items: NavItem[];
 }
 
-const NAV_GROUPS: NavGroup[] = [
-  {
-    groupTitle: "Operasional",
-    items: [
-      {
-        label: "Beranda",
-        shortLabel: "Beranda",
-        icon: Compass,
-        href: "/dashboard",
-        exact: true,
-      },
-      {
-        label: "Direktori Properti",
-        shortLabel: "Properti",
-        icon: Building2,
-        href: "/properties",
-        createHref: "/properties/create",
-        roles: ["super_admin", "admin", "agent", "marketing", "viewer"],
-      },
-      {
-        label: "Kalkulator KPR",
-        shortLabel: "KPR",
-        icon: Calculator,
-        href: "/kpr-calculator",
-        roles: ["super_admin", "admin", "agent", "marketing", "viewer"],
-      },
-      {
-        label: "CRM Pipeline",
-        shortLabel: "CRM",
-        icon: Users2,
-        href: "/crm",
-        roles: ["super_admin", "admin", "agent", "marketing"],
-        children: [
-          { label: "Pipeline Kanban", icon: LayoutGrid, href: "/crm", exact: true, roles: ["super_admin", "admin", "agent", "marketing"] },
-          { label: "Leads", icon: UserCheck2, href: "/crm/leads", roles: ["super_admin", "admin", "agent", "marketing"] },
-          { label: "Jadwal Follow-up", icon: CalendarDays, href: "/crm/followups", roles: ["super_admin", "admin", "agent", "marketing"] },
-        ],
-      },
-      {
-        label: "Jadwal Survei",
-        shortLabel: "Survei",
-        icon: CalendarCheck,
-        href: "/surveys",
-        roles: ["super_admin", "admin", "agent", "marketing", "viewer"],
-      },
-    ],
-  },
-  {
-    groupTitle: "Manajemen",
-    items: [
-      {
-        label: "Invoice & Keuangan",
-        shortLabel: "Invoice",
-        icon: Receipt,
-        href: "/invoices",
-        createHref: "/invoices/create",
-        roles: ["super_admin", "admin"],
-      },
-      {
-        label: "Proyek Konstruksi",
-        shortLabel: "Proyek",
-        icon: Building,
-        href: "/projects",
-        createHref: "/projects/create",
-        roles: ["super_admin", "admin", "agent", "marketing"],
-      },
-      {
-        label: "Laporan & Analytics",
-        shortLabel: "Laporan",
-        icon: BarChart3,
-        href: "/reports",
-        roles: ["super_admin", "admin", "agent", "marketing"],
-      },
-      {
-        label: "Admin Panel",
-        shortLabel: "Admin",
-        icon: ShieldCheck,
-        href: "/admin",
-        roles: ["super_admin", "admin"],
-        children: [
-          { label: "User Management", icon: Users2, href: "/admin/users", roles: ["super_admin", "admin"] },
-          { label: "Inbox Support", icon: MessageSquareText, href: "/admin/support", roles: ["super_admin", "admin"] },
-          { label: "System Logs", icon: ActivitySquare, href: "/admin/logs", roles: ["super_admin", "admin"] },
-          { label: "AI Management", icon: Bot, href: "/admin/ai", roles: ["super_admin"] },
-        ],
-      },
-    ],
-  },
-  {
-    groupTitle: "Sistem",
-    items: [
-      {
-        label: "Notifikasi",
-        shortLabel: "Notifikasi",
-        icon: BellRing,
-        href: "/notifications",
-        roles: ["super_admin", "admin", "agent", "marketing", "viewer"],
-      },
-      {
-        label: "Pengaturan & Akun",
-        shortLabel: "Pengaturan",
-        icon: Sliders,
-        href: "/settings",
-      },
-    ],
-  },
-];
+// Removed NAV_GROUPS outside because it is now recreated dynamically in the component
 
 export function ERPSidebar({
   isCollapsed = false,
@@ -185,6 +80,7 @@ export function ERPSidebar({
   const router = useRouter();
   const { user } = useUser();
   const { userRole } = usePermissions();
+  const { t } = useTranslation();
 
   const [userName, setUserName] = useState("Staf");
   const [userAvatar, setUserAvatar] = useState("");
@@ -220,7 +116,122 @@ export function ERPSidebar({
     loadUserData();
   }, [user]);
 
-  // Pending survey requests badge
+  const NAV_GROUPS = useMemo<NavGroup[]>(() => [
+    {
+      groupTitle: "Operasional",
+      items: [
+        {
+          label: t("navigation.dashboard"),
+          shortLabel: "Beranda",
+          icon: Compass,
+          href: "/dashboard",
+          exact: true,
+        },
+        {
+          label: t("navigation.properties"),
+          shortLabel: "Properti",
+          icon: Building2,
+          href: "/properties",
+          createHref: "/properties/create",
+          roles: ["super_admin", "admin", "agent", "marketing", "viewer"],
+        },
+        {
+          label: t("navigation.kpr"),
+          shortLabel: "KPR",
+          icon: Calculator,
+          href: "/kpr-calculator",
+          roles: ["super_admin", "admin", "agent", "marketing", "viewer"],
+        },
+        {
+          label: "CRM Pipeline",
+          shortLabel: "CRM",
+          icon: Users2,
+          href: "/crm",
+          roles: ["super_admin", "admin", "agent", "marketing"],
+          children: [
+            { label: "Pipeline Kanban", icon: LayoutGrid, href: "/crm", exact: true, roles: ["super_admin", "admin", "agent", "marketing"] },
+            { label: t("crm.leads"), icon: UserCheck2, href: "/crm/leads", roles: ["super_admin", "admin", "agent", "marketing"] },
+            { label: t("crm.followUp"), icon: CalendarDays, href: "/crm/followups", roles: ["super_admin", "admin", "agent", "marketing"] },
+          ],
+        },
+        {
+          label: t("navigation.surveys"),
+          shortLabel: "Survei",
+          icon: CalendarCheck,
+          href: "/surveys",
+          roles: ["super_admin", "admin", "agent", "marketing", "viewer"],
+        },
+      ],
+    },
+    {
+      groupTitle: "Manajemen",
+      items: [
+        {
+          label: "Invoice & Keuangan",
+          shortLabel: "Invoice",
+          icon: Receipt,
+          href: "/invoices",
+          createHref: "/invoices/create",
+          roles: ["super_admin", "admin"],
+        },
+        {
+          label: t("navigation.projects"),
+          shortLabel: "Proyek",
+          icon: Building,
+          href: "/projects",
+          createHref: "/projects/create",
+          roles: ["super_admin", "admin", "agent", "marketing"],
+        },
+        {
+          label: "Laporan & Analytics",
+          shortLabel: "Laporan",
+          icon: BarChart3,
+          href: "/reports",
+          roles: ["super_admin", "admin"],
+        },
+        {
+          label: "User Management",
+          shortLabel: "Users",
+          icon: ShieldCheck,
+          href: "/admin/users",
+          roles: ["super_admin"],
+        },
+      ],
+    },
+    {
+      groupTitle: "Pengaturan & Bantuan",
+      items: [
+        {
+          label: "Inbox Support",
+          shortLabel: "Support",
+          icon: ActivitySquare,
+          href: "/admin/support",
+          roles: ["super_admin", "admin", "agent", "marketing", "viewer"],
+        },
+        {
+          label: "Notifikasi",
+          shortLabel: "Notif",
+          icon: BellRing,
+          href: "/notifications",
+          roles: ["super_admin", "admin", "agent", "marketing", "viewer"],
+        },
+        {
+          label: "AI Management",
+          shortLabel: "AI Admin",
+          icon: Bot,
+          href: "/admin/ai",
+          roles: ["super_admin"],
+        },
+        {
+          label: "System Logs",
+          shortLabel: "Logs",
+          icon: LayoutGrid,
+          href: "/admin/logs",
+          roles: ["super_admin"],
+        },
+      ],
+    },
+  ], [t]);
   useEffect(() => {
     if (!user || !userRole) return;
     if (!["super_admin", "admin", "agent"].includes(userRole)) {

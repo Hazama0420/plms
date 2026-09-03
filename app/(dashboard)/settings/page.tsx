@@ -33,6 +33,7 @@ import { AppearanceTab, type CatalogViewMode } from "@/components/settings/Appea
 import { NotificationsTab } from "@/components/settings/NotificationsTab";
 import { SystemTab } from "@/components/settings/SystemTab";
 import { ChatAdminModal } from "@/components/settings/ChatAdminModal";
+import { useLanguage } from "@/components/providers/LanguageProvider";
 
 type ThemeChoice = "light" | "dark" | "system";
 
@@ -172,6 +173,7 @@ const ADMIN_WHATSAPP_NUMBER = "6281234567890";
 export default function SettingsPage() {
   const router = useRouter();
   const { theme, setTheme } = useTheme();
+  const { t } = useLanguage();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [mounted, setMounted] = useState(false);
@@ -903,7 +905,7 @@ export default function SettingsPage() {
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
               <Settings className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
-              Pengaturan Sistem & Profil
+              {t("settings.title")}
             </h1>
             <Badge
               variant="outline"
@@ -913,7 +915,7 @@ export default function SettingsPage() {
             </Badge>
           </div>
           <p className="text-xs text-muted-foreground mt-1">
-            Kelola profil pengguna, preferensi visual, keamanan akun, dan bantuan admin
+            {t("settings.subtitle")}
           </p>
         </div>
 
@@ -927,7 +929,7 @@ export default function SettingsPage() {
             className="text-xs h-9 bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 shadow-sm cursor-pointer"
           >
             <MessageSquare className="w-3.5 h-3.5" />
-            Chat Admin Kantor
+            {t("settings.chatAdminBtn")}
           </Button>
 
           {/* Jalur cadangan bila pesan internal tidak terkirim — mis. belum ada
@@ -939,7 +941,7 @@ export default function SettingsPage() {
             className="text-xs h-9 gap-1.5 cursor-pointer"
           >
             <MessageCircle className="w-3.5 h-3.5" />
-            WhatsApp Admin
+            {t("settings.waAdminBtn")}
           </Button>
 
           <Button
@@ -949,7 +951,7 @@ export default function SettingsPage() {
             className="text-xs h-9 border-rose-200 dark:border-rose-900/50 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 gap-1.5 cursor-pointer"
           >
             <LogOut className="w-3.5 h-3.5" />
-            Keluar Sesi
+            {t("settings.logoutBtn")}
           </Button>
         </div>
       </div>
@@ -970,7 +972,7 @@ export default function SettingsPage() {
             className="text-xs font-semibold gap-1.5 py-2 rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-950 data-[state=active]:shadow-xs cursor-pointer"
           >
             <User className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Profil Saya</span>
+            <span>{t("settings.tabs.profile")}</span>
           </TabsTrigger>
 
           {/* TAB 2: BRANDING & PUBLIK */}
@@ -980,7 +982,7 @@ export default function SettingsPage() {
               className="text-xs font-semibold gap-1.5 py-2 rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-950 data-[state=active]:shadow-xs cursor-pointer"
             >
               <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Branding & Publik</span>
+              <span>{t("settings.tabs.branding")}</span>
             </TabsTrigger>
           )}
 
@@ -990,7 +992,7 @@ export default function SettingsPage() {
             className="text-xs font-semibold gap-1.5 py-2 rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-950 data-[state=active]:shadow-xs cursor-pointer"
           >
             <Sliders className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Tampilan & Tema</span>
+            <span>{t("settings.tabs.appearance")}</span>
           </TabsTrigger>
 
           {/* TAB 4: NOTIFIKASI */}
@@ -999,7 +1001,7 @@ export default function SettingsPage() {
             className="text-xs font-semibold gap-1.5 py-2 rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-950 data-[state=active]:shadow-xs cursor-pointer"
           >
             <Bell className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Notifikasi</span>
+            <span>{t("settings.tabs.notifications")}</span>
           </TabsTrigger>
 
           {/* TAB 5: REGIONAL & SISTEM */}
@@ -1008,7 +1010,7 @@ export default function SettingsPage() {
             className="text-xs font-semibold gap-1.5 py-2 rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-950 data-[state=active]:shadow-xs cursor-pointer"
           >
             <Globe className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Regional & Sistem</span>
+            <span>{t("settings.tabs.system")}</span>
           </TabsTrigger>
         </TabsList>
 

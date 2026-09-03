@@ -19,16 +19,17 @@ import { StepReview } from "./steps/StepReview";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { hasRegion } from "@/lib/property-address";
+import { useLanguage } from "@/components/providers/LanguageProvider";
 
 // STEP DEFINITION
 export const steps = [
-  { id: "category", label: "Kategori & Foto", icon: "Grid" },
-  { id: "specification", label: "Spesifikasi", icon: "Ruler" },
-  { id: "location", label: "Lokasi", icon: "MapPin" },
-  { id: "facilities", label: "Fasilitas", icon: "Home" },
-  { id: "price_description", label: "Harga & Deskripsi", icon: "DollarSign" },
-  { id: "contact", label: "Kontak", icon: "User" },
-  { id: "review", label: "Preview & Publish", icon: "CheckCircle" },
+  { id: "category", label: "Kategori & Foto", i18nKey: "category", icon: "Grid" },
+  { id: "specification", label: "Spesifikasi", i18nKey: "specification", icon: "Ruler" },
+  { id: "location", label: "Lokasi", i18nKey: "location", icon: "MapPin" },
+  { id: "facilities", label: "Fasilitas", i18nKey: "facilities", icon: "Home" },
+  { id: "price_description", label: "Harga & Deskripsi", i18nKey: "price", icon: "DollarSign" },
+  { id: "contact", label: "Kontak", i18nKey: "contact", icon: "User" },
+  { id: "review", label: "Preview & Publish", i18nKey: "review", icon: "CheckCircle" },
 ];
 
 // DEFAULT FORM DATA
@@ -118,6 +119,7 @@ export function CreatePropertyWizard({
   onSuccess,
 }: CreatePropertyWizardProps) {
   const router = useRouter();
+  const { t } = useLanguage();
   const [currentStep, setCurrentStep] = useState(0);
   const [formData, setFormData] = useState<Record<string, any>>(() => ({
     ...defaultFormData,
@@ -284,12 +286,12 @@ export function CreatePropertyWizard({
           </Button>
           <div>
             <h1 className="text-base sm:text-xl lg:text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
-              {mode === "edit" ? "Edit Data Properti" : "Tambah Properti Baru"}
+              {mode === "edit" ? t("createProperty.titleEdit") : t("createProperty.title")}
             </h1>
             <p className="text-[11px] sm:text-xs lg:text-sm text-muted-foreground">
               {mode === "edit"
-                ? "Perbarui informasi dan spesifikasi properti Anda"
-                : "Lengkapi data spesifikasi, lokasi, dan foto properti"}
+                ? t("createProperty.subtitleEdit")
+                : t("createProperty.subtitle")}
             </p>
           </div>
         </div>
@@ -304,10 +306,10 @@ export function CreatePropertyWizard({
             </div>
             <div>
               <p className="text-xs sm:text-sm font-bold text-foreground">
-                Draf properti tersimpan ditemukan!
+                {t("createProperty.draftFound")}
               </p>
               <p className="text-[11px] text-muted-foreground">
-                {savedDraft.title ? `"${savedDraft.title}"` : "Formulir properti yang belum selesai"} — Apakah Anda ingin memulihkan data tersebut?
+                {savedDraft.title ? `"${savedDraft.title}"` : t("createProperty.unnamedDraft")} {t("createProperty.draftDesc")}
               </p>
             </div>
           </div>
@@ -319,7 +321,7 @@ export function CreatePropertyWizard({
               onClick={handleDiscardDraft}
               className="h-8 px-3 text-xs rounded-xl border-border/80 text-muted-foreground hover:text-foreground cursor-pointer"
             >
-              Buang
+              {t("createProperty.discard")}
             </Button>
             <Button
               type="button"
@@ -327,7 +329,7 @@ export function CreatePropertyWizard({
               onClick={handleRestoreDraft}
               className="h-8 px-3.5 text-xs font-bold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer shadow-xs"
             >
-              Pulihkan Draf
+              {t("createProperty.restore")}
             </Button>
           </div>
         </div>
@@ -337,16 +339,16 @@ export function CreatePropertyWizard({
       <div className="lg:hidden bg-card border rounded-2xl p-3 shadow-sm space-y-2">
         <div className="flex items-center justify-between gap-2 text-xs font-semibold">
           <span className="text-emerald-600 font-bold flex items-center gap-1.5 shrink-0">
-            <CheckCircle2 className="w-4 h-4" /> Langkah {currentStep + 1}/{steps.length}
+            <CheckCircle2 className="w-4 h-4" /> {t("createProperty.step")} {currentStep + 1}/{steps.length}
           </span>
-          <span className="text-foreground truncate text-right">{steps[currentStep].label}</span>
+          <span className="text-foreground truncate text-right">{t(`createProperty.steps.${steps[currentStep].i18nKey}`)}</span>
         </div>
         <Progress value={stepProgressPercentage} className="h-2 bg-muted" />
         {/* Langkah berikutnya ditampilkan agar terlihat apa yang menanti setelah
             menekan "Lanjutkan" — di HP daftar langkah samping tidak tampak. */}
         {!isLastStep && (
           <p className="text-[10px] text-muted-foreground truncate">
-            Berikutnya: {steps[currentStep + 1].label}
+            {t("createProperty.nextStep")} {t(`createProperty.steps.${steps[currentStep + 1].i18nKey}`)}
           </p>
         )}
       </div>
@@ -396,8 +398,8 @@ export function CreatePropertyWizard({
                   className="flex-1 sm:flex-none text-[11px] sm:text-xs h-10 sm:h-9 px-2 sm:px-5 gap-1.5 sm:gap-2 font-medium"
                 >
                   <ArrowLeft className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> 
-                  <span className="hidden sm:inline">Langkah Sebelumnya</span>
-                  <span className="sm:hidden">Prev</span>
+                  <span className="hidden sm:inline">{t("createProperty.prevStepBtn")}</span>
+                  <span className="sm:hidden">{t("createProperty.prevBtnMobile")}</span>
                 </Button>
 
                 {/* Mobile: SIMPAN DRAFT (tengah) */}
@@ -410,7 +412,7 @@ export function CreatePropertyWizard({
                     className="text-[10px] h-10 px-3 shadow-sm border bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
                   >
                     <Save className="h-3.5 w-3.5 mr-1 text-slate-500" />
-                    {isSavingDraft ? "..." : "Draft"}
+                    {isSavingDraft ? "..." : t("createProperty.draftMobile")}
                   </Button>
                 </div>
 
@@ -424,7 +426,7 @@ export function CreatePropertyWizard({
                     className="text-[11px] h-9 px-4 gap-2 border shadow-sm"
                   >
                     <Save className="h-4 w-4 text-slate-500" />
-                    {isSavingDraft ? "Menyimpan..." : "Simpan Draft"}
+                    {isSavingDraft ? t("createProperty.savingDraft") : t("createProperty.saveDraft")}
                   </Button>
                 </div>
 
@@ -435,8 +437,8 @@ export function CreatePropertyWizard({
                     onClick={nextStep}
                     className="flex-1 sm:flex-none bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20 text-[11px] sm:text-xs h-10 sm:h-9 gap-1.5 sm:gap-2 px-2 sm:px-7 font-bold tracking-wide"
                   >
-                    <span className="hidden sm:inline">Lanjutkan</span>
-                    <span className="sm:hidden">Next</span>
+                    <span className="hidden sm:inline">{t("createProperty.nextBtn")}</span>
+                    <span className="sm:hidden">{t("createProperty.nextBtnMobile")}</span>
                     <ArrowRight className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                   </Button>
                 )}

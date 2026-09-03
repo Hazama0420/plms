@@ -158,8 +158,48 @@ export const en = {
     aiWriter: "AI Writer",
     whatsapp: "WhatsApp",
   },
+  createProperty: {
+    title: "Add New Property",
+    titleEdit: "Edit Property Data",
+    subtitle: "Complete the specification, location, and property photo data",
+    subtitleEdit: "Update your property information and specifications",
+    draftFound: "Saved property draft found!",
+    draftDesc: "— Do you want to restore this data?",
+    unnamedDraft: "Unfinished property form",
+    discard: "Discard",
+    restore: "Restore Draft",
+    step: "Step",
+    nextStep: "Next:",
+    prevStepBtn: "Previous Step",
+    prevBtnMobile: "Prev",
+    nextBtn: "Continue",
+    nextBtnMobile: "Next",
+    saveDraft: "Save Draft",
+    draftMobile: "Draft",
+    savingDraft: "Saving...",
+    steps: {
+      category: "Category & Photos",
+      specification: "Specifications",
+      location: "Location",
+      facilities: "Facilities",
+      price: "Price & Description",
+      contact: "Contact",
+      review: "Preview & Publish"
+    }
+  },
   settings: {
-    title: "Settings",
+    title: "System & Profile Settings",
+    subtitle: "Manage user profile, visual preferences, account security, and admin support",
+    chatAdminBtn: "Chat Office Admin",
+    waAdminBtn: "WhatsApp Admin",
+    logoutBtn: "Log Out Session",
+    tabs: {
+      profile: "My Profile",
+      branding: "Branding & Public",
+      appearance: "Appearance & Theme",
+      notifications: "Notifications",
+      system: "Regional & System"
+    },
     language: "Language",
   }
 };

@@ -158,8 +158,48 @@ export const id = {
     aiWriter: "AI Writer",
     whatsapp: "WhatsApp",
   },
+  createProperty: {
+    title: "Tambah Properti Baru",
+    titleEdit: "Edit Data Properti",
+    subtitle: "Lengkapi data spesifikasi, lokasi, dan foto properti",
+    subtitleEdit: "Perbarui informasi dan spesifikasi properti Anda",
+    draftFound: "Draf properti tersimpan ditemukan!",
+    draftDesc: "— Apakah Anda ingin memulihkan data tersebut?",
+    unnamedDraft: "Formulir properti yang belum selesai",
+    discard: "Buang",
+    restore: "Pulihkan Draf",
+    step: "Langkah",
+    nextStep: "Berikutnya:",
+    prevStepBtn: "Langkah Sebelumnya",
+    prevBtnMobile: "Prev",
+    nextBtn: "Lanjutkan",
+    nextBtnMobile: "Next",
+    saveDraft: "Simpan Draft",
+    draftMobile: "Draft",
+    savingDraft: "Menyimpan...",
+    steps: {
+      category: "Kategori & Foto",
+      specification: "Spesifikasi",
+      location: "Lokasi",
+      facilities: "Fasilitas",
+      price: "Harga & Deskripsi",
+      contact: "Kontak",
+      review: "Preview & Publish"
+    }
+  },
   settings: {
-    title: "Pengaturan",
+    title: "Pengaturan Sistem & Profil",
+    subtitle: "Kelola profil pengguna, preferensi visual, keamanan akun, dan bantuan admin",
+    chatAdminBtn: "Chat Admin Kantor",
+    waAdminBtn: "WhatsApp Admin",
+    logoutBtn: "Keluar Sesi",
+    tabs: {
+      profile: "Profil Saya",
+      branding: "Branding & Publik",
+      appearance: "Tampilan & Tema",
+      notifications: "Notifikasi",
+      system: "Regional & Sistem"
+    },
     language: "Bahasa",
   }
 };

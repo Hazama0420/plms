@@ -19,7 +19,7 @@ import { StepReview } from "./steps/StepReview";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { hasRegion } from "@/lib/property-address";
-import { useLanguage } from "@/components/providers/LanguageProvider";
+import { useTranslation } from "@/hooks/use-translation";
 
 // STEP DEFINITION
 export const steps = [
@@ -119,7 +119,7 @@ export function CreatePropertyWizard({
   onSuccess,
 }: CreatePropertyWizardProps) {
   const router = useRouter();
-  const { t } = useLanguage();
+  const { t } = useTranslation();
   const [currentStep, setCurrentStep] = useState(0);
   const [formData, setFormData] = useState<Record<string, any>>(() => ({
     ...defaultFormData,
@@ -341,14 +341,14 @@ export function CreatePropertyWizard({
           <span className="text-emerald-600 font-bold flex items-center gap-1.5 shrink-0">
             <CheckCircle2 className="w-4 h-4" /> {t("createProperty.step")} {currentStep + 1}/{steps.length}
           </span>
-          <span className="text-foreground truncate text-right">{t(`createProperty.steps.${steps[currentStep].i18nKey}`)}</span>
+            <span className="text-foreground truncate text-right">{t(`createProperty.steps.${steps[currentStep].i18nKey}` as any)}</span>
         </div>
         <Progress value={stepProgressPercentage} className="h-2 bg-muted" />
         {/* Langkah berikutnya ditampilkan agar terlihat apa yang menanti setelah
             menekan "Lanjutkan" — di HP daftar langkah samping tidak tampak. */}
         {!isLastStep && (
           <p className="text-[10px] text-muted-foreground truncate">
-            {t("createProperty.nextStep")} {t(`createProperty.steps.${steps[currentStep + 1].i18nKey}`)}
+              {t("createProperty.nextStep")} {t(`createProperty.steps.${steps[currentStep + 1].i18nKey}` as any)}
           </p>
         )}
       </div>

@@ -33,7 +33,7 @@ import { AppearanceTab, type CatalogViewMode } from "@/components/settings/Appea
 import { NotificationsTab } from "@/components/settings/NotificationsTab";
 import { SystemTab } from "@/components/settings/SystemTab";
 import { ChatAdminModal } from "@/components/settings/ChatAdminModal";
-import { useLanguage } from "@/components/providers/LanguageProvider";
+import { useTranslation } from "@/hooks/use-translation";
 
 type ThemeChoice = "light" | "dark" | "system";
 
@@ -173,7 +173,7 @@ const ADMIN_WHATSAPP_NUMBER = "6281234567890";
 export default function SettingsPage() {
   const router = useRouter();
   const { theme, setTheme } = useTheme();
-  const { t } = useLanguage();
+  const { t } = useTranslation();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [mounted, setMounted] = useState(false);

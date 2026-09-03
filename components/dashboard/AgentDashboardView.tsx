@@ -11,6 +11,8 @@ import type { DashboardLeadItem } from "./DashboardRecentLeads";
 import type { DashboardPropertyItem } from "./DashboardPropertyCard";
 import type { Survey } from "@/types/survey.types";
 
+import { useTranslation } from "@/hooks/use-translation";
+
 interface AgentDashboardViewProps {
   userName?: string | null;
   userRole?: string;
@@ -42,6 +44,7 @@ export function AgentDashboardView({
   onPropertyClick,
 }: AgentDashboardViewProps) {
   const router = useRouter();
+  const { t } = useTranslation();
 
   const overdueCount = stats?.overdueFollowupsCount || 0;
   const scheduledCount = stats?.scheduledFollowupsCount || 0;
@@ -87,8 +90,8 @@ export function AgentDashboardView({
       {/* 5. SUBORDINATE PROPERTY SHOWCASE (Compacted preview) */}
       <div className="pt-2">
         <DashboardPropertySection
-          title="Listing Pilihan Siap Ditawarkan"
-          subtitle="Inventaris properti terverifikasi yang siap Anda bagikan ke prospek"
+          title={t("dashboard.agentListingTitle")}
+          subtitle={t("dashboard.agentListingSubtitle")}
           properties={featuredProperties.slice(0, 6)}
           loading={loadingFeatured}
           activeFilter={featuredFilter}

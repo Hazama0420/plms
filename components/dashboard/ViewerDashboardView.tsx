@@ -12,6 +12,8 @@ import { DashboardPropertySection, type PropertyCategoryFilter } from "./Dashboa
 import { DashboardPropertySearch } from "./DashboardPropertySearch";
 import type { DashboardPropertyItem } from "./DashboardPropertyCard";
 
+import { useTranslation } from "@/hooks/use-translation";
+
 interface ViewerDashboardViewProps {
   featuredProperties: DashboardPropertyItem[];
   latestProperties: DashboardPropertyItem[];
@@ -34,15 +36,16 @@ export function ViewerDashboardView({
   onPropertyClick,
 }: ViewerDashboardViewProps) {
   const router = useRouter();
+  const { t } = useTranslation();
 
   return (
     <div className="space-y-10">
       {/* 1. Hero Search Banner */}
       <PageHeader
-        title="Temukan Hunian & Investasi Terbaik Bersama Inland Property"
+        title={t("dashboard.heroTitle")}
         badge={
           <Badge className="bg-emerald-500/10 text-emerald-100 border-emerald-400/30 text-xs font-semibold px-3 py-1 backdrop-blur-md">
-            ✨ Platform Properti Terpercaya
+            ✨ {t("dashboard.heroBadge")}
           </Badge>
         }
       >
@@ -54,8 +57,8 @@ export function ViewerDashboardView({
 
       {/* 2. Featured Properties Section */}
       <DashboardPropertySection
-        title="Pilihan Properti Unggulan"
-        subtitle="Rekomendasi terbaik dengan legalitas lengkap dan harga terbaik"
+        title={t("dashboard.featuredTitle")}
+        subtitle={t("dashboard.featuredSubtitle")}
         properties={featuredProperties}
         loading={loadingFeatured}
         activeFilter={featuredFilter}
@@ -69,13 +72,13 @@ export function ViewerDashboardView({
         <div className="flex flex-col md:flex-row items-center justify-between gap-6">
           <div className="space-y-2 max-w-xl">
             <Badge className="bg-white/20 text-white border-0 text-xs font-semibold">
-              Simulasi Kredit Rumah
+              {t("dashboard.kprBadge")}
             </Badge>
             <h2 className="text-xl sm:text-2xl lg:text-3xl font-extrabold tracking-tight text-white">
-              Rencanakan Pembelian Rumah Impian Anda Sekarang
+              {t("dashboard.kprTitle")}
             </h2>
             <p className="text-xs sm:text-sm text-white/80 leading-relaxed">
-              Gunakan kalkulator KPR interaktif kami untuk menghitung estimasi angsuran bulanan, uang muka (DP), dan syarat gaji bersih secara transparan.
+              {t("dashboard.kprDesc")}
             </p>
           </div>
 
@@ -85,7 +88,7 @@ export function ViewerDashboardView({
               className="w-full sm:w-auto h-12 px-6 rounded-2xl bg-white text-emerald-950 hover:bg-white/90 font-extrabold text-sm shadow-md cursor-pointer flex items-center justify-center gap-2"
             >
               <Calculator className="w-5 h-5 text-emerald-600" />
-              <span>Buka Kalkulator KPR</span>
+              <span>{t("dashboard.kprButton")}</span>
               <ArrowRight className="w-4 h-4 ml-1" />
             </Button>
           </Link>
@@ -99,10 +102,10 @@ export function ViewerDashboardView({
             <div>
               <h2 className="text-base sm:text-lg font-bold text-foreground tracking-tight flex items-center gap-2">
                 <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                <span>Konsultan Properti Resmi</span>
+                <span>{t("dashboard.agentsTitle")}</span>
               </h2>
               <p className="text-xs text-muted-foreground">
-                Didampingi oleh agen profesional berlisensi Inland Property
+                {t("dashboard.agentsSubtitle")}
               </p>
             </div>
           </div>
@@ -126,7 +129,7 @@ export function ViewerDashboardView({
                     {agent.full_name}
                   </h4>
                   <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold uppercase tracking-wider mt-0.5">
-                    Official Consultant
+                    {t("dashboard.officialConsultant")}
                   </p>
                 </div>
               </Card>

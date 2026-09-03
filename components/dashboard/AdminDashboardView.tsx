@@ -13,6 +13,8 @@ import type { DashboardLeadItem } from "./DashboardRecentLeads";
 import type { DashboardPropertyItem } from "./DashboardPropertyCard";
 import type { Survey } from "@/types/survey.types";
 
+import { useTranslation } from "@/hooks/use-translation";
+
 interface AdminDashboardViewProps {
   userName?: string | null;
   userRole?: string;
@@ -47,6 +49,7 @@ export function AdminDashboardView({
   onOpenAiSummary,
 }: AdminDashboardViewProps) {
   const router = useRouter();
+  const { t } = useTranslation();
 
   const totalProps = stats?.totalProperties || 0;
   const publishedProps = stats?.publishedProperties || 0;
@@ -111,8 +114,8 @@ export function AdminDashboardView({
       {/* 6. SUBORDINATE PROPERTY INVENTORY PREVIEW */}
       <div className="pt-2">
         <DashboardPropertySection
-          title="Inventaris Properti Terbaru"
-          subtitle="Daftar listing terverifikasi yang tayang aktif di katalog"
+          title={t("dashboard.adminInventoryTitle")}
+          subtitle={t("dashboard.adminInventorySubtitle")}
           properties={featuredProperties.slice(0, 6)}
           loading={loadingFeatured}
           activeFilter={featuredFilter}

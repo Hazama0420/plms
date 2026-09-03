@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { formatKprShort } from "@/lib/kpr";
+import { useTranslation } from "@/hooks/use-translation";
 
 interface AdminBusinessKpiGridProps {
   totalProperties: number;
@@ -31,38 +32,40 @@ export function AdminBusinessKpiGrid({
   pipelineValue,
   activeAgentsCount,
 }: AdminBusinessKpiGridProps) {
+  const { t } = useTranslation();
+
   const kpis = [
     {
-      title: "Nilai Pipeline Aktif",
+      title: t("dashboard.kpi.pipelineTitle"),
       value: formatKprShort(pipelineValue),
-      subtext: "Potensi Transaksi Berjalan",
+      subtext: t("dashboard.kpi.pipelineSub"),
       icon: TrendingUp,
       color: "text-emerald-600 dark:text-emerald-400",
       bg: "bg-emerald-500/10",
       border: "border-emerald-500/20",
     },
     {
-      title: "Total Prospek CRM",
+      title: t("dashboard.kpi.crmTitle"),
       value: totalLeads,
-      subtext: `${activeLeads} prospek sedang aktif`,
+      subtext: `${activeLeads} ${t("dashboard.kpi.crmSub")}`,
       icon: Users,
       color: "text-blue-600 dark:text-blue-400",
       bg: "bg-blue-500/10",
       border: "border-blue-500/20",
     },
     {
-      title: "Closing & Deals",
+      title: t("dashboard.kpi.dealsTitle"),
       value: closedDealsCount,
-      subtext: `${activeAgentsCount} agen terdaftar`,
+      subtext: `${activeAgentsCount} ${t("dashboard.kpi.dealsSub")}`,
       icon: CheckCircle2,
       color: "text-purple-600 dark:text-purple-400",
       bg: "bg-purple-500/10",
       border: "border-purple-500/20",
     },
     {
-      title: "Inventaris Properti",
+      title: t("dashboard.kpi.inventoryTitle"),
       value: publishedProperties,
-      subtext: `${draftProperties} draf / ${totalProperties} total`,
+      subtext: t("dashboard.kpi.inventorySub").replace("{total}", totalProperties.toString()).replace("draf", draftProperties.toString()).replace("drafts", draftProperties.toString()),
       icon: Building2,
       color: "text-amber-600 dark:text-amber-400",
       bg: "bg-amber-500/10",

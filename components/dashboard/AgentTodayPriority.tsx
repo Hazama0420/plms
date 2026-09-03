@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "@/hooks/use-translation";
 
 interface AgentTodayPriorityProps {
   userName?: string | null;
@@ -32,7 +33,8 @@ export function AgentTodayPriority({
   newLeadsCount,
   upcomingSurveysCount,
 }: AgentTodayPriorityProps) {
-  const displayName = userName ? userName.trim().split(" ")[0] : "Rekan";
+  const { t } = useTranslation();
+  const displayName = userName ? userName.trim().split(" ")[0] : t("dashboard.colleague");
   const hasUrgentWork = overdueFollowupsCount > 0 || newLeadsCount > 0;
   const totalTasks = overdueFollowupsCount + scheduledFollowupsCount + upcomingSurveysCount;
 
@@ -44,33 +46,33 @@ export function AgentTodayPriority({
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5">
               <Sparkles className="w-3.5 h-3.5" />
-              Prioritas Kerja Hari Ini
+              {t("dashboard.priority.title")}
             </span>
             {hasUrgentWork ? (
               <Badge
                 variant="outline"
                 className="text-[10px] font-bold px-2 py-0.5 rounded-full border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-400"
               >
-                Perlu Perhatian Segera
+                {t("dashboard.priority.urgent")}
               </Badge>
             ) : (
               <Badge
                 variant="outline"
                 className="text-[10px] font-bold px-2 py-0.5 rounded-full border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
               >
-                Semua Terkendali
+                {t("dashboard.priority.allClear")}
               </Badge>
             )}
           </div>
 
           <h2 className="text-lg sm:text-xl font-black text-foreground tracking-tight">
-            Selamat bekerja, {displayName}.
+            {t("dashboard.priority.greeting")}, {displayName}.
           </h2>
 
           <p className="text-xs text-muted-foreground font-medium max-w-xl">
             {totalTasks > 0
-              ? `Terdapat ${totalTasks} agenda interaksi klien yang dijadwalkan dan siap Anda tindak lanjuti.`
-              : "Semua interaksi prospek telah selesai. Waktu yang tepat untuk menghubungi lead baru atau membagikan listing."}
+              ? t("dashboard.priority.taskSummary").replace("{count}", totalTasks.toString())
+              : t("dashboard.priority.noTasks")}
           </p>
         </div>
 
@@ -79,12 +81,12 @@ export function AgentTodayPriority({
           {/* 1. Overdue / Scheduled Follow-ups */}
           <Link
             href="/crm/followups"
-            aria-label="Follow-up"
+            aria-label={t("dashboard.priority.followup")}
             className="group flex flex-col items-center justify-center p-2.5 sm:px-3.5 rounded-xl border border-border/80 bg-background/60 hover:bg-muted/60 transition-colors text-center cursor-pointer min-w-[85px] sm:min-w-[100px]"
           >
             <div className="flex items-center gap-1 text-[11px] font-semibold text-muted-foreground">
               <Clock className={cn("w-3.5 h-3.5", overdueFollowupsCount > 0 ? "text-rose-500" : "text-blue-500")} />
-              <span className="hidden sm:inline">Follow-up</span>
+              <span className="hidden sm:inline">{t("dashboard.priority.followup")}</span>
             </div>
             <span
               className={cn(
@@ -95,40 +97,40 @@ export function AgentTodayPriority({
               {scheduledFollowupsCount}
             </span>
             <span className="text-[10px] text-muted-foreground">
-              {overdueFollowupsCount > 0 ? `${overdueFollowupsCount} terlambat` : "terjadwal"}
+              {overdueFollowupsCount > 0 ? `${overdueFollowupsCount} ${t("dashboard.priority.overdue")}` : t("dashboard.priority.scheduled")}
             </span>
           </Link>
 
           {/* 2. Upcoming Surveys */}
           <Link
             href="/surveys"
-            aria-label="Survei"
+            aria-label={t("dashboard.priority.surveys")}
             className="group flex flex-col items-center justify-center p-2.5 sm:px-3.5 rounded-xl border border-border/80 bg-background/60 hover:bg-muted/60 transition-colors text-center cursor-pointer min-w-[85px] sm:min-w-[100px]"
           >
             <div className="flex items-center gap-1 text-[11px] font-semibold text-muted-foreground">
               <Calendar className="w-3.5 h-3.5 text-purple-500" />
-              <span className="hidden sm:inline">Survei</span>
+              <span className="hidden sm:inline">{t("dashboard.priority.surveys")}</span>
             </div>
             <span className="text-lg sm:text-xl font-black text-foreground tabular-nums tracking-tight mt-0.5">
               {upcomingSurveysCount}
             </span>
-            <span className="text-[10px] text-muted-foreground">kunjungan</span>
+            <span className="text-[10px] text-muted-foreground">{t("dashboard.priority.visits")}</span>
           </Link>
 
           {/* 3. New Uncontacted Leads */}
           <Link
             href="/crm/leads"
-            aria-label="Lead Baru"
+            aria-label={t("dashboard.priority.newLeads")}
             className="group flex flex-col items-center justify-center p-2.5 sm:px-3.5 rounded-xl border border-border/80 bg-background/60 hover:bg-muted/60 transition-colors text-center cursor-pointer min-w-[85px] sm:min-w-[100px]"
           >
             <div className="flex items-center gap-1 text-[11px] font-semibold text-muted-foreground">
               <UserPlus className="w-3.5 h-3.5 text-amber-500" />
-              <span className="hidden sm:inline">Lead Baru</span>
+              <span className="hidden sm:inline">{t("dashboard.priority.newLeads")}</span>
             </div>
             <span className="text-lg sm:text-xl font-black text-foreground tabular-nums tracking-tight mt-0.5">
               {newLeadsCount}
             </span>
-            <span className="text-[10px] text-muted-foreground">prospek</span>
+            <span className="text-[10px] text-muted-foreground">{t("dashboard.priority.prospects")}</span>
           </Link>
         </div>
 
@@ -138,7 +140,7 @@ export function AgentTodayPriority({
             <Button
               className="w-full sm:w-auto h-10 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs cursor-pointer flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
             >
-              <span>Mulai Follow-up Sekarang</span>
+              <span>{t("dashboard.priority.startFollowupBtn")}</span>
               <ArrowRight className="w-4 h-4" />
             </Button>
           </Link>

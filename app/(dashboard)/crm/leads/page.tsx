@@ -64,6 +64,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "@/hooks/use-translation";
 
 // ============================================================
 // STATUS CONFIGURATION (ADAPTIF TEMA)
@@ -80,6 +81,7 @@ const statusConfig: Record<string, { label: string; color: string; bg: string }>
 
 export default function LeadsPage() {
   const router = useRouter();
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(true);
   const [loadingFollowUps, setLoadingFollowUps] = useState(true);
   const [searchInput, setSearchInput] = useState("");
@@ -361,17 +363,17 @@ export default function LeadsPage() {
       <div className="flex items-center justify-between pt-3 pb-3 border-b border-border gap-2">
         <div>
           <h1 className="text-base sm:text-xl font-bold tracking-tight text-foreground flex items-center gap-2">
-            👥 CRM & Pipeline Leads
+            👥 {t("crm.title")}
           </h1>
           <p className="text-[11px] text-muted-foreground">
-            Manajemen database prospek, agenda harian, dan generator AI WhatsApp.
+            {t("crm.subtitle")}
           </p>
         </div>
 
         <div className="flex items-center gap-2">
           {!isAdminOrSuperAdmin && (
             <span className="text-[10px] font-medium text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded-lg flex items-center gap-1 shrink-0">
-              <Lock className="w-3 h-3 text-amber-500" /> Mode Agen (Kontak Disensor)
+              <Lock className="w-3 h-3 text-amber-500" /> {t("crm.agentMode")}
             </span>
           )}
 
@@ -379,7 +381,7 @@ export default function LeadsPage() {
             onClick={() => router.push("/crm/leads/create")}
             className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-8 gap-1.5 shrink-0 cursor-pointer"
           >
-            <Plus className="h-4 w-4" /> Tambah Lead
+            <Plus className="h-4 w-4" /> {t("crm.addLead")}
           </Button>
         </div>
       </div>
@@ -457,7 +459,7 @@ export default function LeadsPage() {
                         )}
                       >
                         {isAdminOrSuperAdmin ? <Zap className="w-3 h-3 text-amber-500 fill-amber-500" /> : <Lock className="w-3 h-3 text-muted-foreground" />}
-                        AI Writer
+                        {t("crm.aiWriter")}
                       </Button>
 
                       <Button
@@ -471,7 +473,7 @@ export default function LeadsPage() {
                         )}
                       >
                         {isAdminOrSuperAdmin ? <MessageCircle className="w-3 h-3" /> : <Lock className="w-3 h-3 text-amber-500" />}
-                        WhatsApp
+                        {t("crm.whatsapp")}
                       </Button>
                     </div>
                   </Card>
@@ -485,7 +487,7 @@ export default function LeadsPage() {
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
               <Input
-                placeholder="Cari nama prospek..."
+                placeholder={t("crm.searchLead")}
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleSearchSubmit()}
@@ -544,14 +546,14 @@ export default function LeadsPage() {
             <CardHeader className="p-4 pb-3 border-b border-border">
               <CardTitle className="text-sm font-bold flex items-center justify-between text-foreground">
                 <span className="flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-emerald-600 dark:text-emerald-400" /> Agenda Follow-up
+                  <Clock className="w-4 h-4 text-emerald-600 dark:text-emerald-400" /> {t("crm.followupSchedule")}
                 </span>
                 <Badge variant="outline" className="text-[10px] font-mono bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20">
-                  Aktif ({followUps.length})
+                  {t("crm.activeTasks")} ({followUps.length})
                 </Badge>
               </CardTitle>
               <CardDescription className="text-xs text-muted-foreground">
-                Daftar tugas agen untuk dikontak berdasarkan catatan follow-up.
+                {t("crm.followupDesc")}
               </CardDescription>
             </CardHeader>
             <CardContent className="p-3 space-y-3 text-xs max-h-[550px] overflow-y-auto">
@@ -563,7 +565,7 @@ export default function LeadsPage() {
                 </div>
               ) : followUps.length === 0 ? (
                 <p className="text-center py-8 text-xs text-muted-foreground">
-                  Belum ada catatan follow-up tersimpan.
+                  {t("crm.noFollowup")}
                 </p>
               ) : (
                 followUps.map((fu) => {
@@ -597,7 +599,7 @@ export default function LeadsPage() {
                             variant="ghost"
                             onClick={() => handleGenerateAiMessage(fu)}
                             className="h-7 w-7 p-0 cursor-pointer hover:bg-muted"
-                            title={isAdminOrSuperAdmin ? "AI Writer" : "Khusus Admin"}
+                            title={isAdminOrSuperAdmin ? t("crm.aiWriter") : "Khusus Admin"}
                           >
                             {isAdminOrSuperAdmin ? <Zap className="w-3.5 h-3.5 text-amber-500 fill-amber-500" /> : <Lock className="w-3.5 h-3.5 text-muted-foreground" />}
                           </Button>
@@ -629,10 +631,10 @@ export default function LeadsPage() {
             <CardHeader className="p-4 pb-3 border-b border-border flex flex-row items-center justify-between">
               <div>
                 <CardTitle className="text-sm font-bold flex items-center gap-2 text-foreground">
-                  <User className="w-4 h-4 text-emerald-600 dark:text-emerald-400" /> Direktori Database Leads
+                  <User className="w-4 h-4 text-emerald-600 dark:text-emerald-400" /> {t("crm.leadsDirectory")}
                 </CardTitle>
                 <CardDescription className="text-xs text-muted-foreground">
-                  Daftar seluruh calon pembeli dan status pipeline konversi.
+                  {t("crm.leadsDesc")}
                 </CardDescription>
               </div>
 
@@ -640,7 +642,7 @@ export default function LeadsPage() {
                 <div className="relative w-48">
                   <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                   <Input
-                    placeholder="Cari lead..."
+                    placeholder={t("crm.searchLead")}
                     value={searchInput}
                     onChange={(e) => setSearchInput(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && handleSearchSubmit()}
@@ -668,10 +670,10 @@ export default function LeadsPage() {
                 <Table>
                   <TableHeader className="bg-muted/50">
                     <TableRow className="border-b border-border">
-                      <TableHead className="text-xs font-semibold text-muted-foreground">Nama Kontak</TableHead>
-                      <TableHead className="text-xs font-semibold text-muted-foreground">Status Pipeline</TableHead>
-                      <TableHead className="text-xs font-semibold text-muted-foreground">Budget</TableHead>
-                      <TableHead className="text-xs font-semibold text-muted-foreground text-right">Aksi</TableHead>
+                      <TableHead className="text-xs font-semibold text-muted-foreground">{t("crm.tableName")}</TableHead>
+                      <TableHead className="text-xs font-semibold text-muted-foreground">{t("crm.tableStatus")}</TableHead>
+                      <TableHead className="text-xs font-semibold text-muted-foreground">{t("crm.tableBudget")}</TableHead>
+                      <TableHead className="text-xs font-semibold text-muted-foreground text-right">{t("crm.tableAction")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -724,10 +726,10 @@ export default function LeadsPage() {
                                   </DropdownMenuTrigger>
                                   <DropdownMenuContent align="end" className="w-40 bg-card border-border text-card-foreground text-xs">
                                     <DropdownMenuItem onClick={() => router.push(`/crm/leads/${lead.id}/edit`)}>
-                                      <Pencil className="w-3.5 h-3.5 mr-2" /> Edit Lead
+                                      <Pencil className="w-3.5 h-3.5 mr-2" /> {t("crm.editLead")}
                                     </DropdownMenuItem>
                                     <DropdownMenuItem onClick={() => handleDelete(lead)} className="text-rose-600 dark:text-rose-400">
-                                      <Trash2 className="w-3.5 h-3.5 mr-2" /> Hapus
+                                      <Trash2 className="w-3.5 h-3.5 mr-2" /> {t("crm.deleteLead")}
                                     </DropdownMenuItem>
                                   </DropdownMenuContent>
                                 </DropdownMenu>
@@ -810,7 +812,7 @@ export default function LeadsPage() {
                 )}
                 onClick={() => handleOpenWhatsApp(selectedLeadForSheet?.contact?.phone, selectedLeadForSheet?.contact?.full_name, undefined, selectedLeadForSheet?.id)}
               >
-                {isAdminOrSuperAdmin ? <MessageCircle className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5 text-amber-500" />} WhatsApp
+                {isAdminOrSuperAdmin ? <MessageCircle className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5 text-amber-500" />} {t("crm.whatsapp")}
               </Button>
             </div>
           </div>
@@ -825,7 +827,7 @@ export default function LeadsPage() {
           <DialogHeader>
             <div className="flex items-center justify-between">
               <DialogTitle className="text-sm font-bold flex items-center gap-2 text-foreground">
-                <Sparkles className="w-4 h-4 text-amber-500 fill-amber-500" /> AI Follow-Up Writer
+                <Sparkles className="w-4 h-4 text-amber-500 fill-amber-500" /> {t("crm.aiWriter")}
               </DialogTitle>
               <Badge variant="outline" className={isAdminOrSuperAdmin ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 text-[10px]" : "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20 text-[10px]"}>
                 {isAdminOrSuperAdmin ? "Admin Access" : "Khusus Admin"}

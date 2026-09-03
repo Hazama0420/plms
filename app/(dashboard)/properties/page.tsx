@@ -60,6 +60,8 @@ import {
   Sparkles,
 } from "lucide-react";
 
+import { useTranslation } from "@/hooks/use-translation";
+
 import { PageHeader } from "@/components/dashboard/PageHeader";
 
 export interface PropertyItem {
@@ -230,6 +232,7 @@ const mapPropertyItem = (
 function PropertiesCatalogContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { t } = useTranslation();
 
   // PARAMETER URL
   const qParam = searchParams.get("q") || searchParams.get("search") || "";
@@ -617,15 +620,15 @@ function PropertiesCatalogContent() {
       <PageHeader
         title={
           isGuestOrViewer
-            ? "Katalog Properti"
+            ? t("properties.catalogTitle")
             : scopeMode === "my_properties"
-            ? "Portofolio Saya"
-            : "Katalog Perusahaan"
+            ? t("properties.myPortfolio")
+            : t("properties.companyCatalog")
         }
-        subtitle="Kelola dan cari portofolio properti dengan mudah dan cepat."
+        subtitle={t("properties.catalogSubtitle")}
         badge={
           <Badge variant="outline" className="text-[10px] sm:text-xs font-bold bg-emerald-500/20 text-emerald-100 border-emerald-400/30 px-2.5 py-0.5 backdrop-blur-md">
-            {isGuestOrViewer ? "Klien" : scopeMode === "my_properties" ? "Pribadi" : "Perusahaan"}
+            {isGuestOrViewer ? t("properties.clientBadge") : scopeMode === "my_properties" ? t("properties.personalBadge") : t("properties.companyBadge")}
           </Badge>
         }
       >
@@ -648,7 +651,7 @@ function PropertiesCatalogContent() {
                     scopeMode === "my_properties" ? "bg-emerald-500 text-emerald-950 shadow-sm" : "text-emerald-50 hover:bg-white/20 hover:text-white"
                   )}
                 >
-                  <User className="w-3.5 h-3.5" /> Portofolio Saya
+                  <User className="w-3.5 h-3.5" /> {t("properties.myPortfolio")}
                 </Button>
                 <Button
                   variant={scopeMode === "global" ? "default" : "ghost"}
@@ -659,7 +662,7 @@ function PropertiesCatalogContent() {
                     scopeMode === "global" ? "bg-emerald-500 text-emerald-950 shadow-sm" : "text-emerald-50 hover:bg-white/20 hover:text-white"
                   )}
                 >
-                  <Globe className="w-3.5 h-3.5" /> Katalog Perusahaan
+                  <Globe className="w-3.5 h-3.5" /> {t("properties.companyCatalog")}
                 </Button>
               </div>
             )}
@@ -667,7 +670,7 @@ function PropertiesCatalogContent() {
             {!loading && filteredProperties.length > 0 && (
               <div className="flex items-center gap-3">
                 <p className="text-xs text-emerald-100/90 font-medium text-center">
-                  Menampilkan <span className="font-bold text-white">{filteredProperties.length}</span> dari <span className="font-bold text-white">{totalItems}</span> properti
+                  {t("properties.showing")} <span className="font-bold text-white">{filteredProperties.length}</span> {t("properties.from")} <span className="font-bold text-white">{totalItems}</span> {t("properties.properties")}
                 </p>
                 {hasActiveFilters && (
                   <Button
@@ -676,7 +679,7 @@ function PropertiesCatalogContent() {
                     onClick={clearAllFilters}
                     className="h-8 px-2.5 text-[10px] sm:text-xs font-bold text-emerald-100 hover:text-white hover:bg-white/20 cursor-pointer rounded-lg backdrop-blur-md border border-white/10"
                   >
-                    Hapus Filter
+                    {t("properties.clearFilters")}
                   </Button>
                 )}
               </div>
@@ -694,7 +697,7 @@ function PropertiesCatalogContent() {
             onClick={() => setViewMode("grid")}
             className={cn("h-8 px-2.5 text-xs font-semibold gap-1.5 rounded-lg cursor-pointer", viewMode === "grid" ? "bg-emerald-600 text-white hover:bg-emerald-700" : "text-muted-foreground")}
           >
-            <LayoutGrid className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Kartu</span>
+            <LayoutGrid className="w-3.5 h-3.5" /> <span className="hidden sm:inline">{t("properties.cards")}</span>
           </Button>
           <Button
             variant={viewMode === "table" ? "default" : "ghost"}
@@ -702,7 +705,7 @@ function PropertiesCatalogContent() {
             onClick={() => setViewMode("table")}
             className={cn("h-8 px-2.5 text-xs font-semibold gap-1.5 rounded-lg cursor-pointer", viewMode === "table" ? "bg-emerald-600 text-white hover:bg-emerald-700" : "text-muted-foreground")}
           >
-            <List className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Tabel</span>
+            <List className="w-3.5 h-3.5" /> <span className="hidden sm:inline">{t("properties.table")}</span>
           </Button>
         </div>
 
@@ -716,7 +719,7 @@ function PropertiesCatalogContent() {
               onClick={() => router.push("/properties/create")}
               className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold gap-1.5 h-9 px-3 sm:px-4 rounded-xl cursor-pointer shadow-xs"
             >
-              <Plus className="h-4 w-4" /> <span className="hidden sm:inline">Tambah Properti</span><span className="sm:hidden">Tambah</span>
+              <Plus className="h-4 w-4" /> <span className="hidden sm:inline">{t("properties.addProperty")}</span><span className="sm:hidden">{t("common.add")}</span>
             </Button>
           )}
         </div>
@@ -734,17 +737,17 @@ function PropertiesCatalogContent() {
           <Building2 className="w-10 h-10 sm:w-12 sm:h-12 text-muted-foreground/60 mx-auto" />
           <h3 className="text-xs sm:text-base font-bold text-foreground">
             {hasActiveFilters
-              ? "Tidak ada properti yang cocok"
+              ? t("properties.noMatchTitle")
               : isGuestOrViewer
-              ? "Belum ada listing dipublikasikan"
-              : "Belum ada properti"}
+              ? t("properties.noListingGuestTitle")
+              : t("properties.noPropertyTitle")}
           </h3>
           <p className="text-xs text-muted-foreground max-w-sm mx-auto leading-relaxed">
             {hasActiveFilters
-              ? "Coba longgarkan kriteria pencarian, atau hapus filter untuk melihat seluruh katalog."
+              ? t("properties.noMatchDesc")
               : isGuestOrViewer
-              ? "Listing baru akan muncul di sini begitu dipublikasikan."
-              : "Mulai dengan menambahkan properti pertama Anda ke katalog."}
+              ? t("properties.noListingGuestDesc")
+              : t("properties.noPropertyDesc")}
           </p>
 
           {hasActiveFilters ? (
@@ -753,14 +756,14 @@ function PropertiesCatalogContent() {
               variant="outline"
               className="text-xs font-bold rounded-xl h-9 cursor-pointer"
             >
-              <RefreshCw className="w-3.5 h-3.5 mr-1.5" /> Hapus semua filter
+              <RefreshCw className="w-3.5 h-3.5 mr-1.5" /> {t("properties.clearAllFilters")}
             </Button>
           ) : canCreateProperty ? (
             <Button
               onClick={() => router.push("/properties/create")}
               className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl h-9 cursor-pointer"
             >
-              <Plus className="w-3.5 h-3.5 mr-1.5" /> Tambah Properti
+              <Plus className="w-3.5 h-3.5 mr-1.5" /> {t("properties.addProperty")}
             </Button>
           ) : null}
         </Card>
@@ -786,13 +789,13 @@ function PropertiesCatalogContent() {
             <Table className="min-w-[700px] sm:min-w-full">
               <TableHeader className="bg-muted/50">
                 <TableRow className="border-border/60">
-                  <TableHead className="text-xs font-bold text-foreground py-3 px-3.5">Properti</TableHead>
-                  <TableHead className="text-xs font-bold text-foreground py-3 px-3.5">Tipe</TableHead>
-                  <TableHead className="text-xs font-bold text-foreground py-3 px-3.5">Harga</TableHead>
-                  <TableHead className="text-xs font-bold text-foreground py-3 px-3.5">Spesifikasi</TableHead>
-                  <TableHead className="text-xs font-bold text-foreground py-3 px-3.5">Lokasi</TableHead>
-                  <TableHead className="text-xs font-bold text-foreground py-3 px-3.5">Agen</TableHead>
-                  <TableHead className="text-right text-xs font-bold text-foreground py-3 px-3.5">Aksi</TableHead>
+                  <TableHead className="text-xs font-bold text-foreground py-3 px-3.5">{t("properties.tableProperty")}</TableHead>
+                  <TableHead className="text-xs font-bold text-foreground py-3 px-3.5">{t("properties.tableType")}</TableHead>
+                  <TableHead className="text-xs font-bold text-foreground py-3 px-3.5">{t("properties.tablePrice")}</TableHead>
+                  <TableHead className="text-xs font-bold text-foreground py-3 px-3.5">{t("properties.tableSpecs")}</TableHead>
+                  <TableHead className="text-xs font-bold text-foreground py-3 px-3.5">{t("properties.tableLocation")}</TableHead>
+                  <TableHead className="text-xs font-bold text-foreground py-3 px-3.5">{t("properties.tableAgent")}</TableHead>
+                  <TableHead className="text-right text-xs font-bold text-foreground py-3 px-3.5">{t("properties.tableAction")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -826,9 +829,9 @@ function PropertiesCatalogContent() {
                                 <Badge
                                   variant="outline"
                                   className="text-[9px] font-bold px-1.5 py-0 rounded bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/40"
-                                  title="Listing tanpa agen penanggung jawab tidak dapat dipublikasikan"
+                                  title={t("properties.noAgentWarningTitle")}
                                 >
-                                  Belum ada agen
+                                  {t("properties.noAgentWarning")}
                                 </Badge>
                               )}
                             </div>
@@ -837,7 +840,7 @@ function PropertiesCatalogContent() {
                       </TableCell>
                       <TableCell className="py-3 px-3.5">
                         <Badge className={cn("text-[10px] font-bold px-2 py-0.5 rounded-md", isRent ? "bg-amber-600 text-white" : "bg-emerald-600 text-white")}>
-                          {isRent ? "SEWA" : "JUAL"}
+                          {isRent ? t("properties.rent") : t("properties.sell")}
                         </Badge>
                       </TableCell>
                       <TableCell className="font-extrabold text-emerald-600 dark:text-emerald-400 text-xs whitespace-nowrap font-mono tabular-nums py-3 px-3.5">
@@ -891,10 +894,10 @@ function PropertiesCatalogContent() {
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end" className="rounded-xl">
                                 <DropdownMenuItem onClick={() => router.push(`/properties/edit/${prop.id}`)}>
-                                  <Edit className="w-3.5 h-3.5 mr-2" /> Edit
+                                  <Edit className="w-3.5 h-3.5 mr-2" /> {t("properties.edit")}
                                 </DropdownMenuItem>
                                 <DropdownMenuItem className="text-rose-600" onClick={(e) => handleDelete(prop.id, e)}>
-                                  <Trash2 className="w-3.5 h-3.5 mr-2" /> Hapus
+                                  <Trash2 className="w-3.5 h-3.5 mr-2" /> {t("properties.delete")}
                                 </DropdownMenuItem>
                               </DropdownMenuContent>
                             </DropdownMenu>
@@ -916,7 +919,7 @@ function PropertiesCatalogContent() {
       {!loading && totalPages > 1 && (
         <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3">
           <p className="text-xs text-muted-foreground order-2 sm:order-1">
-            Menampilkan halaman <span className="font-bold text-foreground">{currentPage}</span> dari{" "}
+            {t("properties.showing")} {t("properties.page").toLowerCase()} <span className="font-bold text-foreground">{currentPage}</span> {t("properties.from")}{" "}
             <span className="font-bold text-foreground">{totalPages}</span>
           </p>
           <div className="w-full sm:w-auto order-1 sm:order-2 flex justify-center">

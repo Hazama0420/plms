@@ -41,6 +41,7 @@ export type NotificationEventName =
   | "lead.assigned" // lead dialihkan          → agen baru
   | "followup.created" // agenda follow-up dibuat → penanggung jawab
   | "followup.overdue" // agenda melewati waktu → penanggung jawab
+  | "followup.daily_digest" // ringkasan harian follow-up → penanggung jawab
   | "property.assigned" // listing ditugaskan      → agen baru
   | "property.status" // status listing berubah  → agen + pembuat listing
   | "survey.requested" // client ajukan survei    → agen properti
@@ -67,6 +68,7 @@ export const EVENT_SPECS: Record<NotificationEventName, EventSpec> = {
   "lead.assigned": { uiType: "assignment", prefKey: "lead_alerts" },
   "followup.created": { uiType: "reminder", prefKey: "reminder_alerts" },
   "followup.overdue": { uiType: "task", prefKey: "reminder_alerts" },
+  "followup.daily_digest": { uiType: "reminder", prefKey: "reminder_alerts" },
   "property.assigned": { uiType: "assignment", prefKey: "property_updates" },
   "property.status": { uiType: "property_update", prefKey: "property_updates" },
 

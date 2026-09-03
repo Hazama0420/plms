@@ -391,7 +391,7 @@ export function CrmKanbanBoard() {
       </div>
 
       {/* KANBAN BOARD GRID */}
-      <div className="flex flex-col md:flex-row md:items-start md:gap-3 md:overflow-x-auto md:pb-3">
+      <div className="flex flex-col md:flex-row md:items-start md:gap-3 md:overflow-x-auto md:pb-3 scrollbar-thin">
         {STATUS_STAGES.map((stage) => {
           const stageLeads = stageBuckets.get(stage.id) || [];
           const totalBudget = sumBudget(stageLeads);

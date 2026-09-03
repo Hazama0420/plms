@@ -59,6 +59,7 @@ const facilityCategories: FacilityItem[] = [
   // Keamanan & Akses
   { id: "Parkir", label: "Area Parkir", category: "Keamanan & Akses", icon: Car },
   { id: "Keamanan 24 Jam", label: "Keamanan 24 Jam", category: "Keamanan & Akses", icon: ShieldCheck },
+  { id: "One Gate System", label: "One Gate System", category: "Keamanan & Akses", icon: KeyRound },
   { id: "CCTV", label: "CCTV System", category: "Keamanan & Akses", icon: Camera },
   { id: "Akses Kartu", label: "Akses Kartu / Access Card", category: "Keamanan & Akses", icon: KeyRound },
 

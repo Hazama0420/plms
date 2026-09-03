@@ -6,7 +6,8 @@
 import { NextResponse } from "next/server";
 import { aiService } from "@/services/ai.service";
 import { getAuthContext } from "@/lib/api-auth";
-import { enforceAiQuota, estimateTokens } from "@/lib/ai-quota";
+import { authorizeAI } from "@/lib/ai/policy";
+import { estimateTokens } from "@/lib/ai-quota";
 import { chatMessageSchema, validate } from "@/lib/validations";
 
 export async function POST(req: Request) {
@@ -39,14 +40,11 @@ export async function POST(req: Request) {
     // sehingga sepuluh permintaan paralel sama-sama lolos batas 15/hari.
     // Perilaku yang terlihat pengguna tidak berubah: tetap 15/hari, Super Admin
     // tetap tanpa batas.
-    const quota = await enforceAiQuota({
-      feature: "chat",
+    const guard = await authorizeAI({
+      featureKey: "support.chat",
       req,
-      userId: auth?.userId ?? null,
-      role: auth?.role ?? null,
-      estimatedTokens: estimateTokens(lastMessage),
     });
-    if (!quota.ok) return quota.response;
+    if (!guard.ok) return guard.response;
 
     // 3. System prompt untuk Agnes AI
     const systemPrompt = `
@@ -57,9 +55,15 @@ ATURAN FORMAT PENULISAN:
 3. Jangan menggunakan simbol markdown tebal (**) yang berlebihan. Gunakan bahasa Indonesia yang ramah, sopan, informatif, dan profesional.
 `;
 
-    const aiResponse = await aiService.generateWithFallback(lastMessage, systemPrompt);
+    let aiResponse;
+    try {
+      aiResponse = await aiService.generateWithFallback(lastMessage, systemPrompt);
+    } catch (err) {
+      await guard.rollback();
+      throw err;
+    }
 
-    await quota.commit(
+    await guard.commit(
       estimateTokens(lastMessage) + estimateTokens(aiResponse.text)
     );
 

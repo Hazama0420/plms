@@ -162,7 +162,7 @@ export default function ForgotPasswordPage() {
                   </>
                 ) : (
                   <>
-                    <Mail className="w-4 w-4" /> Kirim Email Reset Password
+                    <Mail className="w-4 h-4" /> Kirim Email Reset Password
                   </>
                 )}
               </Button>

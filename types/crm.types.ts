@@ -1,5 +1,3 @@
-// types/crm.types.ts
-
 // ============================================================
 // LEAD STATUS (hanya satu deklarasi)
 // ============================================================
@@ -17,7 +15,7 @@ export type LeadStatus =
 // ============================================================
 export interface CRMContact {
   id: string;
-  contact_code: string;
+  contact_code?: string | null;
   full_name: string;
   phone?: string | null;
   whatsapp?: string | null;
@@ -25,6 +23,7 @@ export interface CRMContact {
   occupation?: string | null;
   city?: string | null;
   notes?: string | null;
+  source?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -40,7 +39,9 @@ export interface CRMLead {
   status: LeadStatus;
   interest_type?: string | null;
   budget?: number | null;
-  notes?: string | null; // ✅ tambahkan jika belum
+  notes?: string | null;
+  property_id?: string | null;
+  created_by?: string | null;
   lost_reason?: LostReason | null;
   lost_explanation?: string | null;
   deal_state?: DealState | null;
@@ -61,6 +62,7 @@ export interface CRMLead {
     property_id: string;
     interest_level?: string | null;
     notes?: string | null;
+    priority?: number | null;
     property?: {
       id: string;
       title: string;
@@ -98,6 +100,7 @@ export interface CRMFollowup {
   status: "pending" | "completed" | "cancelled" | "overdue";
   completed_at?: string | null;
   completed_by?: string | null;
+  created_by?: string | null;
   created_at: string;
   updated_at: string;
   lead?: CRMLead;
@@ -119,7 +122,6 @@ export interface CRMActivity {
   activity_type: string;
   notes: string;
   created_at: string;
-  updated_at: string;
   user?: {
     id: string;
     full_name: string;
@@ -136,6 +138,7 @@ export interface CRMInterest {
   property_id: string;
   interest_level?: string | null;
   notes?: string | null;
+  priority?: number | null;
   created_at: string;
   updated_at: string;
   property?: {

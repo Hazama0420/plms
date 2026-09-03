@@ -239,8 +239,7 @@ export default function LeadsPage() {
     if (!confirm(`Yakin ingin menghapus lead "${leadName}"?`)) return;
 
     try {
-      const { error } = await supabase.from("crm_leads").delete().eq("id", lead.id);
-      if (error) throw error;
+      await crmService.deleteLead(lead.id);
 
       toast.success("Lead berhasil dihapus");
       fetchLeads();

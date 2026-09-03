@@ -83,11 +83,11 @@ const surveyStatusConfig: Record<
 };
 
 const requestStatusConfig: Record<string, { label: string; color: string }> = {
-  pending: { label: "Menunggu", color: "text-amber-600" },
-  contacted: { label: "Dihubungi", color: "text-blue-600" },
-  scheduled: { label: "Terjadwal", color: "text-emerald-600" },
-  rejected: { label: "Ditolak", color: "text-rose-600" },
-  cancelled: { label: "Dibatalkan", color: "text-slate-600" },
+  pending: { label: "Menunggu", color: "text-amber-600 dark:text-amber-400" },
+  contacted: { label: "Dihubungi", color: "text-blue-600 dark:text-blue-400" },
+  scheduled: { label: "Terjadwal", color: "text-emerald-600 dark:text-emerald-400" },
+  rejected: { label: "Ditolak", color: "text-rose-600 dark:text-rose-400" },
+  cancelled: { label: "Dibatalkan", color: "text-slate-600 dark:text-slate-400" },
 };
 
 // ============================================================

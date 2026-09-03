@@ -419,15 +419,12 @@ export default function LeadDetailPage() {
     }
     setSaving(true);
     try {
-      const payload: any = {
+      await crmService.addInterest({
         lead_id: lead.id,
         property_id: newInterest.property_id,
         interest_level: newInterest.interest_level || "high",
-        notes: newInterest.notes || null,
-      };
-
-      const { error } = await supabase.from("crm_interests").insert(payload);
-      if (error) throw error;
+        notes: newInterest.notes || undefined,
+      });
 
       toast.success("Minat properti berhasil ditambahkan");
       setShowAddInterest(false);

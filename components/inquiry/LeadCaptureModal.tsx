@@ -30,6 +30,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { MessageCircle, Loader2 } from "lucide-react";
 
@@ -165,59 +167,63 @@ export function LeadCaptureModal({
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-3.5 py-1">
-          <div className="space-y-1">
-            <Label className="text-xs font-medium text-foreground">Nama Lengkap</Label>
-            <input
+        <form onSubmit={handleSubmit} className="space-y-4 py-1">
+          <div className="space-y-1.5">
+            <Label htmlFor="inquiry-lead-name" className="text-xs font-semibold text-foreground">
+              Nama Lengkap <span className="text-rose-500">*</span>
+            </Label>
+            <Input
+              id="inquiry-lead-name"
               type="text"
               required
               placeholder="Contoh: Budi Santoso"
               value={leadName}
               onChange={(e) => setLeadName(e.target.value)}
-              className="w-full h-10 px-3 text-xs rounded-xl border border-border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-emerald-500"
             />
           </div>
 
-          <div className="space-y-1">
-            <Label className="text-xs font-medium text-foreground">Nomor WhatsApp / HP</Label>
-            <input
+          <div className="space-y-1.5">
+            <Label htmlFor="inquiry-lead-phone" className="text-xs font-semibold text-foreground">
+              Nomor WhatsApp / HP <span className="text-rose-500">*</span>
+            </Label>
+            <Input
+              id="inquiry-lead-phone"
               type="tel"
               required
               placeholder="Contoh: 081234567890"
               value={leadPhone}
               onChange={(e) => setLeadPhone(e.target.value)}
-              className="w-full h-10 px-3 text-xs rounded-xl border border-border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-emerald-500"
             />
           </div>
 
-          <div className="space-y-1">
-            <Label className="text-xs font-medium text-foreground">
-              Pesan / Catatan Khusus (Opsional)
+          <div className="space-y-1.5">
+            <Label htmlFor="inquiry-lead-message" className="text-xs font-semibold text-foreground">
+              Pesan / Catatan Khusus <span className="text-muted-foreground font-normal">(Opsional)</span>
             </Label>
-            <textarea
+            <Textarea
+              id="inquiry-lead-message"
               placeholder="Contoh: Apakah bisa survei lokasi minggu ini?"
               value={leadMessage}
               onChange={(e) => setLeadMessage(e.target.value)}
               rows={3}
-              className="w-full p-3 text-xs rounded-xl border border-border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none"
+              className="resize-none"
             />
           </div>
 
-          <DialogFooter className="gap-2 pt-2 sm:gap-0">
+          <DialogFooter className="gap-2 pt-2 sm:gap-2">
             <Button
               type="button"
               variant="outline"
-              size="sm"
               onClick={() => onOpenChange(false)}
               disabled={submitting}
-              className="text-xs rounded-xl cursor-pointer h-10"
+              className="cursor-pointer"
             >
               Batal
             </Button>
             <Button
               type="submit"
               disabled={submitting}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs rounded-xl cursor-pointer gap-1.5 h-10 font-bold"
+              className="cursor-pointer gap-1.5 font-bold"
             >
               {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
               Kirim & Buka WhatsApp

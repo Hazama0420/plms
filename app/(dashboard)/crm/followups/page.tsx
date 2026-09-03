@@ -70,8 +70,8 @@ export interface FollowUpItem {
   completed_at: string | null;
   created_at: string;
   updated_at: string;
-  assigned_to?: string;
-  created_by?: string;
+  assigned_to?: string | null;
+  created_by?: string | null;
   lead_name: string;
   lead_phone: string;
   lead_email: string;
@@ -113,8 +113,6 @@ export default function FollowupsPage() {
   const [selectedFollowup, setSelectedFollowup] = useState<FollowUpItem | null>(null);
   const [aiMessage, setAiMessage] = useState("");
   const [generatingAi, setGeneratingAi] = useState(false);
-  const [aiUsageCount, setAiUsageCount] = useState<number>(0);
-
   const isAdminOrSuperAdmin = useMemo(() => {
     return (
       currentUserRole === "super_admin" ||
@@ -172,11 +170,7 @@ export default function FollowupsPage() {
       const isUserAdmin =
         role === "super_admin" || role === "superadmin" || role === "admin";
 
-      // 3. Ambil Penggunaan AI Writer
-      const today = new Date().toISOString().split("T")[0];
-      const storageKey = `ai_writer_usage_${user.id}_${today}`;
-      const usage = parseInt(localStorage.getItem(storageKey) || "0", 10);
-      setAiUsageCount(usage);
+      // (Penggunaan AI diatur penuh di backend)
 
       // 4. Fetch Follow-ups
       let query = supabase
@@ -271,7 +265,7 @@ export default function FollowupsPage() {
     const newStatus = isCompleted ? "pending" : "completed";
     setFollowups((prev) =>
       prev.map((f) =>
-        f.id === item.id ? { ...f, status: newStatus, completed_at: isCompleted ? null : new Date().toISOString() } : f
+        f.id === item.id ? ({ ...f, status: newStatus, completed_at: isCompleted ? null : new Date().toISOString() } as FollowUpItem) : f
       )
     );
 
@@ -393,17 +387,6 @@ export default function FollowupsPage() {
       return;
     }
 
-    const today = new Date().toISOString().split("T")[0];
-    const storageKey = `ai_writer_usage_${currentUserId}_${today}`;
-    const currentUsage = parseInt(localStorage.getItem(storageKey) || "0", 10);
-
-    if (currentUsage >= 3) {
-      toast.error("Batas Kuota AI Harian Tercapai!", {
-        description: "Fitur AI Writer dibatasi maksimal 3x penggunaan per hari.",
-      });
-      return;
-    }
-
     setSelectedFollowup(item);
     setIsAiModalOpen(true);
     setGeneratingAi(true);
@@ -417,30 +400,33 @@ export default function FollowupsPage() {
           leadName: item.lead_name,
           property: item.notes || "Properti Pilihan",
           status: item.status || "Pending Follow-up",
-          // Role ditentukan server dari sesi, tidak lagi dikirim dari klien.
         }),
       });
 
-      const data = await res.json();
+      if (!res.ok) {
+        if (res.status === 429) {
+          toast.error("Kuota AI hari ini telah habis.");
+        } else if (res.status === 403) {
+          toast.error("Fitur AI tidak tersedia.");
+        } else if (res.status === 503) {
+          toast.error("Layanan AI sedang tidak tersedia.");
+        } else {
+          toast.error("Gagal mendapatkan respons AI dari server.");
+        }
+        setIsAiModalOpen(false);
+        return;
+      }
 
-      if (res.ok && data?.message) {
+      const data = await res.json();
+      if (data?.message) {
         setAiMessage(data.message);
-        const newUsage = currentUsage + 1;
-        localStorage.setItem(storageKey, newUsage.toString());
-        setAiUsageCount(newUsage);
       } else {
-        const fallbackMsg = `Halo Bpk/Ibu ${item.lead_name},\n\nPerkenalkan saya dari Inland Property. Menindaklanjuti rencana diskusi kita:\n"${item.notes || "Penawaran unit properti"}"\n\nApakah hari ini ada waktu senggang untuk berdiskusi? Terima kasih!`;
-        setAiMessage(fallbackMsg);
-        const newUsage = currentUsage + 1;
-        localStorage.setItem(storageKey, newUsage.toString());
-        setAiUsageCount(newUsage);
+        toast.error("Format respons AI tidak valid.");
+        setIsAiModalOpen(false);
       }
     } catch (err) {
-      const fallbackMsg = `Halo Bpk/Ibu ${item.lead_name},\n\nPerkenalkan saya dari Inland Property. Menindaklanjuti rencana diskusi kita:\n"${item.notes || "Penawaran unit properti"}"\n\nApakah hari ini ada waktu senggang untuk berdiskusi? Terima kasih!`;
-      setAiMessage(fallbackMsg);
-      const newUsage = currentUsage + 1;
-      localStorage.setItem(storageKey, newUsage.toString());
-      setAiUsageCount(newUsage);
+      toast.error("Terjadi kesalahan jaringan.");
+      setIsAiModalOpen(false);
     } finally {
       setGeneratingAi(false);
     }
@@ -553,8 +539,8 @@ export default function FollowupsPage() {
         </div>
 
         <div className="flex items-center gap-2 self-end sm:self-auto shrink-0 w-full sm:w-auto justify-between sm:justify-end">
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-auto">
-            <TabsList className="bg-muted p-1 h-9 border border-border">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-auto max-w-full">
+            <TabsList className="bg-muted p-1 h-9 border border-border overflow-x-auto scrollbar-none whitespace-nowrap flex w-auto">
               <TabsTrigger value="all" className="text-xs px-2.5">
                 Semua ({stats.total})
               </TabsTrigger>
@@ -582,209 +568,288 @@ export default function FollowupsPage() {
         </div>
       </div>
 
-      {/* 4. TABEL FOLLOW-UP */}
-      <Card className="border border-border bg-card shadow-xs overflow-hidden">
-        <CardContent className="p-0">
-          {loading ? (
+      {/* 4. FOLLOW-UP LIST */}
+      {loading ? (
+        <Card className="border border-border bg-card shadow-xs overflow-hidden">
+          <CardContent className="p-0">
             <div className="p-6 space-y-3">
               {[...Array(5)].map((_, i) => (
                 <Skeleton key={i} className="h-12 w-full bg-muted" />
               ))}
             </div>
-          ) : filteredFollowups.length === 0 ? (
+          </CardContent>
+        </Card>
+      ) : filteredFollowups.length === 0 ? (
+        <Card className="border border-border bg-card shadow-xs overflow-hidden">
+          <CardContent className="p-0">
             <div className="flex h-64 flex-col items-center justify-center p-8 text-center text-muted-foreground">
               <Calendar className="h-10 w-10 mb-2 opacity-40" />
               <p className="text-sm font-semibold text-foreground">Tidak Ada Agenda Follow-up Ditemukan</p>
               <p className="text-xs max-w-sm mt-1">
-                Belum ada jadwal follow-up pada kategori ini. Klik "Buat Follow-up" untuk menambah agenda baru.
+                Belum ada jadwal follow-up pada kategori ini. Klik &quot;Buat Follow-up&quot; untuk menambah agenda baru.
               </p>
             </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader className="bg-muted/50">
-                  <TableRow className="border-b border-border">
-                    <TableHead className="w-10 text-center">Done</TableHead>
-                    <TableHead className="text-xs font-semibold text-muted-foreground">Lead Klien</TableHead>
-                    <TableHead className="text-xs font-semibold text-muted-foreground">Catatan Activity</TableHead>
-                    <TableHead className="text-xs font-semibold text-muted-foreground">Jadwal Follow-up</TableHead>
-                    <TableHead className="text-xs font-semibold text-muted-foreground">Status</TableHead>
-                    <TableHead className="text-xs font-semibold text-muted-foreground">Penanggung Jawab</TableHead>
-                    <TableHead className="text-xs font-semibold text-muted-foreground text-right">Aksi & Direct WA</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredFollowups.map((item) => {
-                    const st = statusConfig[item.status] || statusConfig.pending;
-                    const dateObj = item.followup_date ? new Date(item.followup_date) : null;
-                    const isItemOverdue =
-                      item.status === "pending" &&
-                      dateObj &&
-                      isBefore(dateObj, new Date()) &&
-                      !isToday(dateObj);
-                    const hasAccess = canModifyFollowup(item);
+          </CardContent>
+        </Card>
+      ) : (
+        <>
+          {/* Mobile Card View */}
+          <div className="block md:hidden space-y-3">
+            {filteredFollowups.map((item) => {
+              const st = statusConfig[item.status] || statusConfig.pending;
+              const dateObj = item.followup_date ? new Date(item.followup_date) : null;
+              const isItemOverdue =
+                item.status === "pending" &&
+                dateObj &&
+                isBefore(dateObj, new Date()) &&
+                !isToday(dateObj);
 
-                    return (
-                      <TableRow
-                        key={item.id}
-                        onDoubleClick={() => router.push(`/crm/followups/${item.id}`)}
+              return (
+                <Card
+                  key={item.id}
+                  onClick={() => router.push(`/crm/followups/${item.id}`)}
+                  className="border border-border bg-card rounded-xl p-3 space-y-2 cursor-pointer hover:bg-muted/50 transition"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <Badge variant="outline" className={cn("text-[9px] font-bold px-1.5 py-0.5 border", isItemOverdue ? "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20" : st.color)}>
+                      {isItemOverdue ? "Overdue" : st.label}
+                    </Badge>
+                    <span className="text-[10px] font-mono text-muted-foreground flex items-center gap-1">
+                      <Clock className="w-3 h-3" />
+                      {dateObj ? format(dateObj, "dd MMM yyyy HH:mm", { locale: id }) : "-"}
+                    </span>
+                  </div>
+
+                  <div className="space-y-0.5">
+                    <p className="font-bold text-xs text-foreground flex items-center gap-1.5 truncate">
+                      <User className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                      {item.lead_name}
+                    </p>
+                    {item.lead_phone && (
+                      <p className="text-[10px] text-muted-foreground font-mono pl-5">
+                        {formatPhoneForUser(item.lead_phone)}
+                      </p>
+                    )}
+                  </div>
+
+                  {item.notes && (
+                    <p className="text-[11px] text-muted-foreground line-clamp-2">{item.notes}</p>
+                  )}
+
+                  <div className="flex items-center justify-between pt-2 border-t border-border/50">
+                    <span className="text-[10px] text-muted-foreground truncate">{item.assigned_user_name}</span>
+                    <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={(e) => handleToggleComplete(e, item)}
                         className={cn(
-                          "hover:bg-muted/60 border-b border-border transition-colors cursor-pointer select-none",
-                          item.status === "completed" && "opacity-75 bg-muted/20"
+                          "h-7 px-2 text-[10px] rounded-lg flex items-center gap-1 transition",
+                          item.status === "completed"
+                            ? "bg-emerald-600/10 text-emerald-600 dark:text-emerald-400"
+                            : "bg-muted text-muted-foreground hover:bg-emerald-600/10 hover:text-emerald-600"
                         )}
-                        title="Klik 2x untuk membuka detail agenda"
                       >
-                        {/* Checkbox Status Selesai */}
-                        <TableCell className="text-center p-2">
-                          <div
-                            role="button"
-                            tabIndex={0}
-                            onClick={(e) => handleToggleComplete(e, item)}
-                            className={cn(
-                              "w-5 h-5 rounded-md border flex items-center justify-center mx-auto cursor-pointer transition",
-                              item.status === "completed"
-                                ? "bg-emerald-600 border-emerald-600 text-white"
-                                : "border-border bg-background hover:border-emerald-500"
-                            )}
-                            title={
-                              item.status === "completed"
-                                ? "Tandai Belum Selesai"
-                                : "Tandai Sudah Selesai"
-                            }
-                          >
-                            {item.status === "completed" && <Check className="w-3.5 h-3.5 stroke-[3]" />}
-                          </div>
-                        </TableCell>
+                        <Check className="w-3 h-3" />
+                        {item.status === "completed" ? "Selesai" : "Done"}
+                      </button>
+                      <button
+                        onClick={(e) => handleOpenWhatsApp(e, item)}
+                        className={cn(
+                          "h-7 px-2 text-[10px] rounded-lg flex items-center gap-1",
+                          isAdminOrSuperAdmin
+                            ? "bg-emerald-600/10 text-emerald-600 dark:text-emerald-400"
+                            : "bg-muted text-muted-foreground"
+                        )}
+                        title={isAdminOrSuperAdmin ? "WhatsApp" : "Terkunci"}
+                      >
+                        {isAdminOrSuperAdmin ? <MessageCircle className="w-3 h-3" /> : <Lock className="w-3 h-3" />}
+                        WA
+                      </button>
+                    </div>
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
 
-                        {/* Detail Lead */}
-                        <TableCell className="p-3">
-                          <div className="flex flex-col">
-                            <span className="font-bold text-xs text-foreground flex items-center gap-1.5">
-                              <User className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                              {item.lead_name}
-                            </span>
-                            {/* 🔒 NOMOR HP DISENSOR UNTUK ROLE AGENT */}
-                            {item.lead_phone && (
-                              <span className="text-[10px] text-muted-foreground font-mono pl-5">
-                                {formatPhoneForUser(item.lead_phone)}
-                              </span>
-                            )}
-                          </div>
-                        </TableCell>
-
-                        {/* Catatan */}
-                        <TableCell className="p-3">
-                          <p className="text-xs text-foreground line-clamp-2 max-w-xs leading-relaxed">
-                            {item.notes || "-"}
-                          </p>
-                        </TableCell>
-
-                        {/* Tanggal & Waktu */}
-                        <TableCell className="p-3 text-xs">
-                          <div className="flex flex-col font-mono">
-                            <span className="font-semibold text-foreground flex items-center gap-1">
-                              <Clock className="w-3 h-3 text-muted-foreground shrink-0" />
-                              {dateObj
-                                ? format(dateObj, "dd MMM yyyy HH:mm", { locale: id })
-                                : "-"}
-                            </span>
-                            {isItemOverdue && (
-                              <span className="text-[9px] font-bold text-rose-600 dark:text-rose-400 flex items-center gap-0.5 mt-0.5">
-                                <AlertCircle className="w-2.5 h-2.5" /> Terlewat dari jadwal
-                              </span>
-                            )}
-                          </div>
-                        </TableCell>
-
-                        {/* Badge Status */}
-                        <TableCell className="p-3">
-                          <Badge
-                            variant="outline"
-                            className={cn(
-                              "text-[10px] font-bold px-2 py-0.5 border",
-                              isItemOverdue
-                                ? "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20"
-                                : st.color
-                            )}
-                          >
-                            {isItemOverdue ? "Overdue" : st.label}
-                          </Badge>
-                        </TableCell>
-
-                        {/* Penanggung Jawab */}
-                        <TableCell className="p-3 text-xs text-muted-foreground">
-                          {item.assigned_user_name}
-                        </TableCell>
-
-                        {/* Tombol Aksi */}
-                        <TableCell className="p-3 text-right">
-                          <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-                            {/* AI Writer */}
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={(e) => handleOpenAiWriter(e, item)}
-                              className={cn(
-                                "h-8 px-2 gap-1 text-xs cursor-pointer",
-                                isAdminOrSuperAdmin
-                                  ? "text-amber-600 dark:text-amber-400 hover:text-amber-700 hover:bg-amber-500/10"
-                                  : "text-muted-foreground hover:bg-muted"
-                              )}
-                              title={isAdminOrSuperAdmin ? "Tulis Draf Pesan AI (Maksimal 3x/hari)" : "Khusus Admin"}
-                            >
-                              {isAdminOrSuperAdmin ? <Sparkles className="w-3.5 h-3.5 fill-amber-500 text-amber-500" /> : <Lock className="w-3.5 h-3.5 text-muted-foreground" />}
-                              AI Writer
-                            </Button>
-
-                            {/* Direct WA Chat */}
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={(e) => handleOpenWhatsApp(e, item)}
-                              className={cn(
-                                "h-8 text-xs px-2 gap-1 cursor-pointer",
-                                isAdminOrSuperAdmin
-                                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20"
-                                  : "border-border bg-muted text-muted-foreground"
-                              )}
-                              title={isAdminOrSuperAdmin ? "Hubungi Via WhatsApp Direct" : "Kontak Terkunci"}
-                            >
-                              {isAdminOrSuperAdmin ? <MessageCircle className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" /> : <Lock className="w-3.5 h-3.5 text-amber-500" />} Chat WA
-                            </Button>
-
-                            {/* Dropdown Options */}
-                            <DropdownMenu>
-                              <DropdownMenuTrigger className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors focus:outline-hidden cursor-pointer">
-                                <MoreHorizontal className="w-4 h-4" />
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end" className="w-44 bg-card border-border text-card-foreground">
-                                <DropdownMenuItem onClick={() => router.push(`/crm/followups/${item.id}`)}>
-                                  <Eye className="w-3.5 h-3.5 mr-2 text-emerald-600 dark:text-emerald-400" /> Lihat Detail Agenda
-                                </DropdownMenuItem>
-                                {hasAccess && (
-                                  <DropdownMenuItem onClick={() => router.push(`/crm/followups/${item.id}/edit`)}>
-                                    <Pencil className="w-3.5 h-3.5 mr-2" /> Edit Agenda
-                                  </DropdownMenuItem>
-                                )}
-                                {/* 🔒 TOMBOL HAPUS HANYA UNTUK ADMIN */}
-                                {isAdminOrSuperAdmin && (
-                                  <DropdownMenuItem onClick={() => handleDelete(item)} className="text-rose-600 dark:text-rose-400">
-                                    <Trash2 className="w-3.5 h-3.5 mr-2" /> Hapus
-                                  </DropdownMenuItem>
-                                )}
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </div>
-                        </TableCell>
+          {/* Desktop Table View */}
+          <div className="hidden md:block">
+            <Card className="border border-border bg-card shadow-xs overflow-hidden">
+              <CardContent className="p-0">
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader className="bg-muted/50">
+                      <TableRow className="border-b border-border">
+                        <TableHead className="w-10 text-center">Done</TableHead>
+                        <TableHead className="text-xs font-semibold text-muted-foreground">Lead Klien</TableHead>
+                        <TableHead className="text-xs font-semibold text-muted-foreground">Catatan Activity</TableHead>
+                        <TableHead className="text-xs font-semibold text-muted-foreground">Jadwal Follow-up</TableHead>
+                        <TableHead className="text-xs font-semibold text-muted-foreground">Status</TableHead>
+                        <TableHead className="text-xs font-semibold text-muted-foreground">Penanggung Jawab</TableHead>
+                        <TableHead className="text-xs font-semibold text-muted-foreground text-right">Aksi & Direct WA</TableHead>
                       </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredFollowups.map((item) => {
+                        const st = statusConfig[item.status] || statusConfig.pending;
+                        const dateObj = item.followup_date ? new Date(item.followup_date) : null;
+                        const isItemOverdue =
+                          item.status === "pending" &&
+                          dateObj &&
+                          isBefore(dateObj, new Date()) &&
+                          !isToday(dateObj);
+                        const hasAccess = canModifyFollowup(item);
+
+                        return (
+                          <TableRow
+                            key={item.id}
+                            onDoubleClick={() => router.push(`/crm/followups/${item.id}`)}
+                            className={cn(
+                              "hover:bg-muted/60 border-b border-border transition-colors cursor-pointer select-none",
+                              item.status === "completed" && "opacity-75 bg-muted/20"
+                            )}
+                            title="Klik 2x untuk membuka detail agenda"
+                          >
+                            <TableCell className="text-center p-2">
+                              <div
+                                role="button"
+                                tabIndex={0}
+                                onClick={(e) => handleToggleComplete(e, item)}
+                                className={cn(
+                                  "w-5 h-5 rounded-md border flex items-center justify-center mx-auto cursor-pointer transition",
+                                  item.status === "completed"
+                                    ? "bg-emerald-600 border-emerald-600 text-white"
+                                    : "border-border bg-background hover:border-emerald-500"
+                                )}
+                                title={
+                                  item.status === "completed"
+                                    ? "Tandai Belum Selesai"
+                                    : "Tandai Sudah Selesai"
+                                }
+                              >
+                                {item.status === "completed" && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                              </div>
+                            </TableCell>
+
+                            <TableCell className="p-3">
+                              <div className="flex flex-col">
+                                <span className="font-bold text-xs text-foreground flex items-center gap-1.5">
+                                  <User className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                                  {item.lead_name}
+                                </span>
+                                {item.lead_phone && (
+                                  <span className="text-[10px] text-muted-foreground font-mono pl-5">
+                                    {formatPhoneForUser(item.lead_phone)}
+                                  </span>
+                                )}
+                              </div>
+                            </TableCell>
+
+                            <TableCell className="p-3">
+                              <p className="text-xs text-foreground line-clamp-2 max-w-xs leading-relaxed">
+                                {item.notes || "-"}
+                              </p>
+                            </TableCell>
+
+                            <TableCell className="p-3 text-xs">
+                              <div className="flex flex-col font-mono">
+                                <span className="font-semibold text-foreground flex items-center gap-1">
+                                  <Clock className="w-3 h-3 text-muted-foreground shrink-0" />
+                                  {dateObj
+                                    ? format(dateObj, "dd MMM yyyy HH:mm", { locale: id })
+                                    : "-"}
+                                </span>
+                                {isItemOverdue && (
+                                  <span className="text-[9px] font-bold text-rose-600 dark:text-rose-400 flex items-center gap-0.5 mt-0.5">
+                                    <AlertCircle className="w-2.5 h-2.5" /> Terlewat dari jadwal
+                                  </span>
+                                )}
+                              </div>
+                            </TableCell>
+
+                            <TableCell className="p-3">
+                              <Badge
+                                variant="outline"
+                                className={cn(
+                                  "text-[10px] font-bold px-2 py-0.5 border",
+                                  isItemOverdue
+                                    ? "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20"
+                                    : st.color
+                                )}
+                              >
+                                {isItemOverdue ? "Overdue" : st.label}
+                              </Badge>
+                            </TableCell>
+
+                            <TableCell className="p-3 text-xs text-muted-foreground">
+                              {item.assigned_user_name}
+                            </TableCell>
+
+                            <TableCell className="p-3 text-right">
+                              <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={(e) => handleOpenAiWriter(e, item)}
+                                  className={cn(
+                                    "h-8 px-2 gap-1 text-xs cursor-pointer",
+                                    isAdminOrSuperAdmin
+                                      ? "text-amber-600 dark:text-amber-400 hover:text-amber-700 hover:bg-amber-500/10"
+                                      : "text-muted-foreground hover:bg-muted"
+                                  )}
+                                  title={isAdminOrSuperAdmin ? "Tulis Draf Pesan AI" : "Khusus Admin"}
+                                >
+                                  {isAdminOrSuperAdmin ? <Sparkles className="w-3.5 h-3.5 fill-amber-500 text-amber-500" /> : <Lock className="w-3.5 h-3.5 text-muted-foreground" />}
+                                  AI Writer
+                                </Button>
+
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={(e) => handleOpenWhatsApp(e, item)}
+                                  className={cn(
+                                    "h-8 text-xs px-2 gap-1 cursor-pointer",
+                                    isAdminOrSuperAdmin
+                                      ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20"
+                                      : "border-border bg-muted text-muted-foreground"
+                                  )}
+                                  title={isAdminOrSuperAdmin ? "Hubungi Via WhatsApp Direct" : "Kontak Terkunci"}
+                                >
+                                  {isAdminOrSuperAdmin ? <MessageCircle className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" /> : <Lock className="w-3.5 h-3.5 text-amber-500" />} Chat WA
+                                </Button>
+
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors focus:outline-hidden cursor-pointer">
+                                    <MoreHorizontal className="w-4 h-4" />
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end" className="w-44 bg-card border-border text-card-foreground">
+                                    <DropdownMenuItem onClick={() => router.push(`/crm/followups/${item.id}`)}>
+                                      <Eye className="w-3.5 h-3.5 mr-2 text-emerald-600 dark:text-emerald-400" /> Lihat Detail Agenda
+                                    </DropdownMenuItem>
+                                    {hasAccess && (
+                                      <DropdownMenuItem onClick={() => router.push(`/crm/followups/${item.id}/edit`)}>
+                                        <Pencil className="w-3.5 h-3.5 mr-2" /> Edit Agenda
+                                      </DropdownMenuItem>
+                                    )}
+                                    {isAdminOrSuperAdmin && (
+                                      <DropdownMenuItem onClick={() => handleDelete(item)} className="text-rose-600 dark:text-rose-400">
+                                        <Trash2 className="w-3.5 h-3.5 mr-2" /> Hapus
+                                      </DropdownMenuItem>
+                                    )}
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </>
+      )}
 
       {/* 5. MODAL AI WRITER GENERATOR */}
       <Dialog open={isAiModalOpen} onOpenChange={setIsAiModalOpen}>
@@ -794,12 +859,6 @@ export default function FollowupsPage() {
               <DialogTitle className="text-base font-bold flex items-center gap-2 text-foreground">
                 <Sparkles className="w-4 h-4 text-amber-500 fill-amber-500" /> AI Follow-up Message Generator
               </DialogTitle>
-              <Badge
-                variant="outline"
-                className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20 text-[10px]"
-              >
-                Sisa Kuota: {3 - aiUsageCount}/3 Hari Ini
-              </Badge>
             </div>
             <DialogDescription className="text-xs text-muted-foreground">
               Draf pesan ramah & profesional yang disiapkan otomatis oleh AI untuk dikirimkan ke {selectedFollowup?.lead_name}.

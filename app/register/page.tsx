@@ -194,12 +194,13 @@ export default function RegisterPage() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-slate-200">
+              <Label htmlFor="fullName" className="text-xs font-semibold text-slate-200">
                 Nama Lengkap <span className="text-rose-400">*</span>
               </Label>
               <div className="relative">
                 <User className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                 <Input
+                  id="fullName"
                   type="text"
                   placeholder="Masukkan nama lengkap"
                   value={fullName}
@@ -211,12 +212,13 @@ export default function RegisterPage() {
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-slate-200">
+              <Label htmlFor="email" className="text-xs font-semibold text-slate-200">
                 Email <span className="text-rose-400">*</span>
               </Label>
               <div className="relative">
                 <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                 <Input
+                  id="email"
                   type="email"
                   placeholder="nama@email.com"
                   value={email}
@@ -228,12 +230,13 @@ export default function RegisterPage() {
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-slate-200">
+              <Label htmlFor="phone" className="text-xs font-semibold text-slate-200">
                 Nomor WhatsApp <span className="text-rose-400">*</span>
               </Label>
               <div className="relative">
                 <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                 <Input
+                  id="phone"
                   type="tel"
                   placeholder="081234567890"
                   value={phone}
@@ -245,12 +248,13 @@ export default function RegisterPage() {
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-slate-200">
+              <Label htmlFor="password" className="text-xs font-semibold text-slate-200">
                 Password <span className="text-rose-400">*</span>
               </Label>
               <div className="relative">
                 <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                 <Input
+                  id="password"
                   type={showPassword ? "text" : "password"}
                   placeholder="••••••••"
                   value={password}
@@ -261,7 +265,7 @@ export default function RegisterPage() {
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-2 -mr-2 text-slate-400 hover:text-white"
                 >
                   {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                 </button>
@@ -269,12 +273,13 @@ export default function RegisterPage() {
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-slate-200">
+              <Label htmlFor="confirmPassword" className="text-xs font-semibold text-slate-200">
                 Konfirmasi Password <span className="text-rose-400">*</span>
               </Label>
               <div className="relative">
                 <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                 <Input
+                  id="confirmPassword"
                   type={showPassword ? "text" : "password"}
                   placeholder="••••••••"
                   value={confirmPassword}

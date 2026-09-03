@@ -54,7 +54,7 @@ export function BottomNav() {
   ];
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-card/90 backdrop-blur-lg border-t border-border/60 shadow-lg pb-[env(safe-area-inset-bottom)]">
+    <nav aria-label="Menu navigasi utama" className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-card/90 backdrop-blur-lg border-t border-border/60 shadow-lg pb-[env(safe-area-inset-bottom)]">
       <div className="flex items-center justify-around h-15 px-2">
         {NAV_ITEMS.map(({ icon: Icon, label, href, exact }) => {
           const isActive = exact

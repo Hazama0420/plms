@@ -16,6 +16,11 @@ export type AuditAction =
   | "user.delete"
   | "logs.delete"
   | "settings.ai_toggle"
+  | "settings.ai_master_toggle"
+  | "settings.ai_feature_toggle"
+  | "settings.ai_rental_grant"
+  | "settings.ai_rental_update"
+  | "settings.ai_rental_revoke"
   | "lead.pipeline_changed"
   | "lead.marked_lost"
   | "deal.submitted"
@@ -26,7 +31,18 @@ export type AuditAction =
   | "followup.completed"
   | "followup.cancelled"
   | "followup.deleted"
-  | "followup.overdue";
+  | "followup.overdue"
+  | "followup.daily_digest"
+  | "contact.created"
+  | "contact.updated"
+  | "contact.deleted"
+  | "lead.created"
+  | "lead.updated"
+  | "lead.assigned"
+  | "lead.deleted"
+  | "interest.created"
+  | "interest.updated"
+  | "interest.deleted";
 
 export interface AuditEntry {
   /** Konteks dari requireRole()/requireAuth() — id, email, dan role pelaku. */

@@ -32,6 +32,8 @@ import { Switch } from "@/components/ui/switch";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
+import { calculateKprSimulation, formatKprCurrency } from "@/lib/kpr";
+
 function KprCalculatorContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -89,103 +91,28 @@ function KprCalculatorContent() {
     setDpNominalInput(Math.round((propertyPrice * pct) / 100));
   };
 
-  // Kalkulasi Simulasi KPR
+  // Kalkulasi Simulasi KPR Canonical Engine
   const calculations = useMemo(() => {
-    const dpNominal = isCustomDpNominal 
-      ? dpNominalInput 
-      : Math.round((propertyPrice * dpPercentage) / 100);
-
-    const loanPrincipal = Math.max(0, propertyPrice - dpNominal);
-
-    const monthlyRateFixed = fixedRate / 100 / 12;
-    const totalMonths = tenureYears * 12;
-
-    let installmentFixed = 0;
-    if (monthlyRateFixed > 0 && totalMonths > 0 && loanPrincipal > 0) {
-      const factorFixed = Math.pow(1 + monthlyRateFixed, totalMonths);
-      installmentFixed = Math.round(
-        loanPrincipal * ((monthlyRateFixed * factorFixed) / (factorFixed - 1))
-      );
-    }
-
-    const fixedMonths = Math.min(fixedYears * 12, totalMonths);
-    const remainingMonthsFloating = Math.max(0, totalMonths - fixedMonths);
-
-    let balanceAfterFixed = loanPrincipal;
-    for (let m = 1; m <= fixedMonths; m++) {
-      const interestPayment = balanceAfterFixed * monthlyRateFixed;
-      const principalPayment = installmentFixed - interestPayment;
-      balanceAfterFixed -= principalPayment;
-    }
-
-    const monthlyRateFloating = floatingRate / 100 / 12;
-    let installmentFloating = installmentFixed;
-
-    if (remainingMonthsFloating > 0 && monthlyRateFloating > 0 && balanceAfterFixed > 0) {
-      const factorFloating = Math.pow(1 + monthlyRateFloating, remainingMonthsFloating);
-      installmentFloating = Math.round(
-        balanceAfterFixed * ((monthlyRateFloating * factorFloating) / (factorFloating - 1))
-      );
-    }
-
-    const requiredIncomeFixed = Math.round(installmentFixed / 0.35);
-
-    const provisiFee = Math.round(loanPrincipal * 0.01);
-    const adminFee = 1500000;
-    const appraisalFee = 1250000;
-    const notaryFee = Math.round(propertyPrice * 0.01);
-    const insuranceFee = Math.round(loanPrincipal * 0.012);
-
-    const bphtbTax = includeBphtb
-      ? Math.max(0, Math.round((propertyPrice - 60000000) * 0.05))
-      : 0;
-
-    const totalBiayaAkad = provisiFee + adminFee + appraisalFee + notaryFee + insuranceFee + bphtbTax;
-    const totalUangAwal = dpNominal + totalBiayaAkad;
-
-    const amortizationSchedule = [];
-    let curBalance = loanPrincipal;
-
-    for (let yr = 1; yr <= tenureYears; yr++) {
-      let yrInterest = 0;
-      let yrPrincipal = 0;
-      const isFixedYear = yr <= fixedYears;
-      const currentRate = isFixedYear ? monthlyRateFixed : monthlyRateFloating;
-      const currentInstallment = isFixedYear ? installmentFixed : installmentFloating;
-
-      for (let m = 1; m <= 12; m++) {
-        const interestM = curBalance * currentRate;
-        const principalM = currentInstallment - interestM;
-        yrInterest += interestM;
-        yrPrincipal += principalM;
-        curBalance -= principalM;
-      }
-
-      amortizationSchedule.push({
-        year: yr,
-        isFixed: isFixedYear,
-        yearlyPrincipal: Math.round(yrPrincipal),
-        yearlyInterest: Math.round(yrInterest),
-        remainingBalance: Math.max(0, Math.round(curBalance)),
-      });
-    }
+    const raw = calculateKprSimulation({
+      propertyPrice,
+      dpPercentage,
+      dpNominalCustom: isCustomDpNominal ? dpNominalInput : null,
+      tenureYears,
+      fixedRate,
+      fixedYears,
+      floatingRate,
+      includeBphtb,
+    });
 
     return {
-      dpNominal,
-      loanPrincipal,
-      installmentFixed,
-      installmentFloating,
-      requiredIncomeFixed,
-      totalMonths,
-      provisiFee,
-      adminFee,
-      appraisalFee,
-      notaryFee,
-      insuranceFee,
-      bphtbTax,
-      totalBiayaAkad,
-      totalUangAwal,
-      amortizationSchedule,
+      ...raw,
+      provisiFee: raw.fees.provisiFee,
+      adminFee: raw.fees.adminFee,
+      appraisalFee: raw.fees.appraisalFee,
+      notaryFee: raw.fees.notaryFee,
+      insuranceFee: raw.fees.insuranceFee,
+      bphtbTax: raw.fees.bphtbTax,
+      totalBiayaAkad: raw.fees.totalBiayaAkad,
     };
   }, [
     propertyPrice,
@@ -199,13 +126,7 @@ function KprCalculatorContent() {
     includeBphtb,
   ]);
 
-  const formatCurrency = (val: number) => {
-    return new Intl.NumberFormat("id-ID", {
-      style: "currency",
-      currency: "IDR",
-      maximumFractionDigits: 0,
-    }).format(val || 0);
-  };
+  const formatCurrency = (val: number) => formatKprCurrency(val);
 
   const handleShareWhatsApp = () => {
     const text = encodeURIComponent(
@@ -513,7 +434,7 @@ function KprCalculatorContent() {
                     Estimasi Angsuran Per Bulan:
                   </span>
                   <div className="flex items-baseline gap-2">
-                    <h2 className="text-3xl sm:text-4xl font-extrabold font-mono text-emerald-600 dark:text-emerald-400 tracking-tight">
+                    <h2 className="text-3xl sm:text-4xl font-extrabold font-mono tabular-nums text-emerald-600 dark:text-emerald-400 tracking-tight">
                       {formatCurrency(calculations.installmentFixed)}
                     </h2>
                     <span className="text-sm font-semibold text-muted-foreground">/ bulan</span>
@@ -531,7 +452,7 @@ function KprCalculatorContent() {
                     <span className="text-[10px] text-muted-foreground font-medium flex items-center gap-1">
                       <BadgeCheck className="w-3.5 h-3.5 text-emerald-600" /> Syarat Minimal Gaji
                     </span>
-                    <p className="text-sm font-extrabold font-mono text-foreground">
+                    <p className="text-sm font-extrabold font-mono tabular-nums text-foreground">
                       {formatCurrency(calculations.requiredIncomeFixed)} <span className="text-[10px] font-normal text-muted-foreground">/bln</span>
                     </p>
                     <p className="text-[9px] text-muted-foreground leading-tight">
@@ -544,7 +465,7 @@ function KprCalculatorContent() {
                     <span className="text-[10px] text-muted-foreground font-medium flex items-center gap-1">
                       <Wallet className="w-3.5 h-3.5 text-amber-600" /> Total Modal Awal
                     </span>
-                    <p className="text-sm font-extrabold font-mono text-amber-700 dark:text-amber-400">
+                    <p className="text-sm font-extrabold font-mono tabular-nums text-amber-700 dark:text-amber-400">
                       {formatCurrency(calculations.totalUangAwal)}
                     </p>
                     <p className="text-[9px] text-muted-foreground leading-tight">
@@ -575,29 +496,29 @@ function KprCalculatorContent() {
                     <div className="divide-y divide-border/40">
                       <div className="py-2 flex justify-between">
                         <span className="text-muted-foreground">Uang Muka (DP {dpPercentage}%):</span>
-                        <span className="font-mono text-foreground font-bold">{formatCurrency(calculations.dpNominal)}</span>
+                        <span className="font-mono tabular-nums text-foreground font-bold">{formatCurrency(calculations.dpNominal)}</span>
                       </div>
                       <div className="py-2 flex justify-between">
                         <span className="text-muted-foreground">Provisi & Administrasi Bank:</span>
-                        <span className="font-mono text-foreground">{formatCurrency(calculations.provisiFee + calculations.adminFee)}</span>
+                        <span className="font-mono tabular-nums text-foreground">{formatCurrency(calculations.provisiFee + calculations.adminFee)}</span>
                       </div>
                       <div className="py-2 flex justify-between">
                         <span className="text-muted-foreground">Notaris, Sertifikat & APHT (Est.):</span>
-                        <span className="font-mono text-foreground">{formatCurrency(calculations.notaryFee)}</span>
+                        <span className="font-mono tabular-nums text-foreground">{formatCurrency(calculations.notaryFee)}</span>
                       </div>
                       <div className="py-2 flex justify-between">
                         <span className="text-muted-foreground">Asuransi Jiwa & Kebakaran (Est.):</span>
-                        <span className="font-mono text-foreground">{formatCurrency(calculations.insuranceFee)}</span>
+                        <span className="font-mono tabular-nums text-foreground">{formatCurrency(calculations.insuranceFee)}</span>
                       </div>
                       {includeBphtb && (
                         <div className="py-2 flex justify-between text-amber-700 dark:text-amber-400">
                           <span>Pajak Pembeli / BPHTB (5%):</span>
-                          <span className="font-mono font-bold">{formatCurrency(calculations.bphtbTax)}</span>
+                          <span className="font-mono tabular-nums font-bold">{formatCurrency(calculations.bphtbTax)}</span>
                         </div>
                       )}
                       <div className="py-3 flex justify-between font-bold bg-emerald-500/10 px-3 rounded-xl mt-2 text-emerald-950 dark:text-emerald-200">
                         <span>TOTAL MODAL AWAL DISIAPKAN:</span>
-                        <span className="font-mono text-sm">{formatCurrency(calculations.totalUangAwal)}</span>
+                        <span className="font-mono tabular-nums text-sm">{formatCurrency(calculations.totalUangAwal)}</span>
                       </div>
                     </div>
                   </CardContent>

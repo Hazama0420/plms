@@ -701,7 +701,8 @@ A related drift lives in code rather than types: **`created_by` on
 exists in neither the type nor the database. It never reaches PostgREST
 --- `crm.service.ts:668-672` drops it before the request --- so no error
 is raised; the permission checks simply always evaluate false. An `as any`
-cast suppresses the only compiler warning. Recorded as M-2.
+> **PHASE 1 Resolution (2026-08-19):**
+> Drift items #1 (`CRMActivity.updated_at` phantom column), #2 (`CRMLead.property_id`), #3 (`CRMLead.created_by`), #4 (`CRMContact.source`), #5 (`CRMInterest.priority`), #6 (`CRMContact.contact_code` nullable), serta `CRMFollowup.created_by` & `CRMFollowup.completed_by` telah disinkronkan dan diselesaikan secara penuh pada `types/crm.types.ts` dan Server Actions.
 
 ## 11. Findings Register
 

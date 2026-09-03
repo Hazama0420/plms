@@ -55,38 +55,38 @@ export function SiteFooter({ className }: { className?: string }) {
   return (
     <footer
       role="contentinfo"
-      className={cn("select-none bg-[#0E2C24] relative overflow-hidden", className)}
+      className={cn("select-none bg-inland-forest text-white border-t border-inland-gold/30 relative overflow-hidden", className)}
     >
       {/* Ornamen diagonal subtle */}
       <div
-        className="absolute inset-0 pointer-events-none opacity-[0.06]"
+        className="absolute inset-0 pointer-events-none opacity-[0.05]"
         style={{
           backgroundImage: "repeating-linear-gradient(45deg, #fff 0, #fff 1px, transparent 0, transparent 50%)",
           backgroundSize: "12px 12px",
         }}
       />
 
-      {/* Garis emas tipis — motif yang sama dengan kop invoice */}
-      <div className="h-1 w-full bg-[#E2B23B]" />
+      {/* Garis emas tipis — identitas korporat Inland */}
+      <div className="h-0.5 w-full bg-inland-gold/80" />
 
-      <div className="relative mx-auto max-w-6xl px-4 py-4 sm:px-8 sm:py-6">
+      <div className="relative mx-auto max-w-6xl px-4 py-6 sm:px-8 sm:py-8">
         {/* Konten utama: center-aligned */}
         <div className="flex flex-col items-center gap-3 text-center">
           {/* Logo brand */}
           <p className="flex items-center gap-1.5 text-xl font-extrabold tracking-tight sm:text-2xl">
-            <span className="text-[#E2B23B]">Inland</span>
+            <span className="text-inland-gold">Inland</span>
             <span className="text-white">Property</span>
           </p>
 
           {/* Alamat */}
-          <p className="text-[11px] sm:text-xs text-white/60 max-w-xs sm:max-w-sm leading-relaxed">
+          <p className="text-[11px] sm:text-xs text-white/70 max-w-xs sm:max-w-sm leading-relaxed">
             {SITE.address}
           </p>
 
           {/* Email */}
           <a
             href={`mailto:${SITE.email}`}
-            className="text-[11px] sm:text-xs text-white/60 hover:text-[#E2B23B] transition-colors"
+            className="text-[11px] sm:text-xs text-white/70 hover:text-inland-gold transition-colors"
           >
             {SITE.email}
           </a>

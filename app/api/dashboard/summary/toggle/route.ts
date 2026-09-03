@@ -25,7 +25,7 @@ export async function POST(req: Request) {
     // berjalan lewat jalur ini dan tidak ada alasan menaikkan hak aksesnya.
     const { error: dbError } = await auth.ctx.supabase.from("system_settings").upsert(
       {
-        key: "ai_summary_enabled",
+        key: "ai_executive.summary_enabled",
         value: enabled ? "true" : "false",
         updated_at: new Date().toISOString(),
       },
@@ -43,7 +43,7 @@ export async function POST(req: Request) {
     await recordAudit({
       actor: auth.ctx,
       action: "settings.ai_toggle",
-      detail: { key: "ai_summary_enabled", enabled },
+      detail: { key: "ai_executive.summary_enabled", enabled },
     });
 
     return NextResponse.json({ success: true, enabled });

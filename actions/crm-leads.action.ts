@@ -131,3 +131,361 @@ export async function verifyCRMDealAction(leadId: string, verified: boolean, rea
   });
   return { success: true, error: null };
 }
+
+export async function createCRMLeadAction(data: {
+  contact_id: string;
+  assigned_to?: string | null;
+  source?: string | null;
+  status?: string;
+  interest_type?: string | null;
+  budget?: number | null;
+  notes?: string | null;
+  property_id?: string | null;
+  property_ids?: string[];
+}): Promise<ActionResult & { data?: any }> {
+  const supabase = await createServerClientInstance();
+  const actor = await getActor(supabase);
+  if (!actor) return { success: false, error: 'Sesi tidak valid. Silakan login kembali.' };
+
+  if (!data.contact_id) {
+    return { success: false, error: 'Kontak wajib dipilih untuk membuat Lead.' };
+  }
+
+  const privileged = canReviewDeal(actor.role);
+  const assignedTo = privileged ? (data.assigned_to || actor.user.id) : actor.user.id;
+  const initialStatus = data.status && isPipelineStage(data.status) ? data.status : 'new';
+
+  const { data: lead, error: leadError } = await supabase
+    .from('crm_leads')
+    .insert({
+      contact_id: data.contact_id,
+      assigned_to: assignedTo,
+      created_by: actor.user.id,
+      source: data.source?.trim() || 'Manual Entry',
+      status: initialStatus,
+      interest_type: data.interest_type?.trim() || null,
+      budget: typeof data.budget === 'number' ? data.budget : null,
+      notes: data.notes?.trim() || null,
+      property_id: data.property_id || null,
+    })
+    .select()
+    .single();
+
+  if (leadError || !lead) {
+    return { success: false, error: leadError?.message || 'Gagal membuat Lead.' };
+  }
+
+  // Simpan interests jika disediakan
+  if (data.property_ids && data.property_ids.length > 0) {
+    const interestRows = data.property_ids.map((property_id) => ({
+      lead_id: lead.id,
+      property_id,
+      interest_level: 'medium',
+      priority: 1,
+    }));
+
+    const { error: interestError } = await supabase
+      .from('crm_interests')
+      .insert(interestRows);
+
+    if (interestError) {
+      console.error('Gagal mencatat crm_interests di createCRMLeadAction:', interestError.message);
+    }
+  }
+
+  await recordAudit({
+    actor: { userId: actor.user.id, email: actor.user.email ?? null, role: actor.role },
+    action: 'lead.created',
+    targetId: lead.id,
+    detail: {
+      contact_id: data.contact_id,
+      assigned_to: assignedTo,
+      status: initialStatus,
+      source: data.source,
+    },
+  });
+
+  return { success: true, data: lead, error: null };
+}
+
+export async function deleteCRMLeadAction(leadId: string): Promise<ActionResult> {
+  const supabase = await createServerClientInstance();
+  const actor = await getActor(supabase);
+  if (!actor) return { success: false, error: 'Sesi tidak valid. Silakan login kembali.' };
+
+  const privileged = canReviewDeal(actor.role);
+  if (!privileged) {
+    return { success: false, error: 'Hanya Admin atau Super Admin yang dapat menghapus Lead.' };
+  }
+
+  const { data: lead } = await supabase
+    .from('crm_leads')
+    .select('id, contact_id, assigned_to')
+    .eq('id', leadId)
+    .maybeSingle();
+
+  if (!lead) {
+    return { success: false, error: 'Lead tidak ditemukan.' };
+  }
+
+  const { error } = await supabase.from('crm_leads').delete().eq('id', leadId);
+  if (error) {
+    return { success: false, error: error.message };
+  }
+
+  await recordAudit({
+    actor: { userId: actor.user.id, email: actor.user.email ?? null, role: actor.role },
+    action: 'lead.deleted',
+    targetId: leadId,
+    detail: { contact_id: lead.contact_id, assigned_to: lead.assigned_to },
+  });
+
+  return { success: true, error: null };
+}
+
+export async function updateCRMLeadAction(
+  leadId: string,
+  data: {
+    contact_id?: string;
+    notes?: string | null;
+    budget?: number | null;
+    interest_type?: string | null;
+    property_id?: string | null;
+    source?: string | null;
+    assigned_to?: string | null;
+  }
+): Promise<ActionResult & { data?: any }> {
+  const supabase = await createServerClientInstance();
+  const actor = await getActor(supabase);
+  if (!actor) return { success: false, error: 'Sesi tidak valid. Silakan login kembali.' };
+
+  const { data: lead, error: fetchError } = await supabase
+    .from('crm_leads')
+    .select('id, assigned_to, created_by, contact_id, notes, budget, interest_type, source, property_id')
+    .eq('id', leadId)
+    .maybeSingle();
+
+  if (fetchError || !lead) {
+    return { success: false, error: 'Lead tidak ditemukan atau tidak berwenang.' };
+  }
+
+  const privileged = canReviewDeal(actor.role);
+  const ownsLead = lead.assigned_to === actor.user.id || lead.created_by === actor.user.id;
+  if (!privileged && !ownsLead) {
+    return { success: false, error: 'Anda tidak berwenang mengubah Lead ini.' };
+  }
+
+  const patch: Record<string, unknown> = {
+    updated_at: new Date().toISOString(),
+  };
+
+  if (data.contact_id !== undefined) patch.contact_id = data.contact_id;
+  if (data.notes !== undefined) patch.notes = data.notes?.trim() || null;
+  if (data.budget !== undefined) patch.budget = typeof data.budget === 'number' ? data.budget : null;
+  if (data.interest_type !== undefined) patch.interest_type = data.interest_type?.trim() || null;
+  if (data.property_id !== undefined) patch.property_id = data.property_id || null;
+  if (data.source !== undefined) patch.source = data.source?.trim() || null;
+
+  // Proteksi pengubahan penanggung jawab
+  if (data.assigned_to !== undefined) {
+    if (!privileged && data.assigned_to !== lead.assigned_to && data.assigned_to !== actor.user.id) {
+      return { success: false, error: 'Hanya Admin yang dapat mengalihkan penanggung jawab Lead ke agen lain.' };
+    }
+    patch.assigned_to = data.assigned_to;
+  }
+
+  const { data: updated, error: updateError } = await supabase
+    .from('crm_leads')
+    .update(patch)
+    .eq('id', leadId)
+    .select()
+    .single();
+
+  if (updateError || !updated) {
+    return { success: false, error: updateError?.message || 'Gagal memperbarui Lead.' };
+  }
+
+  const updatedKeys = Object.keys(patch).filter((k) => k !== 'updated_at');
+  await recordAudit({
+    actor: { userId: actor.user.id, email: actor.user.email ?? null, role: actor.role },
+    action: 'lead.updated',
+    targetId: leadId,
+    detail: {
+      updated_fields: updatedKeys,
+      previous: Object.fromEntries(updatedKeys.map((k) => [k, (lead as any)[k]])),
+    },
+  });
+
+  return { success: true, data: updated, error: null };
+}
+
+export async function bulkUpdateCRMLeadsStatusAction(
+  leadIds: string[],
+  newStatus: string,
+  options?: { lostReason?: string; lostExplanation?: string }
+): Promise<ActionResult & { count?: number }> {
+  const supabase = await createServerClientInstance();
+  const actor = await getActor(supabase);
+  if (!actor) return { success: false, error: 'Sesi tidak valid. Silakan login kembali.' };
+
+  if (!Array.isArray(leadIds) || leadIds.length === 0) {
+    return { success: false, error: 'Daftar ID Lead tidak boleh kosong.' };
+  }
+
+  if (!isPipelineStage(newStatus)) {
+    return { success: false, error: 'Status pipeline tidak valid.' };
+  }
+
+  const privileged = canReviewDeal(actor.role);
+  if (newStatus === 'won' && !privileged) {
+    return { success: false, error: 'Pembaruan massal ke status Won hanya diizinkan untuk Admin.' };
+  }
+
+  if (newStatus === 'lost') {
+    if (!options?.lostReason || !isLostReason(options.lostReason)) {
+      return { success: false, error: 'Alasan Lost wajib dipilih.' };
+    }
+    if (options.lostReason === 'other' && !options.lostExplanation?.trim()) {
+      return { success: false, error: 'Penjelasan wajib diisi untuk alasan Other.' };
+    }
+  }
+
+  // Ambil semua target leads
+  const { data: leads, error: fetchError } = await supabase
+    .from('crm_leads')
+    .select('id, status, assigned_to, created_by, deal_state')
+    .in('id', leadIds);
+
+  if (fetchError || !leads || leads.length !== leadIds.length) {
+    return { success: false, error: 'Satu atau lebih Lead tidak ditemukan atau tidak berwenang.' };
+  }
+
+  // Validasi kepemilikan dan transisi pipeline untuk setiap lead
+  for (const lead of leads) {
+    const ownsLead = lead.assigned_to === actor.user.id || lead.created_by === actor.user.id;
+    if (!privileged && !ownsLead) {
+      return { success: false, error: 'Terdapat Lead yang bukan milik Anda dalam daftar pilihan.' };
+    }
+
+    const currentStatus = lead.status || 'new';
+    if (currentStatus !== newStatus && !isPipelineTransitionAllowed(currentStatus, newStatus)) {
+      return {
+        success: false,
+        error: `Transisi status tidak valid dari '${currentStatus}' ke '${newStatus}' pada salah satu Lead.`,
+      };
+    }
+  }
+
+  const now = new Date().toISOString();
+  const patch: Record<string, unknown> = {
+    status: newStatus,
+    updated_at: now,
+  };
+  if (newStatus === 'lost') {
+    patch.lost_reason = options?.lostReason;
+    patch.lost_explanation = options?.lostExplanation?.trim() || null;
+  }
+
+  const { error: updateError } = await supabase
+    .from('crm_leads')
+    .update(patch)
+    .in('id', leadIds);
+
+  if (updateError) {
+    return { success: false, error: updateError.message };
+  }
+
+  // Audit log untuk setiap lead yang diupdate
+  for (const lead of leads) {
+    await recordAudit({
+      actor: { userId: actor.user.id, email: actor.user.email ?? null, role: actor.role },
+      action: newStatus === 'lost' ? 'lead.marked_lost' : 'lead.pipeline_changed',
+      targetId: lead.id,
+      detail: {
+        previous_status: lead.status || 'new',
+        new_status: newStatus,
+        bulk: true,
+      },
+    });
+  }
+
+  return { success: true, count: leadIds.length, error: null };
+}
+
+export async function bulkAssignCRMLeadsAction(
+  leadIds: string[],
+  assignedTo: string
+): Promise<ActionResult & { count?: number }> {
+  const supabase = await createServerClientInstance();
+  const actor = await getActor(supabase);
+  if (!actor) return { success: false, error: 'Sesi tidak valid. Silakan login kembali.' };
+
+  if (!Array.isArray(leadIds) || leadIds.length === 0) {
+    return { success: false, error: 'Daftar ID Lead tidak boleh kosong.' };
+  }
+
+  if (!assignedTo) {
+    return { success: false, error: 'Agen penerima penugasan wajib dipilih.' };
+  }
+
+  const privileged = canReviewDeal(actor.role);
+  if (!privileged && assignedTo !== actor.user.id) {
+    return { success: false, error: 'Hanya Admin yang dapat menugaskan Lead secara massal ke agen lain.' };
+  }
+
+  // Verifikasi target agen ada di sistem
+  const { data: targetUser, error: userError } = await supabase
+    .from('users')
+    .select('id, full_name, email, role')
+    .eq('id', assignedTo)
+    .maybeSingle();
+
+  if (userError || !targetUser) {
+    return { success: false, error: 'Agen penerima penugasan tidak ditemukan.' };
+  }
+
+  // Ambil semua target leads
+  const { data: leads, error: fetchError } = await supabase
+    .from('crm_leads')
+    .select('id, assigned_to, created_by')
+    .in('id', leadIds);
+
+  if (fetchError || !leads || leads.length !== leadIds.length) {
+    return { success: false, error: 'Satu atau lebih Lead tidak ditemukan atau tidak berwenang.' };
+  }
+
+  // Validasi kepemilikan untuk setiap lead jika bukan admin
+  if (!privileged) {
+    for (const lead of leads) {
+      if (lead.assigned_to !== actor.user.id && lead.created_by !== actor.user.id) {
+        return { success: false, error: 'Anda tidak berwenang mengubah penugasan pada salah satu Lead terpilih.' };
+      }
+    }
+  }
+
+  const now = new Date().toISOString();
+  const { error: updateError } = await supabase
+    .from('crm_leads')
+    .update({ assigned_to: assignedTo, updated_at: now })
+    .in('id', leadIds);
+
+  if (updateError) {
+    return { success: false, error: updateError.message };
+  }
+
+  // Audit log untuk setiap penugasan
+  for (const lead of leads) {
+    await recordAudit({
+      actor: { userId: actor.user.id, email: actor.user.email ?? null, role: actor.role },
+      action: 'lead.assigned',
+      targetId: lead.id,
+      detail: {
+        previous_assigned_to: lead.assigned_to,
+        new_assigned_to: assignedTo,
+        bulk: true,
+      },
+    });
+  }
+
+  return { success: true, count: leadIds.length, error: null };
+}

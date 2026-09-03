@@ -1,6 +1,28 @@
 // services/crm.service.ts
 import { supabase } from "@/lib/supabase/client";
 import type { CRMContact, CRMFollowup, CRMLead, LeadStatus } from "@/types/crm.types";
+import {
+  createCRMContactAction,
+  updateCRMContactAction,
+  deleteCRMContactAction,
+} from "@/actions/crm-contacts.action";
+import {
+  createCRMFollowupAction,
+  updateCRMFollowupAction,
+  deleteCRMFollowupAction,
+} from "@/actions/crm-followups.action";
+import {
+  createCRMLeadAction,
+  updateCRMLeadAction,
+  deleteCRMLeadAction,
+  bulkUpdateCRMLeadsStatusAction,
+  bulkAssignCRMLeadsAction,
+} from "@/actions/crm-leads.action";
+import {
+  createCRMInterestAction,
+  updateCRMInterestAction,
+  deleteCRMInterestAction,
+} from "@/actions/crm-interests.action";
 
 // ============================================================
 // TIPE UNTUK RELASI (didefinisikan di sini agar service konsisten)
@@ -39,7 +61,7 @@ export interface LeadFilter {
   limit?: number;
 }
 
-// ⚡ Helper internal untuk memicu kirim notifikasi WhatsApp ke agen (Diperbarui tipe parameter agar mendukung null)
+// ⚡ Helper internal untuk memicu kirim notifikasi WhatsApp ke agen
 async function sendWaNotification(
   agentId: string,
   leadName?: string | null,
@@ -64,16 +86,6 @@ async function sendWaNotification(
 }
 
 // ⚡ Helper internal untuk memicu notifikasi lonceng + push saat lead ditugaskan.
-//
-// Berkas ini memakai klien peramban (baris 2), sedangkan notifyEvent() menuntut
-// SUPABASE_SERVICE_ROLE_KEY yang server-only — jadi notifikasinya tidak bisa
-// dikirim dari sini secara langsung. Rute PATCH /api/leads/[id]/assign yang
-// mengerjakannya, dengan penerima dibaca ulang dari basis data supaya pemanggil
-// tidak bisa menentukan sendiri siapa yang dinotifikasi.
-//
-// Bentuknya sengaja sama dengan sendWaNotification di atas: satu fetch, galat
-// dicatat bukan dilempar, sehingga notifikasi yang gagal tidak pernah
-// menggagalkan penyimpanan lead yang sudah berhasil.
 async function sendAssignNotification(
   leadId: string,
   assignedTo: string,
@@ -87,9 +99,6 @@ async function sendAssignNotification(
       body: JSON.stringify({ assigned_to: assignedTo, kind }),
     });
 
-    // Rute bisa menolak (403 dari RLS, 404 lead tidak terlihat) tanpa melempar.
-    // Tanpa baris ini penolakan itu tidak meninggalkan jejak sama sekali, dan
-    // notifikasi yang tidak pernah terkirim akan terlihat persis seperti sukses.
     if (!res.ok) {
       console.error(
         `Gagal memicu notifikasi penugasan lead (${res.status}):`,
@@ -137,51 +146,37 @@ export const crmService = {
   },
 
   async createContact(data: Partial<CRMContact>) {
-    const { data: contact, error } = await supabase
-      .from("crm_contacts")
-      .insert({
-        contact_code: `CONT-${Date.now()}`,
-        full_name: data.full_name,
-        phone: data.phone || null,
-        whatsapp: data.whatsapp || null,
-        email: data.email || null,
-        occupation: data.occupation || null,
-        city: data.city || null,
-        notes: data.notes || null,
-      })
-      .select()
-      .single();
-
-    if (error) throw new Error(error.message);
-    return contact as CRMContact;
+    if (!data.full_name) {
+      throw new Error("Nama kontak wajib diisi");
+    }
+    const result = await createCRMContactAction({
+      full_name: data.full_name,
+      phone: data.phone || null,
+      whatsapp: data.whatsapp || null,
+      email: data.email || null,
+      occupation: data.occupation || null,
+      city: data.city || null,
+      notes: data.notes || null,
+    });
+    if (!result.success || !result.data) {
+      throw new Error(result.error || "Gagal membuat kontak");
+    }
+    return result.data;
   },
 
   async updateContact(id: string, data: Partial<CRMContact>) {
-    const { error } = await supabase
-      .from("crm_contacts")
-      .update({
-        full_name: data.full_name,
-        phone: data.phone || null,
-        whatsapp: data.whatsapp || null,
-        email: data.email || null,
-        occupation: data.occupation || null,
-        city: data.city || null,
-        notes: data.notes || null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", id);
-
-    if (error) throw new Error(error.message);
-    return await this.getContactById(id);
+    const result = await updateCRMContactAction(id, data);
+    if (!result.success || !result.data) {
+      throw new Error(result.error || "Gagal memperbarui kontak");
+    }
+    return result.data;
   },
 
   async deleteContact(id: string) {
-    const { error } = await supabase
-      .from("crm_contacts")
-      .delete()
-      .eq("id", id);
-
-    if (error) throw new Error(error.message);
+    const result = await deleteCRMContactAction(id);
+    if (!result.success) {
+      throw new Error(result.error || "Gagal menghapus kontak");
+    }
     return true;
   },
 
@@ -224,14 +219,17 @@ export const crmService = {
 
     let filteredData = data as CRMLead[];
 
-    // Pencarian cepat pada nama, HP, atau email kontak
     if (search && filteredData) {
       const lowerSearch = search.toLowerCase();
-      filteredData = filteredData.filter((item: any) => {
+      filteredData = filteredData.filter((item: CRMLead) => {
         const name = item.contact?.full_name?.toLowerCase() || "";
         const phone = item.contact?.phone?.toLowerCase() || "";
         const email = item.contact?.email?.toLowerCase() || "";
-        return name.includes(lowerSearch) || phone.includes(lowerSearch) || email.includes(lowerSearch);
+        return (
+          name.includes(lowerSearch) ||
+          phone.includes(lowerSearch) ||
+          email.includes(lowerSearch)
+        );
       });
     }
 
@@ -243,54 +241,59 @@ export const crmService = {
     };
   },
 
- async getLeadById(id: string): Promise<LeadWithRelations | null> {
-  const { data, error } = await supabase
-    .from("crm_leads")
-    .select(`
-      *,
-      contact:crm_contacts(*),
-      assigned_user:users!assigned_to(id, full_name, email, avatar_url),
-      interests:crm_interests(
-        id,
-        property_id,
-        interest_level,
-        notes,
-        property:properties(id, title, listing_code, status, price:property_price(selling_price, rental_price))
+  async getLeadById(id: string): Promise<LeadWithRelations | null> {
+    const { data, error } = await supabase
+      .from("crm_leads")
+      .select(
+        `
+        *,
+        contact:crm_contacts(*),
+        assigned_user:users!assigned_to(id, full_name, email, avatar_url),
+        interests:crm_interests(
+          id,
+          property_id,
+          interest_level,
+          notes,
+          property:properties(id, title, listing_code, status, price:property_price(selling_price, rental_price))
+        )
+      `
       )
-    `)
-    .eq("id", id)
-    .maybeSingle(); // ganti dari .single() agar tidak error jika data tidak ada
-
-  if (error) throw new Error(error.message);
-  if (!data) return null; // lead tidak ditemukan
-
-  // fallback jika relasi contact tidak ikut terambil (misal RLS menyembunyikan)
-  if (!data.contact && (data as any).contact_id) {
-    const { data: contactData, error: contactError } = await supabase
-      .from("crm_contacts")
-      .select("*")
-      .eq("id", (data as any).contact_id)
+      .eq("id", id)
       .maybeSingle();
 
-    if (!contactError && contactData) {
-      (data as any).contact = contactData;
-    }
-  }
+    if (error) throw new Error(error.message);
+    if (!data) return null;
 
-  // fallback assigned_user jika null
-  if (data.assigned_user && !data.assigned_user.id) {
-    const { data: userData } = await supabase
-      .from("users")
-      .select("id, full_name, email, avatar_url")
-      .eq("id", (data as any).assigned_to)
-      .maybeSingle();
-    if (userData) {
-      (data as any).assigned_user = userData;
-    }
-  }
+    const rawLead = data as unknown as Record<string, unknown>;
 
-  return data as LeadWithRelations;
-},
+    // Fallback jika relasi contact tidak ikut terambil
+    if (!rawLead.contact && typeof rawLead.contact_id === "string") {
+      const { data: contactData, error: contactError } = await supabase
+        .from("crm_contacts")
+        .select("*")
+        .eq("id", rawLead.contact_id)
+        .maybeSingle();
+
+      if (!contactError && contactData) {
+        rawLead.contact = contactData;
+      }
+    }
+
+    // Fallback assigned_user jika null
+    const assignedUser = rawLead.assigned_user as { id?: string } | null;
+    if (assignedUser && !assignedUser.id && typeof rawLead.assigned_to === "string") {
+      const { data: userData } = await supabase
+        .from("users")
+        .select("id, full_name, email, avatar_url")
+        .eq("id", rawLead.assigned_to)
+        .maybeSingle();
+      if (userData) {
+        rawLead.assigned_user = userData;
+      }
+    }
+
+    return rawLead as unknown as LeadWithRelations;
+  },
 
   async createLead(data: {
     contact_id: string;
@@ -301,42 +304,22 @@ export const crmService = {
     budget?: number;
     property_ids?: string[];
   }) {
-    const { data: lead, error: leadError } = await supabase
-      .from("crm_leads")
-      .insert({
-        contact_id: data.contact_id,
-        assigned_to: data.assigned_to || null,
-        source: data.source || null,
-        status: data.status || "new",
-        interest_type: data.interest_type || null,
-        budget: data.budget || null,
-      })
-      .select()
-      .single();
-
-    if (leadError) throw new Error(leadError.message);
-
-    if (data.property_ids && data.property_ids.length > 0) {
-      const interests = data.property_ids.map((property_id) => ({
-        lead_id: lead.id,
-        property_id,
-        interest_level: "medium",
-      }));
-
-      const { error: interestError } = await supabase
-        .from("crm_interests")
-        .insert(interests);
-
-      if (interestError) throw new Error(interestError.message);
-    }
-
-    await this.logActivity({
-      lead_id: lead.id,
-      activity_type: "created",
-      notes: "Lead baru dibuat",
+    const result = await createCRMLeadAction({
+      contact_id: data.contact_id,
+      assigned_to: data.assigned_to,
+      source: data.source,
+      status: data.status,
+      interest_type: data.interest_type,
+      budget: data.budget,
+      property_ids: data.property_ids,
     });
 
-    // ⚡ OTOMATISASI NOTIFIKASI WHATSAPP KE AGEN JIKA DITUGASKAN
+    if (!result.success || !result.data) {
+      throw new Error(result.error || "Gagal membuat Lead");
+    }
+
+    const lead = result.data as CRMLead;
+
     if (lead.assigned_to) {
       try {
         const contact = await this.getContactById(data.contact_id);
@@ -350,31 +333,24 @@ export const crmService = {
         console.error("Gagal mengalirkan WA otomatis di createLead:", waErr);
       }
 
-      // ⚡ NOTIFIKASI LONCENG + PUSH (M-17)
-      // Sejak trigger on_lead_created_notify dipensiunkan, jalur inilah yang
-      // memberi tahu agen bahwa ada lead baru atas namanya. Berbeda dengan
-      // trigger yang digantikannya, jalur ini menghormati sakelar lead_alerts
-      // dan ikut mengirim push OneSignal.
-      //
-      // Kolom assigned_to sudah terisi oleh INSERT di atas, jadi rutenya tidak
-      // menulis ulang nilai yang sama — ia hanya mengirim notifikasinya.
       await sendAssignNotification(lead.id, lead.assigned_to, "created");
     }
 
-    return lead as CRMLead;
+    return lead;
   },
 
   async updateLead(id: string, data: Partial<CRMLead>) {
     const {
       status,
-      lost_reason: _lostReason,
-      lost_explanation: _lostExplanation,
-      deal_state: _dealState,
-      deal_submitted_at: _dealSubmittedAt,
-      deal_verified_at: _dealVerifiedAt,
-      deal_rejection_reason: _dealRejectionReason,
+      lost_reason: _1,
+      lost_explanation: _2,
+      deal_state: _3,
+      deal_submitted_at: _4,
+      deal_verified_at: _5,
+      deal_rejection_reason: _6,
       ...leadData
     } = data;
+    void _1; void _2; void _3; void _4; void _5; void _6;
 
     if (status) {
       const response = await fetch(`/api/leads/${id}/status`, {
@@ -388,24 +364,26 @@ export const crmService = {
       }
     }
 
-    // Cek agen lama
     const oldLead = await this.getLeadById(id).catch(() => null);
 
-    const { error } = Object.keys(leadData).length
-      ? await supabase
-          .from("crm_leads")
-          .update({
-            ...leadData,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", id)
-      : { error: null };
+    if (Object.keys(leadData).length > 0) {
+      const updateResult = await updateCRMLeadAction(id, {
+        contact_id: leadData.contact_id,
+        notes: leadData.notes,
+        budget: typeof leadData.budget === "number" ? leadData.budget : undefined,
+        interest_type: leadData.interest_type,
+        property_id: leadData.property_id,
+        source: leadData.source,
+        assigned_to: leadData.assigned_to,
+      });
 
-    if (error) throw new Error(error.message);
+      if (!updateResult.success) {
+        throw new Error(updateResult.error || "Gagal memperbarui data Lead");
+      }
+    }
 
     const updatedLead = await this.getLeadById(id);
 
-    // ⚡ OTOMATISASI WHATSAPP JIKA AGEN DIUBAH / DITUGASKAN BARU
     if (leadData.assigned_to && leadData.assigned_to !== oldLead?.assigned_to && updatedLead) {
       await sendWaNotification(
         leadData.assigned_to,
@@ -414,16 +392,6 @@ export const crmService = {
         updatedLead.interest_type || "Properti Pilihan"
       );
 
-      // ⚡ NOTIFIKASI LONCENG + PUSH (M-17)
-      // Lead yang berpindah tangan memakai kind "reassigned" (👤 Penugasan),
-      // bukan 🎯 Prospek Lead — keduanya tunduk pada sakelar lead_alerts yang
-      // sama.
-      //
-      // Penjaganya sengaja penjaga WhatsApp yang sudah ada, bukan penjaga baru.
-      // Trigger lama menyala setiap kali kolom assigned_to DISEBUT di klausa
-      // SET, dan halaman Edit Lead selalu mengirimnya — jadi setiap penyimpanan
-      // formulir dulu menghasilkan notifikasi meski agennya tidak berganti.
-      // Memakai penjaga ini menghentikan pengulangan tersebut.
       await sendAssignNotification(id, leadData.assigned_to, "reassigned");
     }
 
@@ -444,12 +412,10 @@ export const crmService = {
   },
 
   async deleteLead(id: string) {
-    const { error } = await supabase
-      .from("crm_leads")
-      .delete()
-      .eq("id", id);
-
-    if (error) throw new Error(error.message);
+    const result = await deleteCRMLeadAction(id);
+    if (!result.success) {
+      throw new Error(result.error || "Gagal menghapus Lead");
+    }
     return true;
   },
 
@@ -459,10 +425,12 @@ export const crmService = {
   async getActivities(leadId: string) {
     const { data, error } = await supabase
       .from("crm_activities")
-      .select(`
+      .select(
+        `
         *,
         user:users(id, full_name, avatar_url)
-      `)
+      `
+      )
       .eq("lead_id", leadId)
       .order("created_at", { ascending: false });
 
@@ -509,46 +477,32 @@ export const crmService = {
     property_id: string;
     interest_level?: string;
     notes?: string;
+    priority?: number;
   }) {
-    const { data: interest, error } = await supabase
-      .from("crm_interests")
-      .insert({
-        lead_id: data.lead_id,
-        property_id: data.property_id,
-        interest_level: data.interest_level || "medium",
-        notes: data.notes || null,
-      })
-      .select()
-      .single();
-
-    if (error) throw new Error(error.message);
-    return interest;
+    const result = await createCRMInterestAction(data);
+    if (!result.success || !result.data) {
+      throw new Error(result.error || "Gagal menambahkan minat properti");
+    }
+    return result.data;
   },
 
   async removeInterest(interestId: string) {
-    const { error } = await supabase
-      .from("crm_interests")
-      .delete()
-      .eq("id", interestId);
-
-    if (error) throw new Error(error.message);
+    const result = await deleteCRMInterestAction(interestId);
+    if (!result.success) {
+      throw new Error(result.error || "Gagal menghapus minat properti");
+    }
     return true;
   },
 
   async updateInterest(interestId: string, data: {
     interest_level?: string;
     notes?: string;
+    priority?: number;
   }) {
-    const { error } = await supabase
-      .from("crm_interests")
-      .update({
-        interest_level: data.interest_level || null,
-        notes: data.notes || null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", interestId);
-
-    if (error) throw new Error(error.message);
+    const result = await updateCRMInterestAction(interestId, data);
+    if (!result.success || !result.data) {
+      throw new Error(result.error || "Gagal memperbarui minat properti");
+    }
     return true;
   },
 
@@ -562,7 +516,6 @@ export const crmService = {
       .order("full_name", { ascending: true });
 
     if (error) throw new Error(error.message);
-
     return data || [];
   },
 
@@ -583,13 +536,15 @@ export const crmService = {
   async getPropertiesForLead() {
     const { data, error } = await supabase
       .from("properties")
-      .select(`
+      .select(
+        `
         id,
         title,
         listing_code,
         status,
         price:property_price(selling_price, rental_price)
-      `)
+      `
+      )
       .in("status", ["published", "active"])
       .order("title", { ascending: true });
 
@@ -600,12 +555,14 @@ export const crmService = {
   async getPropertyById(id: string) {
     const { data, error } = await supabase
       .from("properties")
-      .select(`
+      .select(
+        `
         *,
         address:property_address(*),
         price:property_price(*),
         media:property_media(*)
-      `)
+      `
+      )
       .eq("id", id)
       .maybeSingle();
 
@@ -616,13 +573,15 @@ export const crmService = {
   // ============================================================
   // FOLLOW-UPS
   // ============================================================
-  async getFollowups(filters: {
-    lead_id?: string;
-    assigned_to?: string;
-    status?: "pending" | "completed" | "cancelled" | "overdue";
-    page?: number;
-    limit?: number;
-  } = {}) {
+  async getFollowups(
+    filters: {
+      lead_id?: string;
+      assigned_to?: string;
+      status?: "pending" | "completed" | "cancelled" | "overdue";
+      page?: number;
+      limit?: number;
+    } = {}
+  ) {
     const {
       lead_id,
       assigned_to,
@@ -692,21 +651,25 @@ export const crmService = {
   async getFollowupById(id: string) {
     const { data, error } = await supabase
       .from("crm_followups")
-      .select(`
+      .select(
+        `
         *,
         lead:crm_leads(id, contact:crm_contacts(*)),
         assigned_user:users!assigned_to(id, full_name, email, avatar_url)
-      `)
+      `
+      )
       .eq("id", id)
       .single();
 
     if (error) {
       const { data: basicData, error: basicError } = await supabase
         .from("crm_followups")
-        .select(`
+        .select(
+          `
           *,
           lead:crm_leads(id, contact:crm_contacts(*))
-        `)
+        `
+        )
         .eq("id", id)
         .single();
 
@@ -723,41 +686,35 @@ export const crmService = {
     followup_date: string;
     notes?: string;
   }) {
-    // Lewat route, bukan insert langsung: agenda yang ditugaskan ke agen lain
-    // harus memunculkan notifikasi untuk agen tersebut, dan baris notifikasi
-    // atas nama akun lain hanya bisa ditulis dengan service role di server.
-    const res = await fetch(`/api/leads/${data.lead_id}/follow-up`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        assigned_to: data.assigned_to,
-        followup_date: data.followup_date,
-        notes: data.notes || null,
-      }),
+    const result = await createCRMFollowupAction({
+      lead_id: data.lead_id,
+      assigned_to: data.assigned_to,
+      followup_date: data.followup_date,
+      notes: data.notes || null,
     });
 
-    const json = await res.json();
-    if (!res.ok || !json.success) {
-      throw new Error(json.error || "Gagal membuat agenda follow-up");
+    if (!result.success || !result.data) {
+      throw new Error(result.error || "Gagal membuat agenda follow-up");
     }
 
-    // Pencatatan aktivitas tetap di sisi peramban: barisnya ditulis atas nama
-    // user yang sedang login, jadi tidak butuh service role.
     await this.logActivity({
       lead_id: data.lead_id,
       activity_type: "followup_scheduled",
       notes: `Follow-up dijadwalkan pada ${new Date(data.followup_date).toLocaleString("id-ID")}`,
     });
 
-    return json.data;
+    return result.data;
   },
 
-  async updateFollowup(id: string, data: {
-    followup_date?: string;
-    notes?: string;
-    status?: "pending" | "completed" | "cancelled" | "overdue";
-    assigned_to?: string;
-  }): Promise<{
+  async updateFollowup(
+    id: string,
+    data: {
+      followup_date?: string;
+      notes?: string;
+      status?: "pending" | "completed" | "cancelled" | "overdue";
+      assigned_to?: string;
+    }
+  ): Promise<{
     data: CRMFollowup;
     lifecycle: {
       didTransitionToCompleted: boolean;
@@ -765,13 +722,16 @@ export const crmService = {
       leadId: string;
     };
   }> {
-    const res = await fetch(`/api/followups/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
+    const result = await updateCRMFollowupAction(id, {
+      followup_date: data.followup_date,
+      notes: data.notes,
+      status: data.status === "overdue" ? undefined : data.status,
+      assigned_to: data.assigned_to,
     });
-    const result = await res.json();
-    if (!res.ok || !result.success) throw new Error(result.error || "Gagal memperbarui Follow-Up");
+
+    if (!result.success || !result.data || !result.lifecycle) {
+      throw new Error(result.error || "Gagal memperbarui Follow-Up");
+    }
 
     if (result.lifecycle.didTransitionToCompleted) {
       await this.logActivity({
@@ -785,9 +745,10 @@ export const crmService = {
   },
 
   async deleteFollowup(id: string) {
-    const res = await fetch(`/api/followups/${id}`, { method: "DELETE" });
-    const result = await res.json();
-    if (!res.ok || !result.success) throw new Error(result.error || "Gagal menghapus Follow-Up");
+    const result = await deleteCRMFollowupAction(id);
+    if (!result.success) {
+      throw new Error(result.error || "Gagal menghapus Follow-Up");
+    }
     return true;
   },
 
@@ -860,38 +821,39 @@ export const crmService = {
 
     const { data, error } = await supabase
       .from("crm_leads")
-      .select(`
+      .select(
+        `
         *,
         contact:crm_contacts(*)
-      `)
+      `
+      )
       .order("created_at", { ascending: false })
       .limit(30);
 
     if (error) throw new Error(error.message);
 
-    // Filtering di JavaScript untuk menghindari Syntax Error Supabase PostgREST
     const lowerQuery = query.toLowerCase();
-    const filtered = (data || []).filter((item: any) => {
+    const filtered = (data || []).filter((item: CRMLead) => {
       const name = item.contact?.full_name?.toLowerCase() || "";
       const phone = item.contact?.phone?.toLowerCase() || "";
       const email = item.contact?.email?.toLowerCase() || "";
       const city = item.contact?.city?.toLowerCase() || "";
-      return name.includes(lowerQuery) || phone.includes(lowerQuery) || email.includes(lowerQuery) || city.includes(lowerQuery);
+      return (
+        name.includes(lowerQuery) ||
+        phone.includes(lowerQuery) ||
+        email.includes(lowerQuery) ||
+        city.includes(lowerQuery)
+      );
     });
 
     return { data: filtered, count: filtered.length };
   },
 
   async bulkUpdateStatus(leadIds: string[], status: LeadStatus) {
-    const { error } = await supabase
-      .from("crm_leads")
-      .update({
-        status,
-        updated_at: new Date().toISOString()
-      })
-      .in("id", leadIds);
-
-    if (error) throw new Error(error.message);
+    const result = await bulkUpdateCRMLeadsStatusAction(leadIds, status);
+    if (!result.success) {
+      throw new Error(result.error || "Gagal memperbarui status Lead secara massal");
+    }
 
     for (const leadId of leadIds) {
       await this.logActivity({
@@ -905,17 +867,11 @@ export const crmService = {
   },
 
   async bulkAssign(leadIds: string[], assignedTo: string) {
-    const { error } = await supabase
-      .from("crm_leads")
-      .update({
-        assigned_to: assignedTo,
-        updated_at: new Date().toISOString()
-      })
-      .in("id", leadIds);
+    const result = await bulkAssignCRMLeadsAction(leadIds, assignedTo);
+    if (!result.success) {
+      throw new Error(result.error || "Gagal menugaskan Lead secara massal");
+    }
 
-    if (error) throw new Error(error.message);
-
-    // ⚡ OTOMATISASI WHATSAPP UNTUK BULK ASSIGN
     for (const leadId of leadIds) {
       try {
         const lead = await this.getLeadById(leadId);
@@ -940,10 +896,12 @@ export const crmService = {
   async getLeadsReport(startDate: string, endDate: string) {
     const { data, error } = await supabase
       .from("crm_leads")
-      .select(`
+      .select(
+        `
         *,
         contact:crm_contacts(*)
-      `)
+      `
+      )
       .gte("created_at", startDate)
       .lte("created_at", endDate)
       .order("created_at", { ascending: false });
@@ -955,11 +913,13 @@ export const crmService = {
   async getFollowupReport(startDate: string, endDate: string) {
     const { data, error } = await supabase
       .from("crm_followups")
-      .select(`
+      .select(
+        `
         *,
         lead:crm_leads(contact:crm_contacts(full_name, phone)),
         assigned_user:users!assigned_to(full_name)
-      `)
+      `
+      )
       .gte("followup_date", startDate)
       .lte("followup_date", endDate)
       .order("followup_date", { ascending: true });
@@ -967,10 +927,12 @@ export const crmService = {
     if (error) {
       const { data: basicData, error: basicError } = await supabase
         .from("crm_followups")
-        .select(`
+        .select(
+          `
           *,
           lead:crm_leads(contact:crm_contacts(full_name, phone))
-        `)
+        `
+        )
         .gte("followup_date", startDate)
         .lte("followup_date", endDate)
         .order("followup_date", { ascending: true });

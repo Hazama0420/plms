@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { LanguageSwitcher } from "@/components/layout/language-switcher";
 import { NotificationBell } from "@/components/notification-bell";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useUser } from "@/hooks/use-user";
@@ -218,8 +219,13 @@ export function OperationalHeader({
           <NotificationBell />
         </div>
 
-        {/* Theme Toggle */}
-        <div className="scale-90">
+          {/* Language Switcher */}
+          <div className="hidden sm:block scale-90">
+            <LanguageSwitcher />
+          </div>
+
+          {/* Theme Toggle */}
+          <div className="scale-90">
           <ThemeToggle />
         </div>
 

@@ -1,6 +1,6 @@
 // app/layout.tsx
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { OneSignalProvider } from "@/components/providers/onesignal-provider";
@@ -8,7 +8,7 @@ import { Toaster } from "@/components/ui/sonner";
 import AIChatWidget from "@/components/AIChatWidget";
 import { SITE, OG_BASE } from "@/lib/site-config";
 
-const inter = Inter({ subsets: ["latin"] });
+const pjs = Plus_Jakarta_Sans({ subsets: ["latin"], variable: "--font-sans" });
 
 export const metadata: Metadata = {
   // Menjadikan setiap URL relatif di metadata anak diselesaikan jadi absolut.
@@ -48,8 +48,8 @@ export default function RootLayout({
 }) {
   return (
     <html lang="id" suppressHydrationWarning>
-      {/* 🟢 Tambahkan suppressHydrationWarning pada <body> */}
-      <body className={inter.className} suppressHydrationWarning>
+      {/* dYY Tambahkan suppressHydrationWarning pada <body> */}
+      <body className={`${pjs.variable} font-sans`} suppressHydrationWarning>
         <ThemeProvider
           attribute="class"
           defaultTheme="system"

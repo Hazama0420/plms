@@ -1,0 +1,48 @@
+export const en = {
+  common: {
+    save: "Save",
+    cancel: "Cancel",
+    viewDetails: "View Details",
+    add: "Add",
+    applyMortgage: "Apply for Mortgage",
+    contactAgent: "Contact Agent",
+    search: "Search",
+    loading: "Loading...",
+    success: "Success",
+    error: "An error occurred",
+  },
+  navigation: {
+    properties: "Properties",
+    projects: "Projects",
+    agents: "Agents",
+    kpr: "Mortgages",
+    crm: "CRM",
+    dashboard: "Dashboard",
+    settings: "Settings",
+    login: "Log In",
+    register: "Register",
+    logout: "Log Out",
+  },
+  properties: {
+    title: "Property Listings",
+    myProperties: "My Properties",
+    advancedFilter: "Filters",
+    price: "Price",
+    location: "Location",
+    specs: "Specifications",
+    landArea: "Land Area",
+    buildingArea: "Building Area",
+    bedrooms: "Bedrooms",
+    bathrooms: "Bathrooms",
+  },
+  crm: {
+    leads: "Leads", // Kept as Leads per instruction 8
+    followUp: "Follow-ups",
+    surveys: "Surveys",
+    deals: "Deals",
+  },
+  settings: {
+    title: "Settings",
+    language: "Language",
+  }
+};

@@ -18,6 +18,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { NotificationBell } from "@/components/notification-bell";
+import { LanguageSwitcher } from "@/components/layout/language-switcher";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 
@@ -108,8 +109,9 @@ export function StorefrontNavbar({
           })}
         </nav>
 
-        {/* RIGHT: Actions (Theme Toggle + Auth CTA) */}
+        {/* RIGHT: Actions (Language + Theme Toggle + Auth CTA) */}
         <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+          <LanguageSwitcher />
           {isLoggedIn && <NotificationBell />}
           <ThemeToggle />
 

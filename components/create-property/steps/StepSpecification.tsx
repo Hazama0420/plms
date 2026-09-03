@@ -114,14 +114,14 @@ export function StepSpecification({
             <Label htmlFor="bedroom" className="text-xs font-semibold flex items-center gap-1.5">
               <Bed className="w-3.5 h-3.5 text-slate-500" /> Kamar Tidur
             </Label>
-            <Input
-              id="bedroom"
-              type="number"
-              placeholder="3"
-              value={formData.bedroom || ""}
-              onChange={(e) => handleChange("bedroom", e.target.value)}
-              className="h-9 text-xs bg-background"
-            />
+              <Input
+                id="bedroom"
+                type="number"
+                placeholder="0"
+                value={formData.bedroom ?? 0}
+                onChange={(e) => handleChange("bedroom", e.target.value)}
+                className="h-9 text-xs bg-background"
+              />
           </div>
 
           {/* Kamar Mandi */}
@@ -129,14 +129,14 @@ export function StepSpecification({
             <Label htmlFor="bathroom" className="text-xs font-semibold flex items-center gap-1.5">
               <Bath className="w-3.5 h-3.5 text-slate-500" /> Kamar Mandi
             </Label>
-            <Input
-              id="bathroom"
-              type="number"
-              placeholder="2"
-              value={formData.bathroom || ""}
-              onChange={(e) => handleChange("bathroom", e.target.value)}
-              className="h-9 text-xs bg-background"
-            />
+              <Input
+                id="bathroom"
+                type="number"
+                placeholder="0"
+                value={formData.bathroom ?? 0}
+                onChange={(e) => handleChange("bathroom", e.target.value)}
+                className="h-9 text-xs bg-background"
+              />
           </div>
 
           {/* Garasi */}
@@ -184,14 +184,14 @@ export function StepSpecification({
             <Label htmlFor="land_area" className="text-xs font-semibold flex items-center gap-1.5">
               <Maximize2 className="w-3.5 h-3.5 text-slate-500" /> Luas Tanah (m²)
             </Label>
-            <Input
-              id="land_area"
-              type="number"
-              placeholder="150"
-              value={formData.land_area || ""}
-              onChange={(e) => handleChange("land_area", e.target.value)}
-              className="h-9 text-xs bg-background"
-            />
+              <Input
+                id="land_area"
+                type="number"
+                placeholder="0"
+                value={formData.land_area ?? 0}
+                onChange={(e) => handleChange("land_area", e.target.value)}
+                className="h-9 text-xs bg-background"
+              />
           </div>
 
           {/* Luas Bangunan */}
@@ -199,14 +199,14 @@ export function StepSpecification({
             <Label htmlFor="building_area" className="text-xs font-semibold flex items-center gap-1.5">
               <Home className="w-3.5 h-3.5 text-slate-500" /> Luas Bangunan (m²)
             </Label>
-            <Input
-              id="building_area"
-              type="number"
-              placeholder="120"
-              value={formData.building_area || ""}
-              onChange={(e) => handleChange("building_area", e.target.value)}
-              className="h-9 text-xs bg-background"
-            />
+              <Input
+                id="building_area"
+                type="number"
+                placeholder="0"
+                value={formData.building_area ?? 0}
+                onChange={(e) => handleChange("building_area", e.target.value)}
+                className="h-9 text-xs bg-background"
+              />
           </div>
 
           {/* Jumlah Lantai */}

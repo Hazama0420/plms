@@ -1,0 +1,48 @@
+export const id = {
+  common: {
+    save: "Simpan",
+    cancel: "Batal",
+    viewDetails: "Lihat Detail",
+    add: "Tambah",
+    applyMortgage: "Ajukan KPR",
+    contactAgent: "Hubungi Agen",
+    search: "Cari",
+    loading: "Memuat...",
+    success: "Berhasil",
+    error: "Terjadi kesalahan",
+  },
+  navigation: {
+    properties: "Properti",
+    projects: "Proyek",
+    agents: "Agen",
+    kpr: "KPR",
+    crm: "CRM",
+    dashboard: "Dashboard",
+    settings: "Pengaturan",
+    login: "Masuk",
+    register: "Daftar",
+    logout: "Keluar",
+  },
+  properties: {
+    title: "Daftar Properti",
+    myProperties: "Properti Saya",
+    advancedFilter: "Filter",
+    price: "Harga",
+    location: "Lokasi",
+    specs: "Spesifikasi",
+    landArea: "Luas Tanah",
+    buildingArea: "Luas Bangunan",
+    bedrooms: "Kamar Tidur",
+    bathrooms: "Kamar Mandi",
+  },
+  crm: {
+    leads: "Leads",
+    followUp: "Follow-up",
+    surveys: "Survei",
+    deals: "Deals",
+  },
+  settings: {
+    title: "Pengaturan",
+    language: "Bahasa",
+  }
+};

@@ -1,15 +1,15 @@
 // components/property-detail/PropertyAgentCard.tsx
 "use client";
 
-import { User, MessageCircle, Phone, BadgeCheck, Shield, CalendarCheck } from "lucide-react";
+import { User, MessageCircle, BadgeCheck, Shield, CalendarCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { useTranslation } from "@/hooks/use-translation";
 
 interface PropertyAgentCardProps {
   agentName: string;
   agentAvatar?: string | null;
   agentPhone?: string | null;
-  agentRole?: string | null;
   onRequestWhatsApp: () => void;
   onRequestInquiry: () => void;
 }
@@ -17,10 +17,11 @@ interface PropertyAgentCardProps {
 export function PropertyAgentCard({
   agentName,
   agentAvatar,
-  agentRole = "Konsultan Properti Resmi",
   onRequestWhatsApp,
   onRequestInquiry,
 }: PropertyAgentCardProps) {
+  const { t } = useTranslation();
+
   const initials = agentName
     .split(" ")
     .map((n) => n[0])
@@ -33,7 +34,7 @@ export function PropertyAgentCard({
       <div className="bg-muted/30 border-b border-border/40 px-5 py-3 flex items-center justify-between">
         <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
           <Shield className="w-3.5 h-3.5" />
-          Agen Penanggung Jawab
+          {t("propertyDetail.agent.title")}
         </span>
         <BadgeCheck className="w-4 h-4 text-emerald-600" />
       </div>
@@ -54,10 +55,10 @@ export function PropertyAgentCard({
               <BadgeCheck className="w-4 h-4 text-emerald-600 shrink-0" />
             </h3>
             <p className="text-xs text-muted-foreground font-medium truncate mt-0.5">
-              Inland Property Consultant
+              {t("propertyDetail.agent.role")}
             </p>
             <span className="inline-block mt-1 text-[10px] font-semibold text-emerald-600">
-              Resmi & Terverifikasi
+              {t("propertyDetail.agent.verified")}
             </span>
           </div>
         </div>
@@ -70,7 +71,7 @@ export function PropertyAgentCard({
             onClick={onRequestWhatsApp}
           >
             <MessageCircle className="w-4 h-4 shrink-0 fill-current" />
-            <span>Chat Agen via WhatsApp</span>
+            <span>{t("propertyDetail.agent.chatWa")}</span>
           </Button>
 
           <Button
@@ -80,12 +81,12 @@ export function PropertyAgentCard({
             onClick={onRequestInquiry}
           >
             <CalendarCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-            <span>Jadwalkan Kunjungan / Survei</span>
+            <span>{t("propertyDetail.agent.scheduleVisit")}</span>
           </Button>
         </div>
 
         <p className="text-[11px] text-muted-foreground text-center leading-relaxed">
-          Tanyakan ketersediaan unit, negosiasi harga, atau pengajuan KPR langsung dengan agen terpercaya.
+          {t("propertyDetail.agent.note")}
         </p>
       </div>
     </div>

@@ -341,9 +341,6 @@ export function PropertyDetailClient({
             {/* Map */}
             <PropertyLocationMap
               addressFormatted={formattedAddressText}
-              street={addressObj?.street_address}
-              rtRw={addressObj?.rt_rw}
-              village={addressObj?.village_name || addressObj?.village}
               district={addressObj?.district_name || addressObj?.district}
               city={addressObj?.city_name || addressObj?.city}
               province={addressObj?.province_name || addressObj?.province}

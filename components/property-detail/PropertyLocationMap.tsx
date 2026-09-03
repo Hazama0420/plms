@@ -1,14 +1,11 @@
 // components/property-detail/PropertyLocationMap.tsx
 "use client";
 
-import { MapPin, Navigation, ExternalLink } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { MapPin, ExternalLink } from "lucide-react";
+import { useTranslation } from "@/hooks/use-translation";
 
 interface PropertyLocationMapProps {
   addressFormatted: string;
-  street?: string | null;
-  rtRw?: string | null;
-  village?: string | null;
   district?: string | null;
   city?: string | null;
   province?: string | null;
@@ -19,9 +16,6 @@ interface PropertyLocationMapProps {
 
 export function PropertyLocationMap({
   addressFormatted,
-  street,
-  rtRw,
-  village,
   district,
   city,
   province,
@@ -29,6 +23,7 @@ export function PropertyLocationMap({
   latitude,
   longitude,
 }: PropertyLocationMapProps) {
+  const { t } = useTranslation();
   const hasCoordinates =
     typeof latitude === "number" &&
     typeof longitude === "number" &&
@@ -46,7 +41,7 @@ export function PropertyLocationMap({
       <div className="flex items-center justify-between">
         <h2 className="text-base sm:text-lg font-bold text-foreground tracking-tight flex items-center gap-2">
           <MapPin className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
-          <span>Lokasi & Lingkungan Sekitar</span>
+          <span>{t("propertyDetail.location.title")}</span>
         </h2>
 
         <a
@@ -55,7 +50,7 @@ export function PropertyLocationMap({
           rel="noopener noreferrer"
           className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:underline"
         >
-          <span>Buka di Google Maps</span>
+          <span>{t("propertyDetail.location.openInMaps")}</span>
           <ExternalLink className="w-3.5 h-3.5" />
         </a>
       </div>
@@ -69,22 +64,22 @@ export function PropertyLocationMap({
         <div className="flex flex-wrap gap-2 text-xs">
           {district && (
             <span className="px-2.5 py-1 rounded-lg bg-background border border-border/60 text-muted-foreground font-medium">
-              Kecamatan: <b className="text-foreground">{district}</b>
+              {t("propertyDetail.location.district")} <b className="text-foreground">{district}</b>
             </span>
           )}
           {city && (
             <span className="px-2.5 py-1 rounded-lg bg-background border border-border/60 text-muted-foreground font-medium">
-              Kota/Kab: <b className="text-foreground">{city}</b>
+              {t("propertyDetail.location.city")} <b className="text-foreground">{city}</b>
             </span>
           )}
           {province && (
             <span className="px-2.5 py-1 rounded-lg bg-background border border-border/60 text-muted-foreground font-medium">
-              Provinsi: <b className="text-foreground">{province}</b>
+              {t("propertyDetail.location.province")} <b className="text-foreground">{province}</b>
             </span>
           )}
           {postalCode && (
             <span className="px-2.5 py-1 rounded-lg bg-background border border-border/60 text-muted-foreground font-medium">
-              Kode Pos: <b className="text-foreground">{postalCode}</b>
+              {t("propertyDetail.location.postalCode")} <b className="text-foreground">{postalCode}</b>
             </span>
           )}
         </div>

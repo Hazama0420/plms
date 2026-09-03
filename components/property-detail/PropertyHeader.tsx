@@ -3,6 +3,7 @@
 
 import { Badge } from "@/components/ui/badge";
 import { MapPin, ShieldCheck, Tag } from "lucide-react";
+import { useTranslation } from "@/hooks/use-translation";
 
 interface PropertyHeaderProps {
   title: string;
@@ -27,6 +28,8 @@ export function PropertyHeader({
   pricePerMeter,
   location,
 }: PropertyHeaderProps) {
+  const { t } = useTranslation();
+
   const isRent =
     listingType === "sewa" ||
     listingType === "disewa" ||
@@ -52,7 +55,7 @@ export function PropertyHeader({
           }`}
         >
           <Tag className="w-3 h-3 mr-1 inline" />
-          {isRent ? "DISEWAKAN" : "DIJUAL"}
+          {isRent ? t("propertyDetail.forRent") : t("propertyDetail.forSale")}
         </Badge>
 
         <span className="font-mono text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-md">
@@ -61,7 +64,7 @@ export function PropertyHeader({
 
         <span className="ml-auto inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md">
           <ShieldCheck className="w-3.5 h-3.5" />
-          Listing Terverifikasi
+          {t("propertyDetail.verifiedListing")}
         </span>
       </div>
 

@@ -5,6 +5,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
+import { useTranslation } from "@/hooks/use-translation";
 import { supabase } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -51,6 +52,7 @@ const GoogleIcon = () => (
 export default function LoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { t } = useTranslation();
 
   // ─── Deteksi client-side rendering ──────────────────────────────────────
   const [isClient, setIsClient] = useState(false);
@@ -81,11 +83,11 @@ export default function LoginPage() {
 
       if (error) {
         if (error.message.includes("Email not confirmed")) {
-          setError("Email belum diverifikasi. Silakan cek inbox atau spam Anda.");
-          toast.error("Email belum diverifikasi.");
+          setError(t("auth.unverifiedEmail"));
+          toast.error(t("auth.unverifiedEmail"));
         } else if (error.message.includes("Invalid login credentials")) {
-          setError("Email atau password yang Anda masukkan salah.");
-          toast.error("Email atau password salah.");
+          setError(t("auth.invalidCredentials"));
+          toast.error(t("auth.invalidCredentials"));
         } else {
           setError(error.message);
           toast.error(error.message);
@@ -93,7 +95,7 @@ export default function LoginPage() {
         return;
       }
 
-      toast.success("Login berhasil! Selamat datang.");
+      toast.success(t("auth.loginSuccess"));
       router.push("/dashboard");
       router.refresh();
     } catch (err: any) {
@@ -113,13 +115,13 @@ export default function LoginPage() {
       });
       if (error) throw error;
     } catch (err: any) {
-      toast.error(`Gagal login dengan Google: ${err.message || "Silakan coba lagi."}`);
+      toast.error(`${t("auth.googleLoginFail")}${err.message || "Silakan coba lagi."}`);
     }
   };
 
   const handleResendVerification = async () => {
     if (!email) {
-      toast.warning("Masukkan email Anda terlebih dahulu");
+      toast.warning(t("auth.resendVerificationReq"));
       return;
     }
     try {
@@ -127,9 +129,9 @@ export default function LoginPage() {
         type: "signup",
         email: email,
       });
-      toast.success("Email verifikasi dikirim ulang. Cek inbox/spam Anda.");
+      toast.success(t("auth.resendVerificationSuccess"));
     } catch (err: any) {
-      toast.error(err.message || "Gagal mengirim verifikasi.");
+      toast.error(err.message || t("auth.resendVerificationFail"));
     }
   };
 
@@ -169,7 +171,7 @@ export default function LoginPage() {
               <span className="text-slate-100">Property</span>
             </CardTitle>
             <CardDescription className="text-xs text-slate-300/80 font-medium">
-              Property Listing & CRM Management System
+              {t("auth.systemDesc")}
             </CardDescription>
           </div>
         </CardHeader>
@@ -181,10 +183,10 @@ export default function LoginPage() {
               <Ban className="h-4 w-4 shrink-0 mt-0.5 text-rose-400" />
               <div className="flex-1">
                 <p className="font-medium">
-                  Akun Anda dinonaktifkan oleh admin.
+                  {t("auth.suspendedTitle")}
                 </p>
                 <p className="text-[11px] text-slate-300 mt-0.5 leading-relaxed">
-                  Silakan hubungi administrator Inland Property untuk informasi lebih lanjut.
+                  {t("auth.suspendedDesc")}
                 </p>
               </div>
             </div>
@@ -197,15 +199,15 @@ export default function LoginPage() {
                 <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-rose-400" />
                 <div className="flex-1 space-y-1">
                   <p className="font-medium leading-relaxed">{error}</p>
-                  {error.includes("verifikasi") && (
+                  {error.includes(t("auth.unverifiedEmail")) || error.includes("verifikasi") ? (
                     <button
                       type="button"
                       onClick={handleResendVerification}
                       className="text-emerald-300 hover:underline font-bold text-[11px] block cursor-pointer"
                     >
-                      Kirim ulang email verifikasi sekarang →
+                      {t("auth.resendVerificationBtn")}
                     </button>
-                  )}
+                  ) : null}
                 </div>
               </div>
             )}
@@ -213,14 +215,14 @@ export default function LoginPage() {
             {/* INPUT EMAIL */}
             <div className="space-y-1.5">
               <Label htmlFor="email" className="text-xs font-semibold text-slate-200">
-                Alamat Email
+                {t("auth.emailLabel")}
               </Label>
               <div className="relative">
                 <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                 <Input
                   id="email"
                   type="email"
-                  placeholder="nama@email.com"
+                  placeholder={t("auth.emailPlaceholder")}
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="pl-10 h-10 text-xs rounded-xl bg-slate-900/50 border-white/20 text-white placeholder:text-slate-400 focus-visible:ring-emerald-400 focus-visible:border-emerald-400 transition-all"
@@ -233,13 +235,13 @@ export default function LoginPage() {
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
                 <Label htmlFor="password" className="text-xs font-semibold text-slate-200">
-                  Password
+                  {t("auth.passwordLabel")}
                 </Label>
                 <Link
                   href="/forgot-password"
                   className="text-[11px] text-emerald-400 hover:underline font-medium"
                 >
-                  Lupa password?
+                  {t("auth.forgotPasswordLink")}
                 </Link>
               </div>
               <div className="relative">
@@ -247,7 +249,7 @@ export default function LoginPage() {
                 <Input
                   id="password"
                   type={showPassword ? "text" : "password"}
-                  placeholder="••••••••"
+                  placeholder={t("auth.passwordPlaceholder")}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="pl-10 pr-10 h-10 text-xs rounded-xl bg-slate-900/50 border-white/20 text-white placeholder:text-slate-400 focus-visible:ring-emerald-400 focus-visible:border-emerald-400 transition-all"
@@ -272,7 +274,7 @@ export default function LoginPage() {
                 className="rounded-md border-white/30 data-[state=checked]:bg-emerald-500 data-[state=checked]:border-emerald-500"
               />
               <Label htmlFor="remember" className="text-xs text-slate-300 font-medium cursor-pointer">
-                Ingat saya di perangkat ini
+                {t("auth.rememberMe")}
               </Label>
             </div>
 
@@ -285,11 +287,11 @@ export default function LoginPage() {
               {loading ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  Memproses Login...
+                  {t("auth.processingLogin")}
                 </>
               ) : (
                 <>
-                  <LogIn className="w-4 h-4" /> Masuk ke Akun
+                  <LogIn className="w-4 h-4" /> {t("auth.loginBtn")}
                 </>
               )}
             </Button>
@@ -302,7 +304,7 @@ export default function LoginPage() {
             </div>
             <div className="relative flex justify-center text-[10px] uppercase font-bold tracking-wider">
               <span className="bg-slate-900/80 px-2.5 py-0.5 rounded-full text-slate-300 border border-white/10 backdrop-blur-md">
-                Atau
+                {t("auth.or")}
               </span>
             </div>
           </div>
@@ -315,7 +317,7 @@ export default function LoginPage() {
             className="w-full h-10 text-xs font-semibold rounded-xl bg-white/10 border-white/25 text-white hover:bg-white/20 hover:text-white transition gap-2.5 cursor-pointer backdrop-blur-md"
           >
             <GoogleIcon />
-            <span>Masuk dengan Google</span>
+            <span>{t("auth.googleBtn")}</span>
           </Button>
 
           {/* TOMBOL DASHBOARD MODE TAMU */}
@@ -326,18 +328,18 @@ export default function LoginPage() {
             className="w-full h-10 text-xs font-semibold rounded-xl text-emerald-300 hover:bg-emerald-500/20 hover:text-emerald-200 border border-emerald-500/35 gap-2 cursor-pointer mt-2 backdrop-blur-md"
           >
             <User className="w-4 h-4 text-emerald-400" />
-            Jelajahi Dashboard (Mode Tamu)
+            {t("auth.guestBtn")}
             <ArrowRight className="w-3.5 h-3.5 ml-auto text-emerald-400" />
           </Button>
 
           {/* LINK DAFTAR */}
           <p className="text-center text-xs text-slate-300 pt-2">
-            Belum punya akun?{" "}
+            {t("auth.noAccount")}{" "}
             <Link
               href="/register"
               className="text-emerald-400 hover:underline font-bold"
             >
-              Daftar Sekarang
+              {t("auth.registerLink")}
             </Link>
           </p>
 

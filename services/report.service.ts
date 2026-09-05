@@ -326,10 +326,9 @@ export const reportService = {
       const { data, error } = await supabase
         .from("property_address")
         .select(`
-          city_id,
-          address,
-          cities(name),
-          districts(name)
+          city_name,
+          district_name,
+          address
         `);
 
       if (error) throw error;
@@ -337,23 +336,7 @@ export const reportService = {
       const counts: Record<string, { name: string; count: number }> = {};
 
       data?.forEach((item: any) => {
-        let locationName = "";
-
-        if (item.cities) {
-          if (Array.isArray(item.cities) && item.cities.length > 0) {
-            locationName = item.cities[0]?.name;
-          } else if (typeof item.cities === "object" && item.cities.name) {
-            locationName = item.cities.name;
-          }
-        }
-
-        if (!locationName && item.districts) {
-          if (Array.isArray(item.districts) && item.districts.length > 0) {
-            locationName = item.districts[0]?.name;
-          } else if (typeof item.districts === "object" && item.districts.name) {
-            locationName = item.districts.name;
-          }
-        }
+        let locationName = item.city_name || item.district_name || "";
 
         if (!locationName && item.address) {
           const addressParts = item.address.split(",");
@@ -370,7 +353,7 @@ export const reportService = {
           .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1))
           .join(" ");
 
-        const key = item.city_id || formattedName;
+        const key = item.city_name || formattedName;
 
         if (!counts[key]) {
           counts[key] = { name: formattedName, count: 0 };

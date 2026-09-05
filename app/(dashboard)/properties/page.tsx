@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { formatLocationShort } from "@/lib/property-address";
 import { supabase } from "@/lib/supabase/client";
 import { useProperties } from "@/hooks/use-properties";
+import { NumberedPagination } from "@/components/properties/NumberedPagination";
 import type { AdvancedFilter, PropertyFilter } from "@/types/property.types";
 import { WatermarkedImage } from "@/components/ui/WatermarkedImage";
 import { Button } from "@/components/ui/button";
@@ -31,6 +32,7 @@ import { cn } from "@/lib/utils";
 
 // 🔍 IMPORT KOMPONEN PENCARIAN DASHBOARD
 import { DashboardPropertySearch } from "@/components/dashboard/DashboardPropertySearch";
+import { PropertyCard } from "@/components/properties/PropertyCard";
 
 // 📝 IMPORT MODAL INQUIRY BERSAMA
 import { LeadCaptureModal } from "@/components/inquiry/LeadCaptureModal";
@@ -52,11 +54,15 @@ import {
   Edit,
   Trash2,
   MoreVertical,
-  Ruler,
+  Maximize2,
   ChevronLeft,
   ChevronRight,
   Sparkles,
 } from "lucide-react";
+
+import { useTranslation } from "@/hooks/use-translation";
+
+import { PageHeader } from "@/components/dashboard/PageHeader";
 
 export interface PropertyItem {
   id: string;
@@ -79,6 +85,7 @@ export interface PropertyItem {
   is_featured?: boolean;
   uploader_name: string;
   uploader_avatar: string;
+  slug?: string;
 }
 
 const DEFAULT_FALLBACK_IMAGE =
@@ -218,15 +225,18 @@ const mapPropertyItem = (
     is_featured: p.is_featured || false,
     uploader_name: uploaderName,
     uploader_avatar: uploaderAvatar,
+    slug: p.slug || undefined,
   };
 };
 
 function PropertiesCatalogContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { t } = useTranslation();
 
   // PARAMETER URL
   const qParam = searchParams.get("q") || searchParams.get("search") || "";
+  const pageParam = searchParams.get("page");
   const listingTypeParam = searchParams.get("listing_type") || searchParams.get("transaction_type") || "all";
   const propertyTypeParam = searchParams.get("property_type") || searchParams.get("type") || searchParams.get("category") || "all";
   const viewParam = searchParams.get("view");
@@ -423,6 +433,7 @@ function PropertiesCatalogContent() {
         : null;
 
     const sortByPrice = sortParam === "price_asc" || sortParam === "price_desc";
+    const pageNum = pageParam ? parseInt(pageParam, 10) : 1;
 
     return {
       search: qParam.trim(),
@@ -434,6 +445,7 @@ function PropertiesCatalogContent() {
       sort_by: sortByPrice ? "price" : "created_at",
       sort_order: sortParam === "price_asc" ? "asc" : "desc",
       limit: 12,
+      page: isNaN(pageNum) || pageNum < 1 ? 1 : pageNum,
       advanced,
     };
   }, [
@@ -454,9 +466,10 @@ function PropertiesCatalogContent() {
     sortParam,
     isFeaturedParam,
     isGuestOrViewer,
-    isSuperAdmin,
     scopeMode,
+    isSuperAdmin,
     currentUser?.id,
+    pageParam,
   ]);
 
   const {
@@ -466,8 +479,6 @@ function PropertiesCatalogContent() {
     totalItems,
     totalPages,
     page: currentPage,
-    nextPage,
-    prevPage,
   } = useProperties(queryFilters);
 
   // Dihitung dari parameter URL, bukan dari `hasActiveFilters` milik hook:
@@ -577,9 +588,9 @@ function PropertiesCatalogContent() {
     }).format(val || 0);
   };
 
-  const goToDetail = (id: string, e?: React.MouseEvent) => {
+  const goToDetail = (prop: PropertyItem, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    router.push(`/properties/${id}`);
+    router.push(`/properties/${prop.slug || prop.id}`);
   };
 
   const handleWhatsAppClick = (property: PropertyItem, e?: React.MouseEvent) => {
@@ -604,156 +615,119 @@ function PropertiesCatalogContent() {
   const filteredProperties = properties;
 
   return (
-    <div className="space-y-4 sm:space-y-6 pb-24 max-w-[1550px] w-full mx-auto px-3 sm:px-8 bg-background/50 min-h-screen overflow-x-hidden">
-      {/* 1. HEADER PAGE */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-border/60 pb-4 pt-2">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-lg sm:text-2xl font-bold tracking-tight text-foreground">
-              {isGuestOrViewer
-                ? "Katalog Properti"
-                : scopeMode === "my_properties"
-                ? "Portofolio Saya"
-                : "Katalog Perusahaan"}
-            </h1>
-            <Badge variant="outline" className="text-[10px] sm:text-xs font-semibold bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30 px-2 py-0.5">
-              {isGuestOrViewer ? "Klien" : scopeMode === "my_properties" ? "Pribadi" : "Perusahaan"}
-            </Badge>
-          </div>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Kelola dan cari portofolio properti dengan mudah dan cepat.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2 justify-between sm:justify-end flex-wrap sm:flex-nowrap">
-          {/* Toggle View Mode */}
-          <div className="flex items-center border border-border/80 rounded-xl p-0.5 bg-card shadow-2xs">
-            <Button
-              variant={viewMode === "grid" ? "default" : "ghost"}
-              size="sm"
-              onClick={() => setViewMode("grid")}
-              className={cn("h-8 px-2.5 text-xs font-semibold gap-1.5 rounded-lg cursor-pointer", viewMode === "grid" ? "bg-emerald-600 text-white hover:bg-emerald-700" : "text-muted-foreground")}
-            >
-              <LayoutGrid className="w-3.5 h-3.5" /> Kartu
-            </Button>
-            <Button
-              variant={viewMode === "table" ? "default" : "ghost"}
-              size="sm"
-              onClick={() => setViewMode("table")}
-              className={cn("h-8 px-2.5 text-xs font-semibold gap-1.5 rounded-lg cursor-pointer", viewMode === "table" ? "bg-emerald-600 text-white hover:bg-emerald-700" : "text-muted-foreground")}
-            >
-              <List className="w-3.5 h-3.5" /> Tabel
-            </Button>
-          </div>
-
-          <div className="flex items-center gap-1.5">
-            <Button variant="outline" size="icon" onClick={() => refetch?.()} className="h-8 w-8 sm:h-9 sm:w-9 rounded-xl border-border/80 bg-card cursor-pointer">
-              <RefreshCw className="w-3.5 h-3.5 text-muted-foreground" />
-            </Button>
-
-            {canCreateProperty && (
-              <Button
-                onClick={() => router.push("/properties/create")}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold gap-1.5 h-8 sm:h-9 px-3 sm:px-4 rounded-xl cursor-pointer shadow-xs"
-              >
-                <Plus className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> <span className="hidden xs:inline">Tambah Properti</span><span className="xs:hidden">Tambah</span>
-              </Button>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* 2. TOGGLE SCOPE (AGEN/ADMIN) */}
-      {!isGuestOrViewer && (
-        <div className="flex items-center justify-between bg-muted/40 p-1 sm:p-1.5 rounded-xl border border-border/60">
-          <div className="flex items-center gap-1 sm:gap-2 w-full sm:w-auto">
-            <Button
-              variant={scopeMode === "my_properties" ? "default" : "ghost"}
-              size="sm"
-              onClick={() => setScopeMode("my_properties")}
-              className={cn(
-                "text-xs h-7 sm:h-8 flex-1 sm:flex-initial rounded-lg gap-1.5 cursor-pointer font-bold px-2.5 sm:px-4",
-                scopeMode === "my_properties" ? "bg-emerald-600 text-white" : "text-muted-foreground hover:bg-background/60"
-              )}
-            >
-              <User className="w-3.5 h-3.5" /> Portofolio Saya
-            </Button>
-            <Button
-              variant={scopeMode === "global" ? "default" : "ghost"}
-              size="sm"
-              onClick={() => setScopeMode("global")}
-              className={cn(
-                "text-xs h-7 sm:h-8 flex-1 sm:flex-initial rounded-lg gap-1.5 cursor-pointer font-bold px-2.5 sm:px-4",
-                scopeMode === "global" ? "bg-emerald-600 text-white" : "text-muted-foreground hover:bg-background/60"
-              )}
-            >
-              <Globe className="w-3.5 h-3.5" /> Katalog Perusahaan
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* 3. HERO SEARCH BANNER
-          Latar gelap penuh, lapisan `opacity-35`, dan gradien hitam di atasnya
-          membuat foto latar nyaris tak terlihat. Ketiganya dilepas: gambar kini
-          tampil apa adanya, dan teks dijaga terbaca lewat `drop-shadow` saja.
-          Salinan judul juga dipangkas supaya area gambar tidak habis oleh
-          tulisan. */}
-      <div className="relative rounded-2xl sm:rounded-3xl overflow-hidden text-white border border-border/40 shadow-lg">
-        <div
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat pointer-events-none"
-          style={{ backgroundImage: "url('/bg-header.webp')" }}
-        />
-
-        <div className="relative z-10 p-4 sm:p-7 md:p-8 space-y-4 sm:space-y-5">
-  <div className="max-w-2xl space-y-2">
-    {/* Badge Header dengan Ikon */}
-    <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/30 text-[10px] sm:text-xs font-bold uppercase tracking-wider mb-1 flex items-center gap-1.5 w-fit backdrop-blur-md px-3 py-1 rounded-full shadow-sm">
-      <Sparkles className="w-3 h-3 text-emerald-400 animate-pulse" />
-      Direktori Properti Terpercaya
-    </Badge>
-
-    {/* Judul Utama dengan Gradien Warna */}
-<h2 className="text-xl sm:text-3xl md:text-4xl font-black tracking-tight leading-tight drop-shadow-md">
-  <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 via-teal-300 to-emerald-200">
-    Temukan Properti Impianmu
-  </span>
-</h2>
-  </div>
-
-          <div className="pt-1">
+    <div className="space-y-4 sm:space-y-6 pb-24 max-w-[1550px] w-full mx-auto px-3 sm:px-8 bg-background/50 min-h-screen overflow-x-hidden pt-4">
+      {/* HEADER PAGE DENGAN BACKGROUND GAMBAR */}
+      <PageHeader
+        title={
+          isGuestOrViewer
+            ? t("properties.catalogTitle")
+            : scopeMode === "my_properties"
+            ? t("properties.myPortfolio")
+            : t("properties.companyCatalog")
+        }
+        subtitle={t("properties.catalogSubtitle")}
+        badge={
+          <Badge variant="outline" className="text-[10px] sm:text-xs font-bold bg-emerald-500/20 text-emerald-100 border-emerald-400/30 px-2.5 py-0.5 backdrop-blur-md">
+            {isGuestOrViewer ? t("properties.clientBadge") : scopeMode === "my_properties" ? t("properties.personalBadge") : t("properties.companyBadge")}
+          </Badge>
+        }
+      >
+        <div className="w-full flex flex-col items-center">
+          {/* SEARCH & FILTER COMPONENT */}
+          <div className="w-full max-w-4xl">
             <DashboardPropertySearch />
           </div>
-        </div>
-      </div>
 
-      {/* 4. RINGKASAN HASIL */}
-      {!loading && filteredProperties.length > 0 && (
-        <div className="flex items-center justify-between gap-3 flex-wrap px-0.5">
-          <p className="text-xs text-muted-foreground">
-            Menampilkan <span className="font-bold text-foreground">{filteredProperties.length}</span> dari{" "}
-            <span className="font-bold text-foreground">{totalItems}</span> properti
-            {activeFilterCount > 0 && (
-              <span className="text-muted-foreground"> · {activeFilterCount} filter aktif</span>
+          {/* TOGGLE SCOPE & RINGKASAN HASIL */}
+          <div className="w-full max-w-4xl mt-6 flex flex-col items-center justify-center gap-4">
+            {!isGuestOrViewer && (
+              <div className="flex items-center bg-white/10 backdrop-blur-md p-1 rounded-xl border border-white/10 shadow-sm">
+                <Button
+                  variant={scopeMode === "my_properties" ? "default" : "ghost"}
+                  size="sm"
+                  onClick={() => setScopeMode("my_properties")}
+                  className={cn(
+                    "text-[10px] sm:text-xs h-8 rounded-lg gap-1.5 cursor-pointer font-bold px-3 transition-colors",
+                    scopeMode === "my_properties" ? "bg-emerald-500 text-emerald-950 shadow-sm" : "text-emerald-50 hover:bg-white/20 hover:text-white"
+                  )}
+                >
+                  <User className="w-3.5 h-3.5" /> {t("properties.myPortfolio")}
+                </Button>
+                <Button
+                  variant={scopeMode === "global" ? "default" : "ghost"}
+                  size="sm"
+                  onClick={() => setScopeMode("global")}
+                  className={cn(
+                    "text-[10px] sm:text-xs h-8 rounded-lg gap-1.5 cursor-pointer font-bold px-3 transition-colors",
+                    scopeMode === "global" ? "bg-emerald-500 text-emerald-950 shadow-sm" : "text-emerald-50 hover:bg-white/20 hover:text-white"
+                  )}
+                >
+                  <Globe className="w-3.5 h-3.5" /> {t("properties.companyCatalog")}
+                </Button>
+              </div>
             )}
-          </p>
 
-          {hasActiveFilters && (
+            {!loading && filteredProperties.length > 0 && (
+              <div className="flex items-center gap-3">
+                <p className="text-xs text-emerald-100/90 font-medium text-center">
+                  {t("properties.showing")} <span className="font-bold text-white">{filteredProperties.length}</span> {t("properties.from")} <span className="font-bold text-white">{totalItems}</span> {t("properties.properties")}
+                </p>
+                {hasActiveFilters && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={clearAllFilters}
+                    className="h-8 px-2.5 text-[10px] sm:text-xs font-bold text-emerald-100 hover:text-white hover:bg-white/20 cursor-pointer rounded-lg backdrop-blur-md border border-white/10"
+                  >
+                    {t("properties.clearFilters")}
+                  </Button>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </PageHeader>
+
+      {/* VIEW CONTROLS & ADD BUTTON (Below Header) */}
+      <div className="flex items-center justify-between gap-3 mb-2 px-1">
+        <div className="flex items-center border border-border/80 rounded-xl p-0.5 bg-card shadow-2xs">
+          <Button
+            variant={viewMode === "grid" ? "default" : "ghost"}
+            size="sm"
+            onClick={() => setViewMode("grid")}
+            className={cn("h-8 px-2.5 text-xs font-semibold gap-1.5 rounded-lg cursor-pointer", viewMode === "grid" ? "bg-emerald-600 text-white hover:bg-emerald-700" : "text-muted-foreground")}
+          >
+            <LayoutGrid className="w-3.5 h-3.5" /> <span className="hidden sm:inline">{t("properties.cards")}</span>
+          </Button>
+          <Button
+            variant={viewMode === "table" ? "default" : "ghost"}
+            size="sm"
+            onClick={() => setViewMode("table")}
+            className={cn("h-8 px-2.5 text-xs font-semibold gap-1.5 rounded-lg cursor-pointer", viewMode === "table" ? "bg-emerald-600 text-white hover:bg-emerald-700" : "text-muted-foreground")}
+          >
+            <List className="w-3.5 h-3.5" /> <span className="hidden sm:inline">{t("properties.table")}</span>
+          </Button>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="icon" onClick={() => refetch?.()} className="h-9 w-9 rounded-xl border-border/80 bg-card cursor-pointer shadow-2xs">
+            <RefreshCw className="w-3.5 h-3.5 text-muted-foreground" />
+          </Button>
+
+          {canCreateProperty && (
             <Button
-              variant="ghost"
-              size="sm"
-              onClick={clearAllFilters}
-              className="h-7 px-2.5 text-xs font-semibold text-muted-foreground hover:text-foreground cursor-pointer rounded-lg"
+              onClick={() => router.push("/properties/create")}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold gap-1.5 h-9 px-3 sm:px-4 rounded-xl cursor-pointer shadow-xs"
             >
-              Hapus semua filter
+              <Plus className="h-4 w-4" /> <span className="hidden sm:inline">{t("properties.addProperty")}</span><span className="sm:hidden">{t("common.add")}</span>
             </Button>
           )}
         </div>
-      )}
+      </div>
 
       {/* 5. MAIN LIST PROPERTI */}
       {loading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5 sm:gap-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6 pt-2">
           {[...Array(8)].map((_, i) => (
             <Skeleton key={i} className="h-72 sm:h-80 w-full rounded-2xl bg-muted/60" />
           ))}
@@ -763,17 +737,17 @@ function PropertiesCatalogContent() {
           <Building2 className="w-10 h-10 sm:w-12 sm:h-12 text-muted-foreground/60 mx-auto" />
           <h3 className="text-xs sm:text-base font-bold text-foreground">
             {hasActiveFilters
-              ? "Tidak ada properti yang cocok"
+              ? t("properties.noMatchTitle")
               : isGuestOrViewer
-              ? "Belum ada listing dipublikasikan"
-              : "Belum ada properti"}
+              ? t("properties.noListingGuestTitle")
+              : t("properties.noPropertyTitle")}
           </h3>
           <p className="text-xs text-muted-foreground max-w-sm mx-auto leading-relaxed">
             {hasActiveFilters
-              ? "Coba longgarkan kriteria pencarian, atau hapus filter untuk melihat seluruh katalog."
+              ? t("properties.noMatchDesc")
               : isGuestOrViewer
-              ? "Listing baru akan muncul di sini begitu dipublikasikan."
-              : "Mulai dengan menambahkan properti pertama Anda ke katalog."}
+              ? t("properties.noListingGuestDesc")
+              : t("properties.noPropertyDesc")}
           </p>
 
           {hasActiveFilters ? (
@@ -782,189 +756,31 @@ function PropertiesCatalogContent() {
               variant="outline"
               className="text-xs font-bold rounded-xl h-9 cursor-pointer"
             >
-              <RefreshCw className="w-3.5 h-3.5 mr-1.5" /> Hapus semua filter
+              <RefreshCw className="w-3.5 h-3.5 mr-1.5" /> {t("properties.clearAllFilters")}
             </Button>
           ) : canCreateProperty ? (
             <Button
               onClick={() => router.push("/properties/create")}
               className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl h-9 cursor-pointer"
             >
-              <Plus className="w-3.5 h-3.5 mr-1.5" /> Tambah Properti
+              <Plus className="w-3.5 h-3.5 mr-1.5" /> {t("properties.addProperty")}
             </Button>
           ) : null}
         </Card>
       ) : viewMode === "grid" ? (
-        /* ================= 🔲 GRID VIEW (RESPONSIF HP BERSINAR) ================= */
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5 sm:gap-5">
-          {filteredProperties.map((prop) => {
-            const isRent = prop.listing_type === "sewa" || prop.listing_type === "disewa" || prop.listing_type === "rent";
-            // Status dan penanggung jawab hanya relevan bagi staf: tamu dan
-            // viewer memang hanya menerima listing yang sudah tayang.
-            const statusBadge = !isGuestOrViewer ? STATUS_BADGE[prop.status] : null;
-            const showNoAgentWarning = !isGuestOrViewer && !prop.assigned_to;
-
-            return (
-              <Card
-                key={prop.id}
-                onClick={() => goToDetail(prop.id)}
-                className="group border border-border/80 shadow-2xs hover:shadow-lg hover:border-emerald-500/50 hover:-translate-y-0.5 transition-all duration-200 rounded-2xl overflow-hidden cursor-pointer flex flex-col justify-between bg-card"
-              >
-                <div>
-                  {/* Foto Properti */}
-                  <div className="relative aspect-[16/10] bg-muted overflow-hidden">
-                    <WatermarkedImage
-                      src={prop.thumbnail}
-                      alt={prop.title}
-                      className="absolute inset-0 w-full h-full"
-                      imageClassName="group-hover:scale-105 transition-transform duration-500 object-cover w-full h-full"
-                      watermarkSize="w-1/3"
-                      watermarkOpacity={0.6}
-                    />
-
-                    {/* Gradien tipis agar kode listing tetap terbaca di foto terang */}
-                    <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-slate-950/60 to-transparent pointer-events-none" />
-
-                    {/* Star Super Admin */}
-                    {isSuperAdmin && (
-                      <button
-                        type="button"
-                        onClick={(e) => handleToggleFeatured(prop, e)}
-                        className="absolute top-2 right-2 p-1.5 rounded-full bg-slate-950/70 backdrop-blur-md transition shadow-xs z-10 cursor-pointer"
-                      >
-                        <Star
-                          className={cn(
-                            "w-3.5 h-3.5",
-                            prop.is_featured ? "fill-amber-400 text-amber-400" : "text-white/70"
-                          )}
-                        />
-                      </button>
-                    )}
-
-                    {/* Badge Tipe Listing + Status + Peringatan Tanpa Agen */}
-                    <div className="absolute top-2 left-2 z-10 flex flex-wrap items-center gap-1 max-w-[calc(100%-3rem)]">
-                      <Badge className={cn("text-[9px] sm:text-[10px] font-bold px-2 py-0.5 uppercase tracking-wide text-white border-0 rounded-md shadow-2xs", isRent ? "bg-amber-600" : "bg-emerald-600")}>
-                        {isRent ? "SEWA" : "JUAL"}
-                      </Badge>
-
-                      {statusBadge && (
-                        <Badge
-                          variant="outline"
-                          className={cn(
-                            "text-[9px] sm:text-[10px] font-bold px-1.5 py-0.5 rounded-md backdrop-blur-sm bg-background/90",
-                            statusBadge.className
-                          )}
-                        >
-                          {statusBadge.label}
-                        </Badge>
-                      )}
-
-                      {showNoAgentWarning && (
-                        <Badge
-                          variant="outline"
-                          className="text-[9px] sm:text-[10px] font-bold px-1.5 py-0.5 rounded-md backdrop-blur-sm bg-background/90 bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/40"
-                          title="Listing tanpa agen penanggung jawab tidak dapat dipublikasikan"
-                        >
-                          Belum ada agen
-                        </Badge>
-                      )}
-                    </div>
-
-                    {/* Kode Listing */}
-                    <div className="absolute bottom-2 right-2 z-10">
-                      <span className="text-[9px] sm:text-[10px] font-mono font-bold text-white bg-slate-950/80 px-1.5 py-0.5 rounded-md backdrop-blur-xs border border-white/10 shadow-2xs">
-                        {prop.listing_code}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Informasi Ringkas Properti */}
-                  <CardContent className="p-3 sm:p-4 space-y-2">
-                    <div className="text-sm sm:text-lg font-extrabold text-emerald-600 dark:text-emerald-400 font-mono tracking-tight">
-                      {formatCurrency(prop.price)}
-                    </div>
-
-                    <div className="flex items-start justify-between gap-2">
-                      <h3
-                        className="font-bold text-xs sm:text-sm text-foreground line-clamp-2 leading-snug group-hover:text-emerald-600 transition-colors flex-1"
-                        title={prop.title}
-                      >
-                        {prop.title}
-                      </h3>
-
-                      <Badge variant="outline" className="text-[9px] sm:text-[10px] font-bold px-1.5 sm:px-2 py-0.5 shrink-0 bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-400 dark:border-emerald-800 rounded-md">
-                        {prop.property_type}
-                      </Badge>
-                    </div>
-
-                    <p className="text-[11px] sm:text-xs text-muted-foreground flex items-center gap-1 truncate">
-                      <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                      <span className="truncate">{prop.location}</span>
-                    </p>
-
-                    {/* Spesifikasi GRID 2 Kolom di Mobile agar Rapi */}
-                    <div className="grid grid-cols-2 gap-x-2 gap-y-1.5 pt-2 text-[11px] sm:text-xs text-muted-foreground font-semibold border-t border-border/60">
-                      <span className="flex items-center gap-1" title="Kamar Tidur">
-                        <Bed className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                        {prop.bedrooms || 0} KT
-                      </span>
-                      <span className="flex items-center gap-1" title="Kamar Mandi">
-                        <Bath className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                        {prop.bathrooms || 0} KM
-                      </span>
-                      <span className="flex items-center gap-1 truncate" title="Luas Bangunan">
-                        <Building2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                        LB {prop.building_area || 0} m²
-                      </span>
-                      <span className="flex items-center gap-1 truncate" title="Luas Tanah">
-                        <Ruler className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                        LT {prop.land_area || 0} m²
-                      </span>
-                    </div>
-                  </CardContent>
-                </div>
-
-                {/* Footer Kartu (Responsif Mobile) */}
-                <CardFooter className="p-2.5 sm:p-3 border-t border-border/60 bg-muted/20 flex items-center justify-between gap-1.5" onClick={(e) => e.stopPropagation()}>
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={(e) => handleWhatsAppClick(prop, e)}
-                      className="h-7 sm:h-8 px-2.5 text-[11px] sm:text-xs font-bold rounded-lg sm:rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1 shadow-2xs transition-all cursor-pointer"
-                      title="Hubungi WhatsApp"
-                    >
-                      <svg className="w-3 h-3 sm:w-3.5 sm:h-3.5 fill-current" viewBox="0 0 24 24">
-                        <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.285-.143-1.687-.833-1.947-.928-.26-.095-.45-.143-.639.143-.19.286-.736.928-.903 1.118-.167.19-.333.214-.618.071-.285-.143-1.207-.445-2.299-1.419-.85-.759-1.424-1.697-1.591-1.983-.167-.286-.018-.44.125-.582.129-.128.285-.333.428-.5.143-.167.19-.286.285-.476.095-.19.048-.357-.024-.5-.071-.143-.639-1.537-.876-2.106-.23-.554-.464-.479-.639-.488-.165-.008-.356-.01-.547-.01-.19 0-.5.071-.761.357-.26.286-1 .976-1 2.381 0 1.405 1.023 2.762 1.166 2.952.143.19 2.013 3.074 4.877 4.311.681.294 1.213.47 1.627.601.684.217 1.307.186 1.8.113.55-.082 1.687-.69 1.925-1.357.238-.667.238-1.238.167-1.357-.07-.119-.26-.19-.545-.333z"/>
-                      </svg>
-                      <span>WA</span>
-                    </button>
-
-                    <Button variant="ghost" size="icon" onClick={(e) => handleSendWABrochure(prop, e)} className="h-7 w-7 sm:h-8 sm:w-8 text-emerald-600 hover:bg-emerald-500/10 rounded-lg sm:rounded-xl cursor-pointer" title="Kirim Brosur WA">
-                      <Share2 className="w-3.5 h-3.5" />
-                    </Button>
-                  </div>
-
-                  <div className="flex items-center gap-1.5 min-w-0 shrink-0" title={`Agen: ${prop.uploader_name}`}>
-                    <span className="text-[11px] sm:text-xs text-muted-foreground font-semibold truncate max-w-[70px] sm:max-w-[85px] text-right">
-                      {prop.uploader_name}
-                    </span>
-                    <div className="relative w-5 h-5 sm:w-6 sm:h-6 rounded-full overflow-hidden border border-border bg-emerald-100 text-emerald-800 font-bold text-[10px] flex items-center justify-center shrink-0 shadow-2xs">
-                      {prop.uploader_name ? prop.uploader_name.slice(0, 2).toUpperCase() : "IP"}
-                      {prop.uploader_avatar && (
-                        <img
-                          src={prop.uploader_avatar}
-                          alt={prop.uploader_name}
-                          className="absolute inset-0 w-full h-full object-cover"
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).style.display = "none";
-                          }}
-                        />
-                      )}
-                    </div>
-                  </div>
-                </CardFooter>
-              </Card>
-            );
-          })}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6 pt-2">
+          {filteredProperties.map((prop) => (
+            <PropertyCard
+              key={prop.id}
+              prop={prop}
+              isSuperAdmin={isSuperAdmin}
+              isGuestOrViewer={isGuestOrViewer}
+              onToggleFeatured={handleToggleFeatured}
+              onDelete={handleDelete}
+              onClick={goToDetail}
+              onEdit={(id) => router.push(`/properties/edit/${id}`)}
+            />
+          ))}
         </div>
       ) : (
         /* ================= 📋 TABLE VIEW (DENGAN SCROLL CONTAINER BONGKAR HP) ================= */
@@ -973,13 +789,13 @@ function PropertiesCatalogContent() {
             <Table className="min-w-[700px] sm:min-w-full">
               <TableHeader className="bg-muted/50">
                 <TableRow className="border-border/60">
-                  <TableHead className="text-xs font-bold text-foreground py-3 px-3.5">Properti</TableHead>
-                  <TableHead className="text-xs font-bold text-foreground py-3 px-3.5">Tipe</TableHead>
-                  <TableHead className="text-xs font-bold text-foreground py-3 px-3.5">Harga</TableHead>
-                  <TableHead className="text-xs font-bold text-foreground py-3 px-3.5">Spesifikasi</TableHead>
-                  <TableHead className="text-xs font-bold text-foreground py-3 px-3.5">Lokasi</TableHead>
-                  <TableHead className="text-xs font-bold text-foreground py-3 px-3.5">Agen</TableHead>
-                  <TableHead className="text-right text-xs font-bold text-foreground py-3 px-3.5">Aksi</TableHead>
+                  <TableHead className="text-xs font-bold text-foreground py-3 px-3.5">{t("properties.tableProperty")}</TableHead>
+                  <TableHead className="text-xs font-bold text-foreground py-3 px-3.5">{t("properties.tableType")}</TableHead>
+                  <TableHead className="text-xs font-bold text-foreground py-3 px-3.5">{t("properties.tablePrice")}</TableHead>
+                  <TableHead className="text-xs font-bold text-foreground py-3 px-3.5">{t("properties.tableSpecs")}</TableHead>
+                  <TableHead className="text-xs font-bold text-foreground py-3 px-3.5">{t("properties.tableLocation")}</TableHead>
+                  <TableHead className="text-xs font-bold text-foreground py-3 px-3.5">{t("properties.tableAgent")}</TableHead>
+                  <TableHead className="text-right text-xs font-bold text-foreground py-3 px-3.5">{t("properties.tableAction")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -989,7 +805,7 @@ function PropertiesCatalogContent() {
                   const showNoAgentWarning = !isGuestOrViewer && !prop.assigned_to;
 
                   return (
-                    <TableRow key={prop.id} className="hover:bg-muted/40 border-border/60 cursor-pointer" onClick={() => goToDetail(prop.id)}>
+                    <TableRow key={prop.id} className="hover:bg-muted/40 border-border/60 cursor-pointer" onClick={() => goToDetail(prop)}>
                       <TableCell className="font-medium py-3 px-3.5">
                         <div className="flex items-center gap-2.5">
                           <WatermarkedImage
@@ -1013,9 +829,9 @@ function PropertiesCatalogContent() {
                                 <Badge
                                   variant="outline"
                                   className="text-[9px] font-bold px-1.5 py-0 rounded bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/40"
-                                  title="Listing tanpa agen penanggung jawab tidak dapat dipublikasikan"
+                                  title={t("properties.noAgentWarningTitle")}
                                 >
-                                  Belum ada agen
+                                  {t("properties.noAgentWarning")}
                                 </Badge>
                               )}
                             </div>
@@ -1024,17 +840,17 @@ function PropertiesCatalogContent() {
                       </TableCell>
                       <TableCell className="py-3 px-3.5">
                         <Badge className={cn("text-[10px] font-bold px-2 py-0.5 rounded-md", isRent ? "bg-amber-600 text-white" : "bg-emerald-600 text-white")}>
-                          {isRent ? "SEWA" : "JUAL"}
+                          {isRent ? t("properties.rent") : t("properties.sell")}
                         </Badge>
                       </TableCell>
-                      <TableCell className="font-extrabold text-emerald-600 dark:text-emerald-400 text-xs whitespace-nowrap font-mono py-3 px-3.5">
+                      <TableCell className="font-extrabold text-emerald-600 dark:text-emerald-400 text-xs whitespace-nowrap font-mono tabular-nums py-3 px-3.5">
                         {formatCurrency(prop.price)}
                       </TableCell>
                       <TableCell className="py-3 px-3.5">
                         <div className="text-xs text-muted-foreground font-medium flex items-center gap-1.5 flex-wrap">
                           <span>{prop.bedrooms || 0} KT</span> • <span>{prop.bathrooms || 0} KM</span> •
                           <span className="inline-flex items-center gap-0.5"><Building2 className="w-3.5 h-3.5 text-emerald-600" /> LB {prop.building_area || 0}m²</span> •
-                          <span className="inline-flex items-center gap-0.5"><Ruler className="w-3.5 h-3.5 text-emerald-600" /> LT {prop.land_area || 0}m²</span>
+                          <span className="inline-flex items-center gap-0.5"><Maximize2 className="w-3.5 h-3.5 text-emerald-600" /> LT {prop.land_area || 0}m²</span>
                         </div>
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground max-w-[150px] truncate py-3 px-3.5">
@@ -1078,10 +894,10 @@ function PropertiesCatalogContent() {
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end" className="rounded-xl">
                                 <DropdownMenuItem onClick={() => router.push(`/properties/edit/${prop.id}`)}>
-                                  <Edit className="w-3.5 h-3.5 mr-2" /> Edit
+                                  <Edit className="w-3.5 h-3.5 mr-2" /> {t("properties.edit")}
                                 </DropdownMenuItem>
                                 <DropdownMenuItem className="text-rose-600" onClick={(e) => handleDelete(prop.id, e)}>
-                                  <Trash2 className="w-3.5 h-3.5 mr-2" /> Hapus
+                                  <Trash2 className="w-3.5 h-3.5 mr-2" /> {t("properties.delete")}
                                 </DropdownMenuItem>
                               </DropdownMenuContent>
                             </DropdownMenu>
@@ -1101,31 +917,13 @@ function PropertiesCatalogContent() {
           Query hanya mengambil 12 baris per halaman. Tanpa navigasi ini,
           properti selebihnya tidak akan pernah bisa dibuka. */}
       {!loading && totalPages > 1 && (
-        <div className="flex items-center justify-between gap-3 flex-wrap pt-1">
-          <p className="text-xs text-muted-foreground">
-            Halaman <span className="font-bold text-foreground">{currentPage}</span> dari{" "}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3">
+          <p className="text-xs text-muted-foreground order-2 sm:order-1">
+            {t("properties.showing")} {t("properties.page").toLowerCase()} <span className="font-bold text-foreground">{currentPage}</span> {t("properties.from")}{" "}
             <span className="font-bold text-foreground">{totalPages}</span>
-            <span className="hidden sm:inline"> · {totalItems} properti</span>
           </p>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={prevPage}
-              disabled={currentPage <= 1}
-              className="h-9 rounded-xl text-xs font-semibold gap-1.5 cursor-pointer disabled:opacity-40"
-            >
-              <ChevronLeft className="w-3.5 h-3.5" /> Sebelumnya
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={nextPage}
-              disabled={currentPage >= totalPages}
-              className="h-9 rounded-xl text-xs font-semibold gap-1.5 cursor-pointer disabled:opacity-40"
-            >
-              Berikutnya <ChevronRight className="w-3.5 h-3.5" />
-            </Button>
+          <div className="w-full sm:w-auto order-1 sm:order-2 flex justify-center">
+            <NumberedPagination currentPage={currentPage} totalPages={totalPages} />
           </div>
         </div>
       )}

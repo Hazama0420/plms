@@ -10,10 +10,13 @@ import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/api-auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendPushToUsers } from "@/lib/onesignal";
+import { ADMIN_ROLES_FOR_QUERY } from "@/lib/notification-helper";
 import { pushTestSchema, validate } from "@/lib/validations";
 
+// Sama seperti pada /api/notifications/send — lihat catatan di sana soal dua
+// ejaan Super Admin di kolom `users.role`.
 const ROLE_GROUPS: Record<"internal" | "viewer" | "all", string[] | null> = {
-  internal: ["super_admin", "admin", "agent", "marketing"],
+  internal: [...ADMIN_ROLES_FOR_QUERY, "agent", "marketing"],
   viewer: ["viewer"],
   all: null,
 };
@@ -67,9 +70,12 @@ export async function POST(request: Request) {
       success: true,
       targeted: userIds.length,
       delivered: push.recipients,
-      // Nol perangkat bukan kegagalan: penerima mungkin belum pernah menekan
-      // "Izinkan", atau External ID-nya belum terdaftar karena belum pernah
+      // Yang dibaca `outcome` dan `delivered`, BUKAN `success`: nol perangkat
+      // tetap dilaporkan sebagai success agar respons endpoint ini tidak
+      // berubah bentuk. "no_recipient" berarti penerima belum pernah menekan
+      // "Izinkan", atau External ID-nya belum tertaut karena belum pernah
       // membuka aplikasi sejak penautan akun diaktifkan.
+      outcome: push.outcome,
       ...(push.skipped ? { note: push.skipped } : {}),
     });
   } catch (error) {

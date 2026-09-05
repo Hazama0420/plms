@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabase/client";
 import { reportService } from "@/services/report.service";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { SUPPORT_MESSAGE_MAX, SUPPORT_MESSAGE_MIN } from "@/lib/support-config";
 
 import {
   Settings,
@@ -16,6 +17,7 @@ import {
   Bell,
   LogOut,
   MessageSquare,
+  MessageCircle,
   Sparkles,
 } from "lucide-react";
 
@@ -31,6 +33,7 @@ import { AppearanceTab, type CatalogViewMode } from "@/components/settings/Appea
 import { NotificationsTab } from "@/components/settings/NotificationsTab";
 import { SystemTab } from "@/components/settings/SystemTab";
 import { ChatAdminModal } from "@/components/settings/ChatAdminModal";
+import { useTranslation } from "@/hooks/use-translation";
 
 type ThemeChoice = "light" | "dark" | "system";
 
@@ -170,6 +173,7 @@ const ADMIN_WHATSAPP_NUMBER = "6281234567890";
 export default function SettingsPage() {
   const router = useRouter();
   const { theme, setTheme } = useTheme();
+  const { t } = useTranslation();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [mounted, setMounted] = useState(false);
@@ -362,13 +366,13 @@ export default function SettingsPage() {
           avatar_url: data?.avatar_url || "",
           role: data?.role || "viewer",
           created_at: user.created_at || "",
-          bio: data?.bio || data?.branding?.bio || "",
-          specialization: data?.specialization || data?.branding?.specialization || "",
-          arebi_number: data?.arebi_number || data?.branding?.arebi_number || "",
-          instagram_url: data?.instagram_url || data?.branding?.instagram_url || "",
-          tiktok_url: data?.tiktok_url || data?.branding?.tiktok_url || "",
-          facebook_url: data?.facebook_url || data?.branding?.facebook_url || "",
-          linkedin_url: data?.linkedin_url || data?.branding?.linkedin_url || "",
+          bio: data?.bio || "",
+          specialization: data?.specialization || "",
+          arebi_number: data?.arebi_number || "",
+          instagram_url: data?.instagram_url || "",
+          tiktok_url: data?.tiktok_url || "",
+          facebook_url: data?.facebook_url || "",
+          linkedin_url: data?.linkedin_url || "",
         });
 
         if (data?.preferences) {
@@ -564,10 +568,7 @@ export default function SettingsPage() {
 
       const { error } = await supabase
         .from("users")
-        .update({
-          ...brandingPayload,
-          branding: brandingPayload,
-        })
+        .update(brandingPayload)
         .eq("id", userId);
 
       if (error) throw error;
@@ -635,44 +636,50 @@ export default function SettingsPage() {
   };
 
   // ===== SEND CHAT TO ADMIN HANDLER =====
+  //
+  // Dikirim lewat /api/support, bukan insert langsung dari peramban. Satu pesan
+  // harus menjadi satu baris notifikasi untuk SETIAP admin, dan RLS melarang
+  // klien menulis baris atas nama akun lain — lihat komentar di route-nya.
   const handleSendAdminMessage = async () => {
-    if (!adminMessage.trim()) {
-      toast.error("Pesan bantuan wajib diisi");
+    const message = adminMessage.trim();
+
+    // Cermin dari supportMessageSchema di lib/validations.ts. Tanpa ini, pesan
+    // 1-9 karakter lolos di sini lalu ditolak server dengan "Data tidak valid."
+    if (message.length < SUPPORT_MESSAGE_MIN) {
+      toast.error(`Pesan terlalu singkat`, {
+        description: `Ceritakan kendala Anda minimal ${SUPPORT_MESSAGE_MIN} karakter agar admin bisa menindaklanjuti.`,
+      });
       return;
     }
 
     setSendingMessage(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const res = await fetch("/api/support", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message }),
+      });
 
-      if (!user) {
-        toast.error("Sesi Anda telah berakhir. Silakan login kembali.");
-        setSendingMessage(false);
-        return;
+      const json = await res.json();
+
+      if (!res.ok || !json.success) {
+        // validate() menjawab 400 dengan `error` generik ("Data tidak valid.")
+        // dan alasan sebenarnya di `details`. Membaca `error` saja membuat
+        // pengirim melihat penolakan tanpa tahu apa yang harus diperbaiki.
+        const detail = Array.isArray(json.details) ? json.details.join(" ") : null;
+        throw new Error(detail ?? json.error ?? "Gagal mengirim pesan bantuan.");
       }
 
-      const { error: insertError } = await supabase
-        .from("support_tickets")
-        .insert({
-          user_id: user.id,
-          user_name: profile.full_name || user.email?.split("@")[0] || "User",
-          user_email: user.email || userEmail,
-          message: adminMessage,
-          status: "open",
-        });
-
-      if (insertError) throw new Error(insertError.message || "Gagal menyimpan ke database");
-
       toast.success("Pesan bantuan berhasil terkirim ke Admin!", {
-        description: "Pesan Anda telah tersimpan di halaman Support Admin.",
+        description: "Admin akan menerima notifikasi dan menindaklanjuti pesan Anda.",
       });
 
       setAdminMessage("");
       setIsChatAdminOpen(false);
-    } catch (error: any) {
+    } catch (error) {
       console.error("Gagal mengirim pesan admin:", error);
       toast.error("Gagal mengirim pesan", {
-        description: error.message || "Terjadi kesalahan saat menyimpan data.",
+        description: error instanceof Error ? error.message : "Terjadi kesalahan saat mengirim data.",
       });
     } finally {
       setSendingMessage(false);
@@ -898,7 +905,7 @@ export default function SettingsPage() {
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
               <Settings className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
-              Pengaturan Sistem & Profil
+              {t("settings.title")}
             </h1>
             <Badge
               variant="outline"
@@ -908,11 +915,13 @@ export default function SettingsPage() {
             </Badge>
           </div>
           <p className="text-xs text-muted-foreground mt-1">
-            Kelola profil pengguna, preferensi visual, keamanan akun, dan bantuan admin
+            {t("settings.subtitle")}
           </p>
         </div>
 
-        <div className="flex items-center gap-2 self-start sm:self-auto">
+        {/* Tiga tombol tidak muat berdampingan di lebar 375px, jadi barisnya
+            dibiarkan membungkus alih-alih memaksa teksnya terpotong. */}
+        <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
           <Button
             variant="default"
             size="sm"
@@ -920,7 +929,19 @@ export default function SettingsPage() {
             className="text-xs h-9 bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 shadow-sm cursor-pointer"
           >
             <MessageSquare className="w-3.5 h-3.5" />
-            Chat Admin Kantor
+            {t("settings.chatAdminBtn")}
+          </Button>
+
+          {/* Jalur cadangan bila pesan internal tidak terkirim — mis. belum ada
+              admin terdaftar, yang membuat /api/support menjawab 503. */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={openWhatsAppAdmin}
+            className="text-xs h-9 gap-1.5 cursor-pointer"
+          >
+            <MessageCircle className="w-3.5 h-3.5" />
+            {t("settings.waAdminBtn")}
           </Button>
 
           <Button
@@ -930,7 +951,7 @@ export default function SettingsPage() {
             className="text-xs h-9 border-rose-200 dark:border-rose-900/50 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 gap-1.5 cursor-pointer"
           >
             <LogOut className="w-3.5 h-3.5" />
-            Keluar Sesi
+            {t("settings.logoutBtn")}
           </Button>
         </div>
       </div>
@@ -951,7 +972,7 @@ export default function SettingsPage() {
             className="text-xs font-semibold gap-1.5 py-2 rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-950 data-[state=active]:shadow-xs cursor-pointer"
           >
             <User className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Profil Saya</span>
+            <span>{t("settings.tabs.profile")}</span>
           </TabsTrigger>
 
           {/* TAB 2: BRANDING & PUBLIK */}
@@ -961,7 +982,7 @@ export default function SettingsPage() {
               className="text-xs font-semibold gap-1.5 py-2 rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-950 data-[state=active]:shadow-xs cursor-pointer"
             >
               <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Branding & Publik</span>
+              <span>{t("settings.tabs.branding")}</span>
             </TabsTrigger>
           )}
 
@@ -971,7 +992,7 @@ export default function SettingsPage() {
             className="text-xs font-semibold gap-1.5 py-2 rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-950 data-[state=active]:shadow-xs cursor-pointer"
           >
             <Sliders className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Tampilan & Tema</span>
+            <span>{t("settings.tabs.appearance")}</span>
           </TabsTrigger>
 
           {/* TAB 4: NOTIFIKASI */}
@@ -980,7 +1001,7 @@ export default function SettingsPage() {
             className="text-xs font-semibold gap-1.5 py-2 rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-950 data-[state=active]:shadow-xs cursor-pointer"
           >
             <Bell className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Notifikasi</span>
+            <span>{t("settings.tabs.notifications")}</span>
           </TabsTrigger>
 
           {/* TAB 5: REGIONAL & SISTEM */}
@@ -989,7 +1010,7 @@ export default function SettingsPage() {
             className="text-xs font-semibold gap-1.5 py-2 rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-950 data-[state=active]:shadow-xs cursor-pointer"
           >
             <Globe className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Regional & Sistem</span>
+            <span>{t("settings.tabs.system")}</span>
           </TabsTrigger>
         </TabsList>
 
@@ -1025,8 +1046,6 @@ export default function SettingsPage() {
             formatJoinDate={formatJoinDate}
             formatCurrency={formatCurrency}
             toWhatsAppLink={toWhatsAppLink}
-            openWhatsAppAdmin={openWhatsAppAdmin}
-            setIsChatAdminOpen={setIsChatAdminOpen}
             handleCopy={handleCopy}
           />
         </TabsContent>
@@ -1092,6 +1111,7 @@ export default function SettingsPage() {
             os={os}
             formatDateTime={formatDateTime}
             lastSignInAt={lastSignInAt}
+            isViewer={!isInternalUser}
           />
         </TabsContent>
       </Tabs>

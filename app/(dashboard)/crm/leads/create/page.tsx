@@ -55,8 +55,8 @@ import { cn } from "@/lib/utils";
 interface Contact {
   id: string;
   full_name: string;
-  phone: string | null;
-  email: string | null;
+  phone?: string | null;
+  email?: string | null;
 }
 
 interface Property {
@@ -303,20 +303,11 @@ export default function CreateLeadPage() {
 
     setQuickContactSaving(true);
     try {
-      const generatedCode = `CNT-${Math.floor(100000 + Math.random() * 900000)}`;
-
-      const { data, error } = await supabase
-        .from("crm_contacts")
-        .insert({
-          contact_code: generatedCode,
-          full_name: quickContactForm.full_name,
-          phone: quickContactForm.phone || null,
-          email: quickContactForm.email || null,
-        })
-        .select("id, full_name, phone, email")
-        .single();
-
-      if (error) throw error;
+      const data = await crmService.createContact({
+        full_name: quickContactForm.full_name,
+        phone: quickContactForm.phone || null,
+        email: quickContactForm.email || null,
+      });
 
       toast.success("Kontak baru berhasil dibuat!");
       setContacts((prev) => [data, ...prev]);

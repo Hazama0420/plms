@@ -385,17 +385,136 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
         const parsed = result.data;
         const updates: any = {};
 
-        if (parsed.title) updates.title = parsed.title;
-        if (parsed.property_type) updates.property_type = parsed.property_type.toLowerCase();
-        if (parsed.listing_type) updates.listing_type = parsed.listing_type.toLowerCase();
-        if (parsed.property_category) updates.property_status = parsed.property_category.toLowerCase();
-        if (parsed.selling_point) updates.selling_point = parsed.selling_point;
-        if (parsed.address) updates.address = parsed.address;
-        if (parsed.selling_price) updates.selling_price = parsed.selling_price.toString();
-        if (parsed.rental_price) updates.rental_price = parsed.rental_period.toString();
+        // 1. Informasi Dasar & Kategori
+        if (parsed.title && typeof parsed.title === "string" && parsed.title.trim()) updates.title = parsed.title.trim();
+        if (parsed.property_type && typeof parsed.property_type === "string" && parsed.property_type.trim()) {
+          updates.property_type = parsed.property_type.toLowerCase().trim();
+        }
+        if (parsed.listing_type && typeof parsed.listing_type === "string" && parsed.listing_type.trim()) {
+          updates.listing_type = parsed.listing_type.toLowerCase().trim();
+        }
+        if (parsed.property_category && typeof parsed.property_category === "string" && parsed.property_category.trim()) {
+          updates.property_status = parsed.property_category.toLowerCase().trim();
+        }
+        if (parsed.property_status && typeof parsed.property_status === "string" && parsed.property_status.trim()) {
+          updates.property_status = parsed.property_status.toLowerCase().trim();
+        }
+
+        // 2. Deskripsi Lengkap & Keunggulan (Raw Text Preservation)
+        const rawText = parseText.trim();
+        const currentDesc = (formData.description || "").trim();
+        if (!currentDesc) {
+          // Jika deskripsi belum diisi, masukkan teks asli dari user secara utuh tanpa rewrite/summarization
+          updates.description = rawText;
+        } else if (currentDesc === rawText || currentDesc.includes(rawText)) {
+          // Jika sudah berisi raw text yang sama, pertahankan agar tidak terduplikasi saat Auto-Fill berulang
+          updates.description = currentDesc;
+        } else {
+          // Jika pengguna sudah menulis deskripsi manual sebelumnya, pertahankan deskripsi manual tersebut
+          updates.description = currentDesc;
+        }
+
+        if (parsed.selling_point && typeof parsed.selling_point === "string" && parsed.selling_point.trim()) {
+          updates.selling_point = parsed.selling_point.trim();
+        }
+
+        // 3. Alamat & Kandidat Lokasi
+        if (parsed.address && typeof parsed.address === "string" && parsed.address.trim()) {
+          updates.address = parsed.address.trim();
+        }
+        if (parsed.location_candidate && typeof parsed.location_candidate === "string" && parsed.location_candidate.trim()) {
+          updates.location_candidate = parsed.location_candidate.trim();
+        }
+
+        // 4. Harga & Skema Pembayaran
+        if (parsed.selling_price !== undefined && parsed.selling_price !== null && String(parsed.selling_price).trim()) {
+          updates.selling_price = String(parsed.selling_price).trim();
+        }
+        if (parsed.rental_price !== undefined && parsed.rental_price !== null && String(parsed.rental_price).trim()) {
+          updates.rental_price = String(parsed.rental_price).trim();
+        }
+        if (parsed.rental_period && typeof parsed.rental_period === "string" && parsed.rental_period.trim()) {
+          updates.rental_period = parsed.rental_period.trim();
+        }
+
+        // 5. Dimensi Tanah (LT) & Bangunan (LB)
+        if (parsed.land_area !== undefined && parsed.land_area !== null && String(parsed.land_area).trim()) {
+          updates.land_area = String(parsed.land_area).trim();
+        }
+        if (parsed.land_unit && typeof parsed.land_unit === "string" && parsed.land_unit.trim()) {
+          updates.land_unit = parsed.land_unit.trim();
+        }
+        if (parsed.land_width !== undefined && parsed.land_width !== null && String(parsed.land_width).trim()) {
+          updates.land_width = String(parsed.land_width).trim();
+        }
+        if (parsed.land_length !== undefined && parsed.land_length !== null && String(parsed.land_length).trim()) {
+          updates.land_length = String(parsed.land_length).trim();
+        }
+        if (parsed.building_area !== undefined && parsed.building_area !== null && String(parsed.building_area).trim()) {
+          updates.building_area = String(parsed.building_area).trim();
+        }
+        if (parsed.building_width !== undefined && parsed.building_width !== null && String(parsed.building_width).trim()) {
+          updates.building_width = String(parsed.building_width).trim();
+        }
+        if (parsed.building_length !== undefined && parsed.building_length !== null && String(parsed.building_length).trim()) {
+          updates.building_length = String(parsed.building_length).trim();
+        }
+
+        // 6. Kapasitas & Spesifikasi Fisik
+        if (parsed.bedroom !== undefined && parsed.bedroom !== null && String(parsed.bedroom).trim()) {
+          updates.bedroom = String(parsed.bedroom).trim();
+        }
+        if (parsed.bathroom !== undefined && parsed.bathroom !== null && String(parsed.bathroom).trim()) {
+          updates.bathroom = String(parsed.bathroom).trim();
+        }
+        if (parsed.garage !== undefined && parsed.garage !== null && String(parsed.garage).trim()) {
+          updates.garage = String(parsed.garage).trim();
+        }
+        if (parsed.carport !== undefined && parsed.carport !== null && String(parsed.carport).trim()) {
+          updates.carport = String(parsed.carport).trim();
+        }
+        if (parsed.floor !== undefined && parsed.floor !== null && String(parsed.floor).trim()) {
+          updates.floor = String(parsed.floor).trim();
+        }
+        if (parsed.year_built !== undefined && parsed.year_built !== null && String(parsed.year_built).trim()) {
+          updates.year_built = String(parsed.year_built).trim();
+        }
+
+        // 7. Legalitas & Utilitas
+        if (parsed.electricity !== undefined && parsed.electricity !== null && String(parsed.electricity).trim()) {
+          updates.electricity = String(parsed.electricity).trim();
+        }
+        if (parsed.certificate && typeof parsed.certificate === "string" && parsed.certificate.trim()) {
+          updates.certificate = parsed.certificate.trim();
+        }
+        if (parsed.water_source && typeof parsed.water_source === "string" && parsed.water_source.trim()) {
+          updates.water_source = parsed.water_source.trim();
+        }
+        if (parsed.facing && typeof parsed.facing === "string" && parsed.facing.trim()) {
+          updates.facing = parsed.facing.trim();
+        }
+        if (parsed.condition && typeof parsed.condition === "string" && parsed.condition.trim()) {
+          updates.condition = parsed.condition.trim();
+        }
+        if (parsed.furnishing && typeof parsed.furnishing === "string" && parsed.furnishing.trim()) {
+          updates.furnishing = parsed.furnishing.trim();
+        }
+
+        // 8. Fasilitas Properti
+        if (Array.isArray(parsed.facilities) && parsed.facilities.length > 0) {
+          const existingFacilities = Array.isArray(formData.facilities) ? formData.facilities : [];
+          updates.facilities = Array.from(new Set([...existingFacilities, ...parsed.facilities]));
+        }
 
         updateFormData(updates);
-        toast.success("✨ Data berhasil diekstrak AI!");
+
+        if (updates.location_candidate) {
+          toast.success("✨ Data properti berhasil diekstrak AI!", {
+            description: `Spesifikasi lengkap & lokasi ("${updates.location_candidate}") berhasil dipetakan.`,
+          });
+        } else {
+          toast.success("✨ Data spesifikasi properti berhasil diekstrak AI!");
+        }
       } else {
         toast.error(result.error || "Gagal memproses deskripsi teks");
       }

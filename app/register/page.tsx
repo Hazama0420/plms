@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
+import { useTranslation } from "@/hooks/use-translation";
 import { supabase } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -27,6 +28,7 @@ import {
 
 export default function RegisterPage() {
   const router = useRouter();
+  const { t } = useTranslation();
 
   // State Form Member
   const [fullName, setFullName] = useState("");
@@ -50,7 +52,7 @@ export default function RegisterPage() {
 
       if (error) throw error;
     } catch (err: any) {
-      toast.error(err.message || "Gagal mendaftar dengan akun Google.");
+      toast.error(err.message || t("auth.registerFail"));
       setLoading(false);
     }
   };
@@ -60,12 +62,12 @@ export default function RegisterPage() {
     e.preventDefault();
 
     if (password !== confirmPassword) {
-      toast.error("Konfirmasi password tidak cocok!");
+      toast.error(t("auth.passwordMismatch"));
       return;
     }
 
     if (password.length < 6) {
-      toast.error("Password minimal harus 6 karakter.");
+      toast.error(t("auth.passwordLength"));
       return;
     }
 
@@ -105,11 +107,11 @@ export default function RegisterPage() {
         }
       }
 
-      toast.success("Pendaftaran Member berhasil! Selamat datang.");
+      toast.success(t("auth.registerSuccess"));
       router.push("/dashboard");
       router.refresh();
     } catch (err: any) {
-      toast.error(err.message || "Gagal melakukan pendaftaran. Silakan coba lagi.");
+      toast.error(err.message || t("auth.registerFail"));
     } finally {
       setLoading(false);
     }
@@ -142,10 +144,10 @@ export default function RegisterPage() {
 
           <div>
             <CardTitle className="text-xl sm:text-2xl font-black text-white tracking-tight">
-              Daftar <span className="text-emerald-400">Member</span> Inland
+              {t("auth.registerTitle")} <span className="text-emerald-400">{t("auth.member")}</span> {t("auth.inland")}
             </CardTitle>
             <CardDescription className="text-xs text-slate-300/80 font-medium mt-0.5">
-              Buat akun untuk menjelajahi dan menyimpan properti impian Anda
+              {t("auth.registerDesc")}
             </CardDescription>
           </div>
         </CardHeader>
@@ -177,7 +179,7 @@ export default function RegisterPage() {
                 d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
               />
             </svg>
-            Daftar Cepat dengan Google
+            {t("auth.googleRegisterBtn")}
           </Button>
 
           {/* DIVIDER */}
@@ -187,21 +189,22 @@ export default function RegisterPage() {
             </div>
             <div className="relative flex justify-center text-[10px] uppercase">
               <span className="bg-slate-900/90 px-3 text-slate-400 font-semibold rounded-full border border-white/10">
-                Atau daftar dengan Email
+                {t("auth.orEmail")}
               </span>
             </div>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-slate-200">
-                Nama Lengkap <span className="text-rose-400">*</span>
+              <Label htmlFor="fullName" className="text-xs font-semibold text-slate-200">
+                {t("auth.fullNameLabel")} <span className="text-rose-400">*</span>
               </Label>
               <div className="relative">
                 <User className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                 <Input
+                  id="fullName"
                   type="text"
-                  placeholder="Masukkan nama lengkap"
+                  placeholder={t("auth.fullNamePlaceholder")}
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   className="pl-10 h-10 text-xs rounded-xl bg-slate-900/50 border-white/20 text-white placeholder:text-slate-400 focus-visible:ring-emerald-400"
@@ -211,14 +214,15 @@ export default function RegisterPage() {
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-slate-200">
-                Email <span className="text-rose-400">*</span>
+              <Label htmlFor="email" className="text-xs font-semibold text-slate-200">
+                {t("auth.emailLabel")} <span className="text-rose-400">*</span>
               </Label>
               <div className="relative">
                 <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                 <Input
+                  id="email"
                   type="email"
-                  placeholder="nama@email.com"
+                  placeholder={t("auth.emailPlaceholder")}
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="pl-10 h-10 text-xs rounded-xl bg-slate-900/50 border-white/20 text-white placeholder:text-slate-400 focus-visible:ring-emerald-400"
@@ -228,14 +232,15 @@ export default function RegisterPage() {
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-slate-200">
-                Nomor WhatsApp <span className="text-rose-400">*</span>
+              <Label htmlFor="phone" className="text-xs font-semibold text-slate-200">
+                {t("auth.phoneLabel")} <span className="text-rose-400">*</span>
               </Label>
               <div className="relative">
                 <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                 <Input
+                  id="phone"
                   type="tel"
-                  placeholder="081234567890"
+                  placeholder={t("auth.phonePlaceholder")}
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
                   className="pl-10 h-10 text-xs rounded-xl bg-slate-900/50 border-white/20 text-white placeholder:text-slate-400 focus-visible:ring-emerald-400"
@@ -245,14 +250,15 @@ export default function RegisterPage() {
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-slate-200">
-                Password <span className="text-rose-400">*</span>
+              <Label htmlFor="password" className="text-xs font-semibold text-slate-200">
+                {t("auth.passwordLabel")} <span className="text-rose-400">*</span>
               </Label>
               <div className="relative">
                 <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                 <Input
+                  id="password"
                   type={showPassword ? "text" : "password"}
-                  placeholder="••••••••"
+                  placeholder={t("auth.passwordPlaceholder")}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="pl-10 pr-9 h-10 text-xs rounded-xl bg-slate-900/50 border-white/20 text-white placeholder:text-slate-400 focus-visible:ring-emerald-400"
@@ -261,7 +267,7 @@ export default function RegisterPage() {
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-2 -mr-2 text-slate-400 hover:text-white"
                 >
                   {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                 </button>
@@ -269,14 +275,15 @@ export default function RegisterPage() {
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-slate-200">
-                Konfirmasi Password <span className="text-rose-400">*</span>
+              <Label htmlFor="confirmPassword" className="text-xs font-semibold text-slate-200">
+                {t("auth.confirmPasswordLabel")} <span className="text-rose-400">*</span>
               </Label>
               <div className="relative">
                 <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                 <Input
+                  id="confirmPassword"
                   type={showPassword ? "text" : "password"}
-                  placeholder="••••••••"
+                  placeholder={t("auth.passwordPlaceholder")}
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   className="pl-10 h-10 text-xs rounded-xl bg-slate-900/50 border-white/20 text-white placeholder:text-slate-400 focus-visible:ring-emerald-400"
@@ -293,11 +300,11 @@ export default function RegisterPage() {
               {loading ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  Mendaftarkan Akun...
+                  {t("auth.processingRegister")}
                 </>
               ) : (
                 <>
-                  <UserCheck className="w-4 h-4" /> Daftar Akun Member
+                  <UserCheck className="w-4 h-4" /> {t("auth.registerBtn")}
                 </>
               )}
             </Button>
@@ -308,24 +315,24 @@ export default function RegisterPage() {
             <div className="flex items-center gap-2">
               <Building2 className="w-4 h-4 text-emerald-400 shrink-0" />
               <div>
-                <p className="font-bold text-white text-[11px]">Ingin Bergabung Sebagai Agen?</p>
-                <p className="text-[10px] text-slate-300">Dapatkan komisi & akses listing properti</p>
+                <p className="font-bold text-white text-[11px]">{t("auth.agentJoinTitle")}</p>
+                <p className="text-[10px] text-slate-300">{t("auth.agentJoinDesc")}</p>
               </div>
             </div>
             <Link
               href="/register/agent"
               className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] rounded-lg transition-all flex items-center gap-1 shrink-0"
             >
-              Daftar Agen <ArrowRight className="w-3 h-3" />
+              {t("auth.agentRegisterBtn")} <ArrowRight className="w-3 h-3" />
             </Link>
           </div>
 
           {/* FOOTER NAVIGASI LOGIN */}
           <div className="text-center pt-2 border-t border-white/10">
             <p className="text-xs text-slate-300">
-              Sudah memiliki akun?{" "}
+              {t("auth.hasAccount")}{" "}
               <Link href="/login" className="text-emerald-400 font-bold hover:underline">
-                Masuk di Sini
+                {t("auth.loginLink")}
               </Link>
             </p>
           </div>

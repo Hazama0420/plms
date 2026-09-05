@@ -15,6 +15,7 @@
 
 import { z } from "zod";
 import { NextResponse } from "next/server";
+import { SUPPORT_MESSAGE_MAX, SUPPORT_MESSAGE_MIN } from "@/lib/support-config";
 
 // ---------------------------------------------------------------------------
 // Helper: bungkus safeParse, hasilkan 400 yang seragam apabila gagal.
@@ -159,6 +160,28 @@ const leadAliases = z.preprocess((raw) => {
 
 export const leadInsertSchema = leadAliases;
 
+// --- /api/leads/[id]/assign (PATCH, agen ke atas) ---
+//
+// Penugasan agen penanggung jawab untuk sebuah lead. Bentuknya meniru
+// propertyAssignSchema di bawah, dengan satu tambahan: `kind`.
+//
+// Rute ini ada karena notifikasi lead kini diproduksi aplikasi, bukan lagi
+// trigger basis data (M-17). services/crm.service.ts memakai klien peramban
+// sehingga tidak bisa memanggil notifyEvent() yang menuntut service role.
+//
+// `kind` HANYA memilih event mana yang dipakai — "created" untuk lead yang baru
+// dibuat untuk seorang agen (ikon 🎯 Prospek Lead), "reassigned" untuk lead yang
+// berpindah tangan (ikon 👤 Penugasan). Ia tidak pernah menentukan penerima:
+// penerimanya selalu dibaca ulang dari baris hasil UPDATE, sehingga pemanggil
+// tidak punya jalan mengirimi orang sembarangan.
+export const leadAssignSchema = z.object({
+  /** null berarti melepas penugasan; tidak ada notifikasi yang dikirim. */
+  assigned_to: uuidSchema.nullable(),
+  kind: z.enum(["created", "reassigned"], {
+    error: "kind wajib salah satu dari: created, reassigned.",
+  }),
+});
+
 // --- /api/chat (POST, publik — widget chat di layout root) ---
 //
 // AIChatWidget mengirim seluruh riwayat percakapan setiap kali, sementara route
@@ -205,6 +228,45 @@ export const notificationSendSchema = z.object({
   category: z.string().max(50).optional(),
   type: z.string().max(50).optional(),
   actionUrl: emptyToUndefined(z.string().max(300)),
+});
+
+// --- /api/support (POST, semua pengguna terautentikasi) ---
+//
+// Pesan bantuan dari pengguna ke seluruh admin. Hanya isi pesan yang datang
+// dari klien: judul, penerima, dan pengirim ditentukan server agar pengguna
+// tidak bisa menyamar atau mengarahkan pesannya ke orang lain.
+//
+// Batasnya diambil dari lib/support-config.ts supaya modal chat di Pengaturan
+// menegakkan angka yang sama tanpa ikut menarik "next/server" ke bundel klien.
+export const supportMessageSchema = z.object({
+  message: z
+    .string()
+    .trim()
+    .min(SUPPORT_MESSAGE_MIN, `Ceritakan kendala Anda minimal ${SUPPORT_MESSAGE_MIN} karakter.`)
+    .max(
+      SUPPORT_MESSAGE_MAX,
+      `Pesan terlalu panjang; ringkas menjadi maksimal ${SUPPORT_MESSAGE_MAX} karakter.`
+    ),
+});
+
+// Tambahkan di bawah agentRegisteredSchema
+// --- /api/auth/register-agent (POST, publik — pendaftaran agen) ---
+//
+// Dipanggil oleh halaman /register/agent setelah upload KTP berhasil. Rute ini
+// memakai service role sehingga tidak terhalang RLS users_insert, dan
+// menangani pembuatan akun Auth, penyisipan profil, serta notifikasi ke admin
+// dalam satu panggilan.
+export const registerAgentSchema = z.object({
+  fullName: z.string().trim().min(2, "Nama minimal 2 karakter.").max(120),
+  email: z.email("Format email tidak valid."),
+  phone: phoneSchema,
+  password: z.string().min(6, "Password minimal 6 karakter."),
+  address: z.string().trim().min(5, "Alamat terlalu pendek.").max(500),
+  ktpUrl: z.string().url("URL KTP tidak valid."),
+  socials: z.array(z.string().max(50)).max(10).optional().default([]),
+  experience: z.string().max(50).optional().default("Tidak ada"),
+  vehicle: z.string().max(50).optional().default("Motor"),
+  reason: z.string().max(500).optional().default(""),
 });
 
 // --- /api/notifications/push-test (POST, Admin & Super Admin) ---

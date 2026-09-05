@@ -19,6 +19,19 @@ const badgeVariants = cva(
         ghost:
           "hover:bg-muted hover:text-muted-foreground dark:hover:bg-muted/50",
         link: "text-primary underline-offset-4 hover:underline",
+        // --- V2 TWO-TIER BADGE GRAMMAR ---
+        status:
+          "rounded-full border border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 font-semibold px-2.5 py-0.5 text-xs",
+        metadata:
+          "rounded-md border border-border/80 bg-muted/80 text-muted-foreground font-mono text-[10px] font-medium tracking-tight px-1.5 py-0.5 h-auto",
+        success:
+          "rounded-full border border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 font-semibold px-2.5 py-0.5 text-xs",
+        warning:
+          "rounded-full border border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-400 font-semibold px-2.5 py-0.5 text-xs",
+        info:
+          "rounded-full border border-blue-500/20 bg-blue-500/10 text-blue-700 dark:text-blue-400 font-semibold px-2.5 py-0.5 text-xs",
+        danger:
+          "rounded-full border border-rose-500/20 bg-rose-500/10 text-rose-700 dark:text-rose-400 font-semibold px-2.5 py-0.5 text-xs",
       },
     },
     defaultVariants: {

@@ -240,17 +240,17 @@ export function StepPriceDescription({
     <div className="space-y-8">
       {/* HEADER UTAMA */}
       <div>
-        <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-          <Sparkles className="w-6 h-6 text-emerald-600" />
+        <h2 className="text-lg sm:text-xl lg:text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+          <Sparkles className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-600" />
           Harga & Deskripsi Properti
         </h2>
-        <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
+        <p className="text-[11px] sm:text-xs lg:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
           Tentukan skema harga, gunakan fitur estimasi AI, dan susun deskripsi menarik untuk pembeli.
         </p>
       </div>
 
       {/* 📌 SEKSI BAGIAN HARGA */}
-      <div className="p-5 rounded-2xl bg-slate-50/70 dark:bg-slate-900/40 border border-slate-200/80 dark:border-slate-800 space-y-5">
+      <div className="p-4 sm:p-5 rounded-2xl bg-slate-50/70 dark:bg-slate-900/40 border border-slate-200/80 dark:border-slate-800 space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-slate-200/60 dark:border-slate-800">
           <div className="flex items-center gap-2">
             <Coins className="w-5 h-5 text-emerald-600" />

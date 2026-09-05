@@ -11,58 +11,52 @@ import {
   Settings,
   Calculator,
   LogIn,
+  CalendarDays,
 } from "lucide-react";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useUser } from "@/hooks/use-user";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "@/hooks/use-translation";
 
 export function BottomNav() {
   const pathname = usePathname();
   const { user } = useUser();
   const { userRole } = usePermissions();
+  const { t } = useTranslation();
 
   const isGuest = !user;
   const isAgentOrAdmin = userRole && ["super_admin", "admin", "agent", "marketing"].includes(userRole);
+  const isViewer = !!user && !isAgentOrAdmin;
 
   // Daftar item navigasi dinamis berdasarkan status login / role
   const NAV_ITEMS = [
     {
       icon: LayoutDashboard,
-      label: "Dashboard",
+      label: t("navigation.dashboard"),
       href: "/dashboard",
       exact: true,
     },
     {
       icon: Building2,
-      label: "Properti",
+      label: t("navigation.properties"),
       href: "/properties",
     },
     // Jika agen/admin tampilkan CRM Leads, jika guest/viewer tampilkan Kalkulator KPR
     isAgentOrAdmin
-      ? { icon: Users, label: "Leads", href: "/crm/leads" }
-      : { icon: Calculator, label: "KPR", href: "/kpr-calculator" },
-    {
-      icon: FileText,
-      label: "Invoice",
-      href: "/invoices",
-      hideForGuest: true,
-    },
-    // 🟢 KONDISI PERBAIKAN: Jika belum login (Guest) tampilkan "Login", jika sudah tampilkan "Pengaturan"
+      ? { icon: Users, label: t("crm.leads"), href: "/crm/leads" }
+      : { icon: Calculator, label: t("navigation.kpr"), href: "/kpr-calculator" },
+    // Invoice hanya untuk agen/admin; viewer dan guest melihat Survei
+    (isGuest || isViewer)
+      ? { icon: CalendarDays, label: t("navigation.surveys"), href: "/surveys" }
+      : { icon: FileText, label: "Invoice", href: "/invoices" },
+    // Jika belum login tampilkan "Login", jika sudah tampilkan "Pengaturan"
     isGuest
-      ? {
-          icon: LogIn,
-          label: "Login",
-          href: "/login",
-        }
-      : {
-          icon: Settings,
-          label: "Pengaturan",
-          href: "/settings",
-        },
-  ].filter((item) => !(isGuest && "hideForGuest" in item && item.hideForGuest));
+      ? { icon: LogIn, label: t("navigation.login"), href: "/login" }
+      : { icon: Settings, label: t("navigation.settings"), href: "/settings" },
+  ];
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-card/90 backdrop-blur-lg border-t border-border/60 shadow-lg pb-[env(safe-area-inset-bottom)]">
+    <nav aria-label="Menu navigasi utama" className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-card/90 backdrop-blur-lg border-t border-border/60 shadow-lg pb-[env(safe-area-inset-bottom)]">
       <div className="flex items-center justify-around h-15 px-2">
         {NAV_ITEMS.map(({ icon: Icon, label, href, exact }) => {
           const isActive = exact

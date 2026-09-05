@@ -79,7 +79,7 @@ function TrendBadge({ change }: { change: number | null }) {
     <span
       className={cn(
         "inline-flex items-center gap-1 text-[11px] font-semibold mt-1 px-1.5 py-0.5 rounded-md",
-        isUp ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-600"
+        isUp ? "bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400" : "bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400"
       )}
     >
       <Icon size={12} />
@@ -311,7 +311,7 @@ export default function ReportsPage() {
           <CardContent className="p-4 space-y-1">
             <div className="flex items-center justify-between text-muted-foreground">
               <span className="text-xs font-semibold">Total Portofolio</span>
-              <div className="p-2 bg-emerald-50 rounded-xl text-emerald-600">
+              <div className="p-2 bg-emerald-50 dark:bg-emerald-950/30 rounded-xl text-emerald-600">
                 <Home size={16} />
               </div>
             </div>
@@ -324,7 +324,7 @@ export default function ReportsPage() {
           <CardContent className="p-4 space-y-1">
             <div className="flex items-center justify-between text-muted-foreground">
               <span className="text-xs font-semibold">Listing Aktif</span>
-              <div className="p-2 bg-blue-50 rounded-xl text-blue-600">
+              <div className="p-2 bg-blue-50 dark:bg-blue-950/30 rounded-xl text-blue-600">
                 <Building2 size={16} />
               </div>
             </div>
@@ -337,7 +337,7 @@ export default function ReportsPage() {
           <CardContent className="p-4 space-y-1">
             <div className="flex items-center justify-between text-muted-foreground">
               <span className="text-xs font-semibold">Terjual & Disewa</span>
-              <div className="p-2 bg-amber-50 rounded-xl text-amber-600">
+              <div className="p-2 bg-amber-50 dark:bg-amber-950/30 rounded-xl text-amber-600">
                 <CheckCircle2 size={16} />
               </div>
             </div>
@@ -352,7 +352,7 @@ export default function ReportsPage() {
           <CardContent className="p-4 space-y-1">
             <div className="flex items-center justify-between text-muted-foreground">
               <span className="text-xs font-semibold">Gross Sales Revenue</span>
-              <div className="p-2 bg-purple-50 rounded-xl text-purple-600">
+              <div className="p-2 bg-purple-50 dark:bg-purple-950/30 rounded-xl text-purple-600">
                 <DollarSign size={16} />
               </div>
             </div>
@@ -551,7 +551,7 @@ export default function ReportsPage() {
                     <th className="p-3 text-right">Est. Komisi (2.5%)</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[#F4EFE6]">
+                <tbody className="divide-y divide-[#F4EFE6] dark:divide-border">
                   {agentData.map((agent, index) => {
                     const totalProp = agent.total_properties || 0;
                     const totalSold = agent.total_sold || 0;
@@ -561,7 +561,7 @@ export default function ReportsPage() {
                       <tr key={agent.agent_id || index} className="hover:bg-muted/60 transition-colors">
                         <td className="p-3 text-center font-bold">
                           {index === 0 ? (
-                            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-amber-100 text-amber-700 font-bold text-[11px]">
+                            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 font-bold text-[11px]">
                               🥇
                             </span>
                           ) : index === 1 ? (
@@ -578,7 +578,7 @@ export default function ReportsPage() {
                         </td>
                         <td className="p-3 font-bold text-foreground">
                           <div className="flex items-center gap-2">
-                            <div className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-[10px]">
+                            <div className="w-6 h-6 rounded-full bg-emerald-100 dark:bg-emerald-900/50 text-emerald-800 dark:text-emerald-300 flex items-center justify-center font-bold text-[10px]">
                               {agent.agent_name?.slice(0, 2)?.toUpperCase() || "AG"}
                             </div>
                             <span>{agent.agent_name || "Agen Inland"}</span>

@@ -12,7 +12,6 @@ import {
   hasRegion,
 } from "@/lib/property-address";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 import {
   CheckCircle,
   AlertCircle,
@@ -30,12 +29,16 @@ import {
   Layers,
   ShieldCheck,
   ImageIcon,
+  AlertTriangle,
+  ArrowRight,
+  Edit3,
 } from "lucide-react";
 import { toast } from "sonner";
 
 interface StepReviewProps {
   formData: any;
-  prevStep: () => void;
+  prevStep?: () => void;
+  goToStep?: (stepIndex: number) => void;
   mode?: "create" | "edit";
   propertyId?: string;
   onSuccess?: () => void;
@@ -43,7 +46,7 @@ interface StepReviewProps {
 
 export function StepReview({
   formData,
-  prevStep,
+  goToStep,
   mode = "create",
   propertyId,
   onSuccess,
@@ -77,6 +80,43 @@ export function StepReview({
   };
 
   const qualityScore = calculateQualityScore();
+  const regionValid = hasRegion(formData);
+
+  // Status Checklist Persiapan Publikasi
+  const checklist = [
+    {
+      label: "Kategori & Judul Listing",
+      valid: Boolean(formData.title && formData.property_type),
+      stepIndex: 0,
+    },
+    {
+      label: "Wilayah Administratif Resmi",
+      valid: regionValid,
+      stepIndex: 2,
+      critical: true,
+      errorMsg: "Wilayah belum dipilih dari database",
+    },
+    {
+      label: "Harga Penawaran",
+      valid: Boolean(formData.selling_price || formData.rental_price),
+      stepIndex: 4,
+    },
+    {
+      label: "Spesifikasi Fisik (KT/KM/LT)",
+      valid: Boolean(formData.bedroom || formData.land_area || formData.building_area),
+      stepIndex: 1,
+    },
+    {
+      label: "Foto Listing",
+      valid: Boolean(Array.isArray(formData.photos) && formData.photos.length > 0),
+      stepIndex: 0,
+    },
+    {
+      label: "Penanggung Jawab Listing",
+      valid: Boolean(formData.assigned_to),
+      stepIndex: 5,
+    },
+  ];
 
   // Handle Publikasi Properti
   const handlePublish = async () => {
@@ -101,7 +141,6 @@ export function StepReview({
       const listingType = listingTypeMap[formData.listing_type] || "jual";
 
       const addressPayload = buildAddressPayload(formData);
-
       const facilitiesPayload = Array.isArray(formData.facilities) ? formData.facilities : [];
 
       // ==========================================
@@ -182,9 +221,6 @@ export function StepReview({
         if (propertyError) throw new Error(`Gagal update properti: ${propertyError.message}`);
 
         // UPSERT ALAMAT
-        // Selalu dijalankan: wilayah sudah divalidasi di atas, dan errornya
-        // sekarang dilempar — sebelumnya kegagalan di sini ditelan diam-diam
-        // sehingga publikasi tampak berhasil padahal alamatnya tidak tersimpan.
         const { error: addressError } = await supabase.from("property_address").upsert(
           { property_id: propertyId, ...addressPayload },
           { onConflict: "property_id" }
@@ -274,28 +310,13 @@ export function StepReview({
             };
           }).filter((m: any) => m.public_url !== "");
 
-          // Hanya hapus media lama JIKA ada payload baru yang valid untuk menggantikannya.
-          // Ini mencegah foto hilang total kalau proses mapping foto gagal menghasilkan URL.
           if (mediaPayload.length > 0) {
-            const { error: deleteError } = await supabase
-              .from("property_media")
-              .delete()
-              .eq("property_id", propertyId);
-
-            if (deleteError) {
-              console.error("Gagal menghapus media lama:", deleteError.message);
-            }
-
-            const { error: insertError } = await supabase
-              .from("property_media")
-              .insert(mediaPayload);
-
+            await supabase.from("property_media").delete().eq("property_id", propertyId);
+            const { error: insertError } = await supabase.from("property_media").insert(mediaPayload);
             if (insertError) {
               console.error("Gagal menyimpan media foto baru:", insertError.message);
               toast.error("Sebagian data tersimpan, tapi foto gagal disinkronkan: " + insertError.message);
             }
-          } else {
-            console.warn("⚠️ Tidak ada foto valid untuk disinkronkan — media lama TIDAK dihapus.");
           }
         }
 
@@ -308,9 +329,6 @@ export function StepReview({
       // ==========================================
       // MODE CREATE
       // ==========================================
-      // Setiap listing wajib punya agen penanggung jawab; pembuatnya dipakai
-      // sebagai penanggung jawab bawaan. Statusnya lalu ditentukan oleh aturan
-      // bersama di lib/property-publish.ts, bukan dipatok "published" di sini.
       const assignedTo = formData.assigned_to || user.id;
       const publish = resolvePublishStatus("published", assignedTo);
 
@@ -329,7 +347,6 @@ export function StepReview({
         owner_id: ownerId,
         created_by: user.id,
         assigned_to: assignedTo,
-        // Hanya listing yang benar-benar terbit yang punya tanggal publikasi.
         published_at: publish.downgraded ? null : new Date().toISOString(),
       };
 
@@ -438,6 +455,11 @@ export function StepReview({
         }
       }
 
+      // Hapus draf tersimpan di localStorage setelah berhasil dipublikasikan
+      try {
+        localStorage.removeItem("inland_property_draft");
+      } catch {}
+
       if (publish.downgraded) {
         toast.warning("Properti tersimpan sebagai draf", {
           description: NO_AGENT_MESSAGE,
@@ -468,8 +490,55 @@ export function StepReview({
           {mode === "edit" ? "Tinjau & Update Properti" : "Tinjau & Publikasikan"}
         </h2>
         <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
-          Periksa kembali tampilan kartu listing, kelengkapan spesifikasi, dan data pemilik sebelum disimpan.
+          Periksa kembali checklist kesiapan data, tampilan kartu listing, dan kelengkapan spesifikasi sebelum disimpan.
         </p>
+      </div>
+
+      {/* CHECKLIST KESIAPAN PUBLIKASI */}
+      <div className="rounded-2xl border border-border/80 bg-card p-4 sm:p-5 shadow-xs space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-foreground flex items-center gap-2">
+            <CheckCircle className="w-4 h-4 text-emerald-600" />
+            Checklist Kelengkapan Listing
+          </h3>
+          <span className="text-[11px] font-semibold text-muted-foreground">
+            {checklist.filter((c) => c.valid).length} dari {checklist.length} Lengkap
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 pt-1">
+          {checklist.map((item, idx) => (
+            <div
+              key={idx}
+              className={`p-3 rounded-xl border flex items-center justify-between gap-2 text-xs transition-all ${
+                item.valid
+                  ? "bg-emerald-500/5 border-emerald-500/20 text-foreground"
+                  : item.critical
+                  ? "bg-rose-500/10 border-rose-500/30 text-rose-900 dark:text-rose-200"
+                  : "bg-muted/40 border-border/60 text-muted-foreground"
+              }`}
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                {item.valid ? (
+                  <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+                ) : (
+                  <AlertTriangle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
+                )}
+                <span className="font-semibold truncate">{item.label}</span>
+              </div>
+
+              {!item.valid && goToStep && (
+                <button
+                  type="button"
+                  onClick={() => goToStep(item.stepIndex)}
+                  className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 hover:underline shrink-0 flex items-center gap-0.5"
+                >
+                  Lengkapi <ArrowRight className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* INDIKATOR SKOR KUALITAS LISTING */}
@@ -661,34 +730,67 @@ export function StepReview({
         </div>
       </div>
 
-      {/* Peringatan bila wilayah belum dipilih — publikasi akan ditolak. */}
-      {!hasRegion(formData) && (
-        <div className="flex items-start gap-2 rounded-xl border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/25 p-3">
-          <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-500 mt-0.5 shrink-0" />
-          <p className="text-xs text-amber-800 dark:text-amber-300">
-            {NO_REGION_MESSAGE} Kembali ke langkah <strong>Lokasi</strong> untuk memilihnya.
-          </p>
+      {/* ⚠️ PERINGATAN BILA WILAYAH BELUM LENGKAP */}
+      {!regionValid && (
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4 animate-in fade-in duration-300">
+          <div className="flex items-start gap-2.5">
+            <AlertCircle className="w-5 h-5 text-rose-600 dark:text-rose-400 mt-0.5 shrink-0" />
+            <div className="text-xs space-y-0.5">
+              <p className="font-bold text-rose-900 dark:text-rose-200">
+                Wilayah Administratif Belum Lengkap
+              </p>
+              <p className="text-muted-foreground">
+                {NO_REGION_MESSAGE} Listing tidak dapat dipublikasikan tanpa data wilayah resmi.
+              </p>
+            </div>
+          </div>
+
+          {goToStep && (
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => goToStep(2)}
+              className="h-8 px-3 text-xs font-bold rounded-xl bg-rose-600 hover:bg-rose-700 text-white shrink-0 cursor-pointer shadow-xs"
+            >
+              <Edit3 className="w-3.5 h-3.5 mr-1.5" />
+              Perbaiki Lokasi Sekarang
+            </Button>
+          )}
         </div>
       )}
 
-      {/* AKSI PUBLIKASI
-          Tombol "Kembali" tidak dipasang di sini — navigasi langkah sepenuhnya
-          milik wizard, supaya tidak muncul dua tombol yang sama. */}
-      <div className="pt-4 border-t">
+      {/* AKSI PUBLIKASI */}
+      <div className="pt-4 border-t flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div className="text-xs text-muted-foreground">
+          {!regionValid ? (
+            <span className="text-rose-600 dark:text-rose-400 font-semibold flex items-center gap-1">
+              <AlertTriangle className="w-3.5 h-3.5" /> Tombol publikasi nonaktif: lengkapi wilayah terlebih dahulu
+            </span>
+          ) : (
+            <span className="text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
+              <Check className="w-3.5 h-3.5" /> Semua data wajib telah lengkap dan siap dipublikasikan
+            </span>
+          )}
+        </div>
+
         <Button
           type="button"
           onClick={handlePublish}
-          disabled={publishing}
-          className="w-full sm:w-auto sm:ml-auto sm:flex gap-2 text-xs h-11 sm:h-9 bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20 font-bold px-6 cursor-pointer"
+          disabled={publishing || !regionValid}
+          className={`w-full sm:w-auto text-xs h-11 sm:h-9 font-bold px-7 rounded-xl transition-all ${
+            !regionValid
+              ? "bg-muted text-muted-foreground cursor-not-allowed border border-border"
+              : "bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20 cursor-pointer"
+          }`}
         >
           {publishing ? (
             <>
-              <Loader2 className="w-4 h-4 animate-spin" />
+              <Loader2 className="w-4 h-4 animate-spin mr-1.5" />
               <span>{mode === "edit" ? "Menyimpan Perubahan..." : "Mempublikasikan..."}</span>
             </>
           ) : (
             <>
-              <CheckCircle className="w-4 h-4" />
+              <CheckCircle className="w-4 h-4 mr-1.5" />
               <span>{mode === "edit" ? "Update Sekarang" : "Publikasikan Sekarang"}</span>
             </>
           )}

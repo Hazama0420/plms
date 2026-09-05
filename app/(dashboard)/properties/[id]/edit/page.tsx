@@ -59,7 +59,7 @@ export default function EditPropertyPage({ params }: EditPropertyPageProps) {
 
         if (userRole === "reviewer" || (!isAdmin && !isOwner)) {
           toast.error("Anda tidak memiliki izin untuk mengedit listingan ini.");
-          router.push(`/properties/${propertyId}`);
+          router.push(`/properties/${data.slug || propertyId}`);
           return;
         }
 
@@ -231,6 +231,8 @@ export default function EditPropertyPage({ params }: EditPropertyPageProps) {
       district_id: distId,
       village_id: villId,
 
+      region_id: addr.region_id || null,
+      location_candidate: null,
       province_name: provName,
       city_name: cityName,
       district_name: distName,

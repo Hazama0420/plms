@@ -4,6 +4,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { useTranslation } from "@/hooks/use-translation";
 import { supabase } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -14,6 +15,7 @@ import { LegalLinksInline } from "@/components/layout/SiteFooter";
 import { Mail, ArrowLeft, CheckCircle, Loader2, RefreshCw } from "lucide-react";
 
 export default function ForgotPasswordPage() {
+  const { t } = useTranslation();
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
@@ -30,10 +32,10 @@ export default function ForgotPasswordPage() {
       if (error) throw error;
 
       setSent(true);
-      toast.success("Email instruksi reset password telah dikirim!");
+      toast.success(t("auth.resetEmailSuccess"));
     } catch (error: any) {
-      toast.error("Gagal mengirim email reset password", {
-        description: error.message || "Silakan periksa kembali email Anda.",
+      toast.error(t("auth.resetEmailFailTitle"), {
+        description: error.message || t("auth.resetEmailFailDesc"),
       });
     } finally {
       setLoading(false);
@@ -83,7 +85,7 @@ export default function ForgotPasswordPage() {
               <span className="text-emerald-400">Inland</span> <span className="text-white">Property</span>
             </CardTitle>
             <CardDescription className="text-xs text-slate-300">
-              Pemulihan Kata Sandi
+              {t("auth.forgotPasswordTitle")}
             </CardDescription>
           </div>
         </CardHeader>
@@ -98,15 +100,15 @@ export default function ForgotPasswordPage() {
               </div>
               
               <div className="space-y-1">
-                <h3 className="text-lg font-bold text-white">Tautan Terkirim!</h3>
+                <h3 className="text-lg font-bold text-white">{t("auth.linkSentTitle")}</h3>
                 <p className="text-xs text-slate-300 leading-relaxed">
-                  Kami telah mengirimkan instruksi dan tautan reset password ke email:<br />
+                  {t("auth.linkSentDesc")}<br />
                   <strong className="text-emerald-400 font-semibold">{email}</strong>
                 </p>
               </div>
 
               <div className="p-3 bg-white/5 border border-white/10 rounded-2xl text-[11px] text-slate-400">
-                Periksa folder kotak masuk (*inbox*) atau spam Anda.
+                {t("auth.inboxSpamNote")}
               </div>
 
               <div className="pt-2 space-y-2">
@@ -115,33 +117,33 @@ export default function ForgotPasswordPage() {
                   onClick={() => setSent(false)}
                   className="w-full h-10 text-xs font-semibold rounded-xl bg-white/10 border-white/20 text-white hover:bg-white/20 gap-2 cursor-pointer"
                 >
-                  <RefreshCw className="w-3.5 h-3.5" /> Salah ketik email? Coba lagi
+                  <RefreshCw className="w-3.5 h-3.5" /> {t("auth.wrongEmailBtn")}
                 </Button>
 
                 <Link 
                   href="/login" 
                   className="block text-center text-xs text-emerald-400 hover:underline font-bold pt-1"
                 >
-                  ← Kembali ke Halaman Login
+                  {t("auth.backToLogin")}
                 </Link>
               </div>
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
               <p className="text-xs text-slate-300 leading-relaxed text-center">
-                Masukkan alamat email terdaftar Anda untuk menerima tautan pemulihan kata sandi.
+                {t("auth.forgotPasswordInst")}
               </p>
 
               <div className="space-y-1.5">
                 <Label htmlFor="email" className="text-xs font-semibold text-slate-200">
-                  Email Akun
+                  {t("auth.emailLabel")}
                 </Label>
                 <div className="relative">
                   <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                   <Input
                     id="email"
                     type="email"
-                    placeholder="nama@email.com"
+                    placeholder={t("auth.emailPlaceholder")}
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="pl-10 h-10 text-xs rounded-xl bg-white/10 border-white/20 text-white placeholder:text-slate-400 focus-visible:ring-emerald-400"
@@ -158,19 +160,19 @@ export default function ForgotPasswordPage() {
                 {loading ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    Mengirim Tautan...
+                    {t("auth.sendingLink")}
                   </>
                 ) : (
                   <>
-                    <Mail className="w-4 w-4" /> Kirim Email Reset Password
+                    <Mail className="w-4 h-4" /> {t("auth.sendLinkBtn")}
                   </>
                 )}
               </Button>
 
               <p className="text-center text-xs text-slate-300 pt-3">
-                Sudah ingat password Anda?{" "}
+                {t("auth.rememberedPassword")}{" "}
                 <Link href="/login" className="text-emerald-400 hover:underline font-bold">
-                  Masuk di sini
+                  {t("auth.loginLink")}
                 </Link>
               </p>
             </form>

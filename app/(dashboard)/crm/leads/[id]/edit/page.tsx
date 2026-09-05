@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 
 import { crmService } from "@/services/crm.service";
+import { syncCRMLeadInterestsAction } from "@/actions/crm-interests.action";
 import { supabase } from "@/lib/supabase/client";
 import type { LeadStatus } from "@/types/crm.types";
 
@@ -55,8 +56,8 @@ import { cn } from "@/lib/utils";
 interface Contact {
   id: string;
   full_name: string;
-  phone: string | null;
-  email: string | null;
+  phone?: string | null;
+  email?: string | null;
 }
 
 interface Property {
@@ -321,20 +322,11 @@ export default function EditLeadPage() {
 
     setQuickContactSaving(true);
     try {
-      const generatedCode = `CNT-${Math.floor(100000 + Math.random() * 900000)}`;
-
-      const { data, error } = await supabase
-        .from("crm_contacts")
-        .insert({
-          contact_code: generatedCode,
-          full_name: quickContactForm.full_name,
-          phone: quickContactForm.phone || null,
-          email: quickContactForm.email || null,
-        })
-        .select("id, full_name, phone, email")
-        .single();
-
-      if (error) throw error;
+      const data = await crmService.createContact({
+        full_name: quickContactForm.full_name,
+        phone: quickContactForm.phone || null,
+        email: quickContactForm.email || null,
+      });
 
       toast.success("Kontak baru berhasil dibuat!");
       setContacts((prev) => [data, ...prev]);
@@ -373,28 +365,11 @@ export default function EditLeadPage() {
         notes: form.notes || undefined,
       });
 
-      // 2. PERBAIKAN: Update relasi minat properti pada tabel `crm_interests`
-      await supabase
-        .from("crm_interests")
-        .delete()
-        .eq("lead_id", leadId);
-
-      if (selectedProperties.length > 0) {
-        const interestsPayload = selectedProperties.map((propertyId) => ({
-          lead_id: leadId,
-          property_id: propertyId,
-          interest_level: "high",
-          priority: 1,
-        }));
-
-        const { error: interestErr } = await supabase
-          .from("crm_interests")
-          .insert(interestsPayload);
-
-        if (interestErr) {
-          console.error("Gagal mengupdate minat properti (crm_interests):", interestErr.message || interestErr);
-          toast.warning("Data lead diperbarui, namun gagal menyimpan daftar minat properti.");
-        }
+      // 2. Update relasi minat properti melalui Server Action terpusat
+      const interestResult = await syncCRMLeadInterestsAction(leadId, selectedProperties);
+      if (!interestResult.success) {
+        console.error("Gagal mengupdate minat properti:", interestResult.error);
+        toast.warning("Data lead diperbarui, namun gagal menyimpan daftar minat properti.");
       }
 
       toast.success("Data lead prospek berhasil diperbarui!");

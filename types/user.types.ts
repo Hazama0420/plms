@@ -1,6 +1,15 @@
 // types/user.types.ts
 
-export type UserRole = "super_admin" | "admin" | "agent" | "marketing" | "viewer";
+export type UserRole = "super_admin" | "admin" | "agent" | "marketing" | "viewer" | "commissioner";
+
+export const VALID_ROLES: UserRole[] = [
+  "super_admin",
+  "admin",
+  "agent",
+  "marketing",
+  "viewer",
+  "commissioner",
+];
 
 export const USER_ROLES: Record<UserRole, { label: string; description: string; level: number }> = {
   super_admin: {
@@ -27,6 +36,11 @@ export const USER_ROLES: Record<UserRole, { label: string; description: string; 
     label: "Viewer",
     description: "Hanya baca semua data",
     level: 10,
+  },
+  commissioner: {
+    label: "Commissioner",
+    description: "Akses read-only CRM dan laporan",
+    level: 40,
   },
 };
 
@@ -77,6 +91,11 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "view_all_properties",
     "view_own_crm",
   ],
+  commissioner: [
+    "view_all_properties",
+    "view_all_crm",
+    "view_reports",
+  ],
 };
 
 export interface UserWithRole {
@@ -85,6 +104,8 @@ export interface UserWithRole {
   full_name: string;
   avatar_url?: string;
   role: UserRole;
+  status?: string;
+  is_approved?: boolean;
   created_at: string;
   updated_at: string;
 }

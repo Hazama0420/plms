@@ -64,6 +64,7 @@ export default function RegisterAgentPage() {
 
   const [address, setAddress] = useState("");
   const [ktpFile, setKtpFile] = useState<File | null>(null);
+  const [ktpPreview, setKtpPreview] = useState<string | null>(null);
   const [selectedSocials, setSelectedSocials] = useState<string[]>([]);
   const [experience, setExperience] = useState("Tidak ada");
   const [vehicle, setVehicle] = useState("Motor");
@@ -76,6 +77,17 @@ export default function RegisterAgentPage() {
     setSelectedSocials((prev) =>
       prev.includes(social) ? prev.filter((s) => s !== social) : [...prev, social]
     );
+  };
+
+  const handleKtpChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] || null;
+    setKtpFile(file);
+    if (file) {
+      const url = URL.createObjectURL(file);
+      setKtpPreview(url);
+    } else {
+      setKtpPreview(null);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -101,63 +113,46 @@ export default function RegisterAgentPage() {
     try {
       let ktpPublicUrl = "";
 
-      // 1. Upload KTP ke Supabase Storage
-      if (ktpFile) {
-        const fileExt = ktpFile.name.split(".").pop();
-        const fileName = `ktp_${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
-        const filePath = `ktp-uploads/${fileName}`;
+      // 1. Upload KTP ke bucket khusus 'ktp'
+      const fileExt = ktpFile.name.split(".").pop();
+      const fileName = `ktp_${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+      const filePath = `${fileName}`; // langsung di root bucket ktp
 
-        const { error: uploadError } = await supabase.storage
-          .from("property-media")
-          .upload(filePath, ktpFile);
+      const { error: uploadError } = await supabase.storage
+        .from("ktp")
+        .upload(filePath, ktpFile);
 
-        if (!uploadError) {
-          const { data: urlData } = supabase.storage
-            .from("property-media")
-            .getPublicUrl(filePath);
-          ktpPublicUrl = urlData.publicUrl;
-        }
+      if (uploadError) {
+        throw new Error("Gagal mengunggah KTP: " + uploadError.message);
       }
 
-      // 2. Sign Up di Supabase Auth
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            full_name: fullName,
-            phone: phone,
-            role: "agent",
-            status: "pending",
-            is_approved: false,
-          },
-        },
+      const { data: urlData } = supabase.storage
+        .from("ktp")
+        .getPublicUrl(filePath);
+      ktpPublicUrl = urlData.publicUrl;
+
+      // 2. Kirim semua data ke API register-agent (service role)
+      const res = await fetch("/api/auth/register-agent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fullName,
+          email,
+          phone,
+          password,
+          address,
+          ktpUrl: ktpPublicUrl,
+          socials: selectedSocials,
+          experience,
+          vehicle,
+          reason,
+        }),
       });
 
-      if (authError) throw authError;
+      const json = await res.json();
 
-      // 3. Simpan Profil ke Tabel 'users' Database
-      if (authData.user) {
-        const userPayload: any = {
-          id: authData.user.id,
-          email: email,
-          full_name: fullName,
-          phone: phone,
-          role: "agent",
-          status: "pending",
-          address: address,
-          ktp_url: ktpPublicUrl,
-          social_media: selectedSocials,
-          experience: experience,
-          vehicle: vehicle,
-          join_reason: reason,
-          updated_at: new Date().toISOString(),
-        };
-
-        const { error: dbError } = await supabase.from("users").upsert(userPayload);
-        if (dbError) {
-          console.warn("Detail profil agen tersimpan di Metadata tetapi gagal di tabel users:", dbError.message);
-        }
+      if (!res.ok) {
+        throw new Error(json.error || "Gagal mendaftarkan agen.");
       }
 
       setAgentPendingSubmitted(true);
@@ -358,21 +353,37 @@ export default function RegisterAgentPage() {
                 <input
                   type="file"
                   accept="image/*"
-                  onChange={(e) => setKtpFile(e.target.files?.[0] || null)}
+                  onChange={handleKtpChange}
                   className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
                   required
                 />
-                <div className="flex flex-col items-center gap-1.5">
-                  <div className="w-9 h-9 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
-                    <Upload className="w-4 h-4" />
+                {ktpPreview ? (
+                  <div className="space-y-2">
+                    <img
+                      src={ktpPreview}
+                      alt="Pratinjau KTP"
+                      className="max-h-32 mx-auto rounded-lg object-contain"
+                    />
+                    <p className="text-xs font-bold text-slate-200">
+                      {ktpFile?.name}
+                    </p>
+                    <p className="text-[10px] text-slate-400">
+                      Klik untuk mengganti foto
+                    </p>
                   </div>
-                  <p className="text-xs font-bold text-slate-200">
-                    {ktpFile ? ktpFile.name : "Klik untuk memilih foto KTP"}
-                  </p>
-                  <p className="text-[10px] text-slate-400">
-                    Format JPG, PNG, atau WEBP (Maksimal 5MB)
-                  </p>
-                </div>
+                ) : (
+                  <div className="flex flex-col items-center gap-1.5">
+                    <div className="w-9 h-9 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
+                      <Upload className="w-4 h-4" />
+                    </div>
+                    <p className="text-xs font-bold text-slate-200">
+                      Klik untuk memilih foto KTP
+                    </p>
+                    <p className="text-[10px] text-slate-400">
+                      Format JPG, PNG, atau WEBP (Maksimal 5MB)
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
 

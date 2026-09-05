@@ -70,9 +70,13 @@ export default function CreateFollowupPage() {
   const leadRef = useRef<HTMLDivElement>(null);
   const agentRef = useRef<HTMLDivElement>(null);
 
+  const requestedLeadId = typeof window === "undefined"
+    ? ""
+    : new URLSearchParams(window.location.search).get("lead_id") ?? "";
+
   // Form State
   const [form, setForm] = useState({
-    lead_id: "",
+    lead_id: requestedLeadId,
     assigned_to: "",
     followup_date: "",
     notes: "",
@@ -254,23 +258,6 @@ export default function CreateFollowupPage() {
         notes: form.notes || undefined,
         created_by: currentUserId || undefined,
       } as any);
-
-      // 🔴 2. Sisipkan pencatatan log aktivitas ke crm_activities
-      if (currentUserId && form.lead_id) {
-        const targetLead = leads.find((l) => l.id === form.lead_id);
-        const leadName = targetLead?.lead_name || "Klien";
-        const formattedDate = form.followup_date ? form.followup_date.replace("T", " pkl ") : "-";
-
-        await supabase.from("crm_activities").insert([
-          {
-            lead_id: form.lead_id,
-            user_id: currentUserId,
-            activity_type: "Schedule Follow-up",
-            notes: `Agenda follow-up baru dijadwalkan dengan ${leadName} untuk tanggal ${formattedDate}`,
-            created_at: new Date().toISOString(),
-          },
-        ]);
-      }
 
       toast.success("Jadwal follow-up berhasil dibuat!");
       router.push("/crm/followups");

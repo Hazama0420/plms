@@ -314,7 +314,7 @@ export default function InvoicesPage() {
   };
 
   return (
-    <div className="space-y-4 sm:space-y-6 pb-20 max-w-7xl mx-auto px-1 sm:px-0">
+    <div className="space-y-4 sm:space-y-6 pb-20 max-w-7xl mx-auto px-3 sm:px-0">
       {/* 1. HEADER HALAMAN */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-border/60 pb-3">
         <div>

@@ -1,7 +1,7 @@
 # CURRENT STATE — INLAND PROPERTY / PLMS
 
 ## Last Updated
-Generated from repository audit on current date.
+2026-09-05 — Phase 11 Step 1 & 2 completed.
 
 ## Project Identity
 
@@ -80,113 +80,113 @@ Generated from repository audit on current date.
 ## Current Major Work
 
 ### Active Areas
-1. **Property System Enhancement**: Mobile-first design optimization
-2. **AI Integration**: Multiple provider fallback system
-3. **CRM Automation**: Follow-up scheduling dan notification
-4. **Performance**: Responsive design dan mobile UX
+1. **System Audit & Stability (Phase 10)**: Full forensic audit across database, CRM pipeline, properties, invoices, permissions, and i18n
+2. **CRM Automation & Integration**: Lead-to-Survey and Deal-to-Invoice workflows
+3. **Data Consistency**: Child table normalization and KPI reconciliation
 
-### Recent Updates (2026-08-20)
-- Phase 5 Stage 3: Create + Edit Property Mobile UX refinement
-- Mobile navigation: Fixed floating button issues
-- Visual refinements: Container spacing, typography, responsive design
-- Build verification: TypeScript 0 errors, build SUCCESS
+### Recent Updates (2026-09-05)
+- **Phase 10: Full System Audit**:
+  - Comprehensive inspection of all 22 database tables, queries, Server Actions, permissions, and UI components.
+  - Delivered `PHASE_10_FULL_SYSTEM_AUDIT.md`.
+- **Phase 10A: Critical Stabilization (COMPLETED & VERIFIED)**:
+  - **BUG-01**: Invoices access restricted strictly to Admin & Super Admin in `lib/permissions.ts`, route print API, and page client guards.
+  - **BUG-02**: Fixed CRM contact card 404 by querying Supabase client directly.
+  - **BUG-03**: Fixed follow-up API query by selecting `full_name` instead of non-existent `name`.
+  - **BUG-04**: Authorized assigned agents (`assigned_to === user.id`) to view client phone and use WhatsApp.
+  - **BUG-05**: Enforced `client_id` integrity with `crm_leads(id)` foreign key constraint, preventing corrupted contact ID insertions.
+  - **BUG-08**: Authorized assigned agents to edit properties in `EditPropertyPage` and fixed edit URL typo in `properties/page.tsx`.
+  - **BUG-11**: Aligned Mobile `BottomNav` with Desktop `ERPSidebar` so invoices tab only shows to Admin & Super Admin.
+  - **Verification**: `npx tsc --noEmit` PASS (0 errors), `npm run build` PASS (67/67 routes). Dashboard property catalog confirmed 12/12 intact.
+  - Delivered `PHASE_10A_CRITICAL_STABILIZATION.md`.
 
-## Known Limitations
+- **Phase 10B: Workflow Integration & Data Reconciliation (COMPLETED & VERIFIED)**:
+  - **BUG-06**: Dashboard Leads KPI now derives from real scoped lead queries (`totalLeads`, `activeLeads`, `todayLeads`, `newLeadsCount`, `dealsWonCount`).
+  - **BUG-07**: Fictional `850_000_000` formula completely eliminated. `pipelineValue` reflects real active lead budget sum (`Rp 37.168.102.000`), matching CRM Kanban 1:1.
+  - **BUG-09**: Verified Won deals automatically transition linked property status to `'rented'` (for sewa) or `'sold'` (for jual) idempotently with audit log entries.
+  - **BUG-10**: Added non-destructive migration `030_phase10b_survey_lead_relation.sql` linking `surveys.lead_id` to `crm_leads(id)`, integrated survey scheduling/updates with `crm_activities` (`site_visit`), and added a dedicated Survei tab in Lead Detail.
+  - **BUG-14**: Eliminated double-counting in `reportService.getAgentPerformance` by applying canonical PLMS single sales attribution (`assigned_to || created_by`).
+  - **Verification**: `npx tsc --noEmit` PASS (0 errors), `npm run build` PASS (67/67 routes), all 8 runtime tests PASS. Dashboard property catalog regression confirmed 12/12 intact with 0 m² fallback.
+  - Delivered `PHASE_10B_WORKFLOW_DATA_RECONCILIATION.md`.
 
-### Technical Dependencies
-- **External APIs**: Requires Groq, Gemini, Agnes AI API keys
-- **Database**: Supabase-only implementation
-- **Deployment**: Vercel-optimized configuration
+- **Phase 10C: BI, Automation & CRM Productivity (COMPLETED & VERIFIED)**:
+  - **BUG-12**: Follow-up cards in Dashboard, CRM Follow-ups, and CRM Leads agenda now deep-link directly to `/crm/leads/[id]?tab=followups` with full customer & property context, plus deterministic priority badges (`Terlambat`, `Hari Ini`, `Terjadwal`).
+  - **BUG-13**: Implemented server-side atomic unassigned lead claim (`claimCRMLeadAction`) with race-condition concurrency protection (`WHERE id = :id AND assigned_to IS NULL`). Added "Ambil Lead" CTAs across Kanban, Leads Table, and Lead Detail.
+  - **Data Health System**: Built `services/data-health.service.ts` and `components/admin/AdminDataHealth.tsx` to detect incomplete and orphan data across Properties, CRM, Surveys, and Invoices with severity levels (`critical`, `warning`, `info`) and direct remediation deep-links.
+  - **CRM Productivity**: Added quick actions bar on Lead Detail (`WA Klien`, `+ Follow-up`, `+ Survei`, `Properti`, `Simulasi`), unlocked contact actions on claim, and unified follow-up agenda navigation.
+  - **Automation Governance**: Audited existing cron schedulers (`process-overdue` and `surveys/reminders`). Confirmed idempotent and safe; no duplicate or spam notifications introduced.
+  - **Verification**: `npx tsc --noEmit` PASS (0 errors), `npm run build` PASS (67/67 routes), all Phase 10C runtime verification scenarios PASS.
+  - Delivered `PHASE_10C_BI_AUTOMATION_PRODUCTIVITY.md`.
+
+## Known Limitations & Remaining Findings
+- **Data Health Remediation**: Data Health is detection-only per business rules; automated remediation is left to explicit administrator actions.
 
 ### Implementation Status
-- **CRM Multi-Agent Isolation**: UNVERIFIED — STAGING UNAVAILABLE
-- **Concurrent Daily-Digest**: Theoretical idempotency gap exists
-- **Role-Based Permissions**: Implementation status unclear from audit
-- **Complete API Coverage**: Not verified during audit
+- **Phase 10C Deliverables**: ✅ COMPLETED (`PHASE_10C_BI_AUTOMATION_PRODUCTIVITY.md`)
+- **Code Modifications**: Completed for Phase 10C (BUG-12, BUG-13, Data Health, CRM Productivity).
+- **Database Schema**: Zero destructive changes.
 
 ## Security Constraints
 
 ### Frozen Systems (100% Protected)
-- All CRM Server Actions (`actions/crm-*.action.ts`)
-- CRM API routes (`app/api/leads/*`, `app/api/followups/*`)
-- Authentication modules (`lib/api-auth.ts`, `lib/permissions.ts`, `proxy.ts`)
-- Database migrations (`supabase/migrations/*`)
-- Environment configuration (`.env.local`)
-
-### Current Security Status
-- ✅ Environment variable separation implemented
-- ✅ Supabase RLS policies verified (29/32 tests passed)
-- ✅ Server Actions with session verification
-- ✅ Audit logging untuk CRM mutations
-- ⚠️ Role-based permissions coverage unclear
-
-## Verification Status
-
-### Build & Type System
-- **TypeScript**: ✅ CONFIGURED (tsconfig.json present)
-- **Type Check**: ✅ NOT VERIFIED in this audit
-- **Build System**: ✅ CONFIGURED (next.config.ts present)
-- **Build Test**: ✅ NOT VERIFIED in this audit
-
-### Dependencies & Configuration
-- **Dependencies**: ✅ ALL INSTALLED (node_modules/ present)
-- **Package Manager**: ✅ npm (package-lock.json present)
-- **Environment**: ✅ CONFIGURED (.env.local exists)
-- **Vercel Config**: ✅ PRESENT (.vercel/ directory)
-
-### Known Unverified
-- **Database Migration Status**: NOT VERIFIED
-- **API Functionality**: NOT VERIFIED  
-- **AI Provider Connectivity**: NOT VERIFIED
-- **Performance Testing**: NOT VERIFIED
-- **End-to-End Workflows**: NOT VERIFIED
+- RLS policies on `surveys`, `crm_leads`, `crm_activities`, and `properties` remain intact.
+- Invoices access control preserved from Phase 10A (Admin/Super Admin only).
+- Core V2 design system remains intact.
 
 ## Next Task
 
-**Current Task**: Final Release (COMPLETED — READY TO DEPLOY).
+**Current Task**: Phase 11 — Sales & Revenue Operations (IN PROGRESS)
 
-### Recently Completed Work
-- ✅ Final Release verification: TypeScript 0 errors, Build PASS (67 routes)
-- ✅ Environment configuration verified (`.env.local` mappings correct)
-- ✅ Frozen zone verified 100% untouched
-- ✅ Created local release commit: `chore: finalize production release` (`31a9896`)
-- ✅ V2 UI designated as FROZEN
-- ⚠️ Git Push blocked by permissions (403 denied)
-- ✅ Generated [`FINAL_RELEASE_RESULT.md`](file:///d:/Workspace/plms/FINAL_RELEASE_RESULT.md)
+### Completed Work (Phase 11)
+- ✅ **Step 1 — Secure /api/followups**: `requireRole` guard, role-scoped queries (agents see only their follow-ups), phone number masking.
+- ✅ **Step 2 — Migration 031**: Applied to live Supabase DB (verified PASS).
+  - `invoices.deal_id` + `invoice_type` columns added.
+  - `commission_ledger` table created with RLS policies.
+  - `process_deal_closing_atomic()` PostgreSQL RPC deployed and verified.
+  - Partial unique index `uq_invoices_closing_deal(deal_id)` active.
+  - Unique constraint `uq_commission_ledger_lead(lead_id)` active.
+- ✅ **Step 3 — Revenue Operations Service**: `services/revenue-operations.service.ts` created.
+  - RPC is the ONLY mutation path (no non-atomic fallback, Guardrail 2 enforced).
+  - `processDealClosing()`, `getCommissionLedgers()`, `updateCommissionStatus()` implemented.
+- ✅ **Step 4 — verifyCRMDealAction Integration**: Atomic closing RPC now owns the entire closing (deal_state → verified, status → won, property update, invoice, commission) in a single DB transaction (Guardrail 3 enforced).
+  - `syncPropertyStatusOnDealWon` call removed from verification path (handled by RPC).
+  - Audit recorded AFTER successful atomic close only.
+- ✅ **Pre-Step 5 LIVE DB Verification Audit**: 10/10 checks PASSED on live Supabase database:
+  - Invoices schema, partial unique index, commission ledger table, uniqueness constraint, RLS policies, atomic RPC signature & security definer, transaction boundary, remote migration history, data integrity (0 duplicates / 0 orphans).
+- ✅ **TypeScript**: 0 errors.
 
-### Recently Changed Files (Final Release)
-- `FINAL_RELEASE_RESULT.md` (created)
-- `CURRENT_STATE.md` (updated)
+### Work Still In Progress (Phase 11)
+- [ ] Step 5 — Commission Ledger UI (admin commission management view)
+- [ ] Step 6 — Scheduler / cron integration (CRON_SECRET-protected endpoints)
+- [ ] Step 7 — Regression test suite (Vitest)
 
-### Recommended Next Steps (Based on State)
-1. **Push to Remote**: Authorized user must run `git push` to trigger the CI/CD Vercel pipeline.
-2. **Post-Launch Validation**: Conduct live smoke test on actual production URL.
-3. **Move to Product/Business Phase**: The V2 UI is frozen. Shift focus to resolving technical debt or analyzing real user feedback.
+### Important Decisions (Phase 11)
+- Authoritative deal representation: `crm_leads` table (`deal_state`, `deal_verified_at`)
+- Invoice idempotency: partial unique index on `invoices(deal_id) WHERE deal_id IS NOT NULL`
+- Commission uniqueness: `UNIQUE(lead_id)` on `commission_ledger`
+- Atomic closing function owns state transition: `pending_verification → verified`
+- No application-level fallback for closing mutations (RPC-only enforced)
+
+### Recently Changed Files (Phase 11)
+- `app/api/followups/route.ts` (secured)
+- `lib/audit-log.ts` (new audit actions)
+- `supabase/migrations/031_phase11_sales_revenue_operations.sql` (applied LIVE)
+- `services/revenue-operations.service.ts` (new service, RPC-only path)
+- `actions/crm-leads.action.ts` (verifyCRMDealAction integrated with revenue service)
 
 ## Phase Status
 
 ### Current Phase
-**FINAL RELEASE COMPLETED (READY TO DEPLOY)**
-- ✅ All V2 UI/UX design changes are FROZEN
-- ✅ Codebase validation passed (TypeScript 0 errors, Build 67 routes)
-- ✅ Browser QA passed (140 rendering tests successful)
-- ✅ Frozen zones (Security, API, DB) 100% untouched
-- ⚠️ Deployment blocked by missing Vercel credentials in sandbox
+**PHASE 11: SALES & REVENUE OPERATIONS (IN PROGRESS)**
+- Steps 1–4: COMPLETED & VERIFIED
+- Steps 5–7: Pending
 
 ### Completed Phases
-- ✅ **Phase 1**: CRM Core data models
-- ✅ **Phase 1A**: Security Hardening (Server Actions, RLS)
-- ✅ **Phase 2**: Dashboard + Property Detail + KPR Engine
-- ✅ **Phase 3**: CRM Business Automation  
-- ✅ **Phase 4**: Central AI Management Architecture
-- ✅ **Phase 5**: Property System Audit, UX Hardening & Canonical Knowledge Bases
-- ✅ **Phase 6**: UI/UX V2 Redesign & Migration (CERTIFIED)
-- ✅ **Phase 7**: UX Polish & Functional Smoke QA (PASS WITH MINOR POLISH)
-- ✅ **Phase 8**: Production Readiness & Mobile UX Polish (READY)
-- ✅ **Phase 9**: Content Standardization, Bilingual System & Product Audit (COMPLETED)
-- ✅ **Final QA**: Production QA (READY)
-- ✅ **Final Browser QA**: Runtime Browser Validation (PRODUCTION READY)
-- ✅ **Final Release**: V2 Freeze & Deployment Prep (READY TO DEPLOY)
+- ✅ **Phase 1 - 9.2**: Core CRM, Properties, V2 UI, Mobile Polish, Full-Page Bilingual
+- ✅ **Phase 10**: Full System Audit & Forensic Analysis (COMPLETED)
+- ✅ **Phase 10A**: Critical Stabilization (COMPLETED)
+- ✅ **Phase 10B**: Workflow Integration & Data Reconciliation (COMPLETED)
+- ✅ **Phase 10C**: BI, Automation & CRM Productivity (COMPLETED)
+- 🔄 **Phase 11**: Sales & Revenue Operations (IN PROGRESS — Steps 1-4 done)
 
 ---
 

@@ -4,6 +4,7 @@ import { createServerClientInstance } from '@/lib/supabase/server';
 import { isLostReason, isPipelineStage, isPipelineTransitionAllowed } from '@/lib/crm-pipeline';
 import { normalizeRole } from '@/lib/permissions';
 import { recordAudit } from '@/lib/audit-log';
+import { revenueOperationsService } from '@/services/revenue-operations.service';
 
 type ActionResult = { success: boolean; error: string | null };
 const canReviewDeal = (role: string) => role === 'admin' || role === 'super_admin';
@@ -27,7 +28,7 @@ export async function updateCRMLeadStatusAction(
 
   const { data: lead, error: fetchError } = await supabase
     .from('crm_leads')
-    .select('id, status, assigned_to, created_by, deal_state')
+    .select('id, status, assigned_to, created_by, deal_state, property_id')
     .eq('id', leadId)
     .single();
   if (fetchError || !lead) return { success: false, error: 'Lead tidak ditemukan atau tidak berwenang.' };
@@ -65,6 +66,10 @@ export async function updateCRMLeadStatusAction(
   const { error: updateError } = await supabase.from('crm_leads').update(patch).eq('id', leadId);
   if (updateError) return { success: false, error: updateError.message };
 
+  if (newStatus === 'won') {
+    await syncPropertyStatusOnDealWon(supabase, actor, leadId, lead.property_id);
+  }
+
   await recordAudit({
     actor: { userId: actor.user.id, email: actor.user.email ?? null, role: actor.role },
     action: newStatus === 'lost' ? 'lead.marked_lost' : 'lead.pipeline_changed',
@@ -78,6 +83,65 @@ export async function updateCRMLeadStatusAction(
     },
   });
   return { success: true, error: null };
+}
+
+async function syncPropertyStatusOnDealWon(
+  supabase: Awaited<ReturnType<typeof createServerClientInstance>>,
+  actor: { user: { id: string; email?: string | null }; role: string },
+  leadId: string,
+  leadPropertyId?: string | null
+) {
+  try {
+    let targetPropertyId = leadPropertyId;
+    if (!targetPropertyId) {
+      const { data: interest } = await supabase
+        .from('crm_interests')
+        .select('property_id')
+        .eq('lead_id', leadId)
+        .limit(1)
+        .maybeSingle();
+      if (interest?.property_id) {
+        targetPropertyId = interest.property_id;
+      }
+    }
+
+    if (!targetPropertyId) return;
+
+    const { data: prop } = await supabase
+      .from('properties')
+      .select('id, listing_type, status')
+      .eq('id', targetPropertyId)
+      .maybeSingle();
+
+    if (!prop) return;
+
+    const targetStatus = (prop.listing_type || '').toLowerCase() === 'sewa' ? 'rented' : 'sold';
+
+    // Idempotency: hanya update jika status belum sesuai target
+    if (prop.status !== targetStatus) {
+      const now = new Date().toISOString();
+      const { error: propUpdateErr } = await supabase
+        .from('properties')
+        .update({ status: targetStatus, updated_at: now })
+        .eq('id', prop.id);
+
+      if (!propUpdateErr) {
+        await recordAudit({
+          actor: { userId: actor.user.id, email: actor.user.email ?? null, role: actor.role },
+          action: 'property.status_changed',
+          targetId: prop.id,
+          detail: {
+            previous_status: prop.status,
+            new_status: targetStatus,
+            trigger: 'deal.verified',
+            lead_id: leadId,
+          },
+        });
+      }
+    }
+  } catch (err) {
+    console.error('Gagal menyinkronkan status properti saat deal won:', err);
+  }
 }
 
 export async function submitCRMDealAction(leadId: string): Promise<ActionResult> {
@@ -114,20 +178,63 @@ export async function verifyCRMDealAction(leadId: string, verified: boolean, rea
   const actor = await getActor(supabase);
   if (!actor) return { success: false, error: 'Sesi tidak valid.' };
   if (!canReviewDeal(actor.role)) return { success: false, error: 'Hanya Admin atau Super Admin yang dapat memverifikasi Deal.' };
-  const { data: lead } = await supabase.from('crm_leads').select('id,status,deal_state').eq('id', leadId).single();
-  if (!lead || lead.deal_state !== 'pending_verification') return { success: false, error: 'Deal tidak sedang menunggu verifikasi.' };
 
-  const now = new Date().toISOString();
-  const nextState = verified ? 'verified' : 'rejected';
-  const patch = verified
-    ? { deal_state: nextState, deal_verified_at: now, status: 'won', updated_at: now }
-    : { deal_state: nextState, deal_rejection_reason: reason?.trim() || 'Ditolak saat verifikasi', updated_at: now };
-  const { error } = await supabase.from('crm_leads').update(patch).eq('id', leadId);
-  if (error) return { success: false, error: error.message };
+  // Validate deal is in pending_verification state
+  const { data: lead } = await supabase
+    .from('crm_leads')
+    .select('id, status, deal_state, property_id')
+    .eq('id', leadId)
+    .single();
+  if (!lead || lead.deal_state !== 'pending_verification') {
+    return { success: false, error: 'Deal tidak sedang menunggu verifikasi.' };
+  }
+
+  if (!verified) {
+    // Rejection path: simple update, no revenue operations
+    const now = new Date().toISOString();
+    const { error } = await supabase
+      .from('crm_leads')
+      .update({
+        deal_state: 'rejected',
+        deal_rejection_reason: reason?.trim() || 'Ditolak saat verifikasi',
+        updated_at: now,
+      })
+      .eq('id', leadId);
+    if (error) return { success: false, error: error.message };
+
+    await recordAudit({
+      actor: { userId: actor.user.id, email: actor.user.email ?? null, role: actor.role },
+      action: 'deal.rejected', targetId: leadId,
+      detail: { previous_state: 'pending_verification', new_state: 'rejected', reason: reason?.trim() || null },
+    });
+    return { success: true, error: null };
+  }
+
+  // Approval path: delegate entire closing to atomic RPC via revenue service.
+  // The RPC atomically transitions deal_state -> verified, status -> won,
+  // updates property status, creates closing invoice, and creates commission ledger.
+  const closingResult = await revenueOperationsService.processDealClosing(
+    leadId,
+    { userId: actor.user.id, email: actor.user.email ?? null, role: actor.role }
+  );
+
+  if (!closingResult.success) {
+    return { success: false, error: closingResult.error ?? 'Gagal memproses closing deal.' };
+  }
+
+  // Audit: deal.verified recorded after successful atomic closing
   await recordAudit({
     actor: { userId: actor.user.id, email: actor.user.email ?? null, role: actor.role },
-    action: verified ? 'deal.verified' : 'deal.rejected', targetId: leadId,
-    detail: { previous_state: 'pending_verification', new_state: nextState, reason: reason?.trim() || null },
+    action: 'deal.verified', targetId: leadId,
+    detail: {
+      previous_state: 'pending_verification',
+      new_state: 'verified',
+      invoice_id: closingResult.invoiceId ?? null,
+      commission_id: closingResult.commissionId ?? null,
+      property_id: closingResult.propertyId ?? null,
+      property_status: closingResult.propertyStatus ?? null,
+      already_processed: closingResult.alreadyProcessed ?? false,
+    },
   });
   return { success: true, error: null };
 }
@@ -489,3 +596,102 @@ export async function bulkAssignCRMLeadsAction(
 
   return { success: true, count: leadIds.length, error: null };
 }
+
+/**
+ * BUG-13: Claim Unassigned Lead
+ * Memungkinkan Agent, Admin, atau Super Admin mengklaim Lead yang belum memiliki penanggung jawab (assigned_to IS NULL).
+ * Menggunakan update database atomik dengan kondisi `is('assigned_to', null)` untuk mencegah race condition (concurrency protection).
+ */
+export async function claimCRMLeadAction(leadId: string): Promise<ActionResult & { data?: any }> {
+  const supabase = await createServerClientInstance();
+  const actor = await getActor(supabase);
+  if (!actor) return { success: false, error: 'Sesi tidak valid. Silakan login kembali.' };
+
+  // Hanya role yang berwenang (agent, marketing, admin, super_admin, superadmin) yang boleh klaim lead
+  const allowedRoles = ['agent', 'marketing', 'admin', 'super_admin', 'superadmin'];
+  if (!allowedRoles.includes(actor.role)) {
+    return { success: false, error: 'Role Anda tidak diizinkan untuk mengklaim Lead.' };
+  }
+
+  if (!leadId) {
+    return { success: false, error: 'ID Lead tidak valid.' };
+  }
+
+  const now = new Date().toISOString();
+
+  // ATOMIC CONCURRENCY PROTECTION:
+  // Hanya baris dengan id = leadId DAN assigned_to IS NULL yang akan terupdate.
+  // Jika 2 agen mengeksekusi ini secara bersamaan, hanya 1 transaksi yang mengubah baris dan mengembalikan data.
+  const { data: updatedRows, error: updateError } = await supabase
+    .from('crm_leads')
+    .update({
+      assigned_to: actor.user.id,
+      updated_at: now,
+    })
+    .eq('id', leadId)
+    .is('assigned_to', null)
+    .select('id, assigned_to, contact_id, status')
+    .maybeSingle();
+
+  if (updateError) {
+    return { success: false, error: `Gagal mengklaim Lead: ${updateError.message}` };
+  }
+
+  // Jika tidak ada baris yang terupdate, periksa apakah lead memang sudah diklaim orang lain atau tidak ada
+  if (!updatedRows) {
+    const { data: existingLead } = await supabase
+      .from('crm_leads')
+      .select('id, assigned_to')
+      .eq('id', leadId)
+      .maybeSingle();
+
+    if (!existingLead) {
+      return { success: false, error: 'Lead tidak ditemukan.' };
+    }
+
+    if (existingLead.assigned_to) {
+      if (existingLead.assigned_to === actor.user.id) {
+        return { success: true, data: existingLead, error: null }; // Sudah milik sendiri
+      }
+      return {
+        success: false,
+        error: 'Lead ini sudah diambil oleh agen lain. Silakan muat ulang halaman.',
+      };
+    }
+
+    return { success: false, error: 'Gagal mengklaim Lead. Silakan coba lagi.' };
+  }
+
+  // Ambil nama agen untuk activity log
+  const { data: actorProfile } = await supabase
+    .from('users')
+    .select('full_name')
+    .eq('id', actor.user.id)
+    .maybeSingle();
+
+  const actorName = actorProfile?.full_name || actor.user.email || 'Agen';
+
+  // Catat aktivitas di crm_activities
+  await supabase.from('crm_activities').insert({
+    lead_id: leadId,
+    user_id: actor.user.id,
+    activity_type: 'status_change',
+    notes: `Lead berhasil diambil oleh ${actorName}`,
+    created_at: now,
+  });
+
+  // Catat jejak audit
+  await recordAudit({
+    actor: { userId: actor.user.id, email: actor.user.email ?? null, role: actor.role },
+    action: 'lead.assigned',
+    targetId: leadId,
+    detail: {
+      action_type: 'claim',
+      assigned_to: actor.user.id,
+      agent_name: actorName,
+    },
+  });
+
+  return { success: true, data: updatedRows, error: null };
+}
+

@@ -42,7 +42,10 @@ export type AuditAction =
   | "lead.deleted"
   | "interest.created"
   | "interest.updated"
-  | "interest.deleted";
+  | "interest.deleted"
+  | "property.status_changed"
+  | "invoice.closing_created"
+  | "commission.status_updated";
 
 export interface AuditEntry {
   /** Konteks dari requireRole()/requireAuth() — id, email, dan role pelaku. */

@@ -2,12 +2,11 @@
 
 import { createServerClientInstance } from '@/lib/supabase/server';
 import { isLostReason, isPipelineStage, isPipelineTransitionAllowed } from '@/lib/crm-pipeline';
-import { normalizeRole } from '@/lib/permissions';
+import { normalizeRole, canReviewDeal } from '@/lib/permissions';
 import { recordAudit } from '@/lib/audit-log';
 import { revenueOperationsService } from '@/services/revenue-operations.service';
 
 type ActionResult = { success: boolean; error: string | null };
-const canReviewDeal = (role: string) => role === 'admin' || role === 'super_admin';
 
 async function getActor(supabase: Awaited<ReturnType<typeof createServerClientInstance>>) {
   const { data: { user }, error } = await supabase.auth.getUser();

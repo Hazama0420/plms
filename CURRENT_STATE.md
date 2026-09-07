@@ -1,7 +1,7 @@
 # CURRENT STATE — INLAND PROPERTY / PLMS
 
 ## Last Updated
-2026-09-07 — Phase 11 Step 7 (Automated Regression Test Suite) completed. Phase 11 fully verified and finished.
+2026-09-07 — Hotfix: Super Admin deal verification role normalization (`superadmin` legacy compatibility). Phase 11 verified (62/62 tests passing, build pass).
 
 ## Project Identity
 
@@ -205,9 +205,10 @@
 - `tests/phone-masker.test.ts` (phone masking utility tests)
 - `tests/revenue-operations.test.ts` (revenue operations & RPC closing tests)
 - `tests/cron-auth.test.ts` (timing-safe cron authentication tests)
-- `tests/idempotency.test.ts` (followup & survey idempotency simulation tests)
-- `tests/commissions-action.test.ts` (commission server actions tests)
-- `package.json` (test scripts and Vitest devDependencies)
+- `lib/permissions.ts` (`canReviewDeal` authoritative helper with `normalizeRole`)
+- `actions/crm-leads.action.ts` (normalized deal review role authorization)
+- `services/revenue-operations.service.ts` (normalized commission status update role authorization)
+- `tests/deal-verification.test.ts` (19 regression tests for deal verification & normalization)
 - `CURRENT_STATE.md` (updated project handover document)
 
 ## Phase Status

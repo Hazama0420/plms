@@ -9,6 +9,7 @@
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { recordAudit } from "@/lib/audit-log";
+import { canReviewDeal } from "@/lib/permissions";
 
 export interface RevenueOperationsResult {
   success: boolean;
@@ -165,7 +166,7 @@ export const revenueOperationsService = {
     status: "pending" | "approved" | "paid" | "cancelled",
     actor: { userId: string; email?: string | null; role: string }
   ): Promise<{ success: boolean; error?: string }> {
-    if (!["admin", "super_admin", "superadmin"].includes(actor.role)) {
+    if (!canReviewDeal(actor.role)) {
       return { success: false, error: "Hanya Admin yang berwenang mengubah status komisi." };
     }
 

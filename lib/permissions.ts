@@ -37,6 +37,15 @@ export function normalizeRole(raw: unknown): UserRole {
 }
 
 /**
+ * Memeriksa apakah suatu role berwenang meninjau atau memverifikasi deal CRM.
+ * Hanya Admin dan Super Admin (termasuk legacy "superadmin") yang berwenang.
+ */
+export function canReviewDeal(rawRole: unknown): boolean {
+  const role = normalizeRole(rawRole);
+  return role === "admin" || role === "super_admin";
+}
+
+/**
  * Cek apakah user memiliki permission tertentu
  */
 export function hasPermission(userRole: UserRole | null | undefined, permission: Permission): boolean {

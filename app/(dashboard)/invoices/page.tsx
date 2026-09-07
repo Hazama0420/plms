@@ -9,6 +9,8 @@ import { toast } from "sonner";
 import { supabase } from "@/lib/supabase/client";
 
 import { PrintInvoiceButton } from "@/components/invoices/print-invoice-button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { CommissionLedgerTable } from "@/components/invoices/CommissionLedgerTable";
 
 import {
   Plus,
@@ -29,6 +31,7 @@ import {
   Loader2,
   Edit3,
   XCircle,
+  Coins,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -331,45 +334,58 @@ export default function InvoicesPage() {
 
   return (
     <div className="space-y-4 sm:space-y-6 pb-20 max-w-7xl mx-auto px-3 sm:px-0">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-border/60 pb-3">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
-            📄 {t("invoices.title")}
-          </h1>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            {t("invoices.subtitle")}
-          </p>
+      <Tabs defaultValue="invoices" className="space-y-4 sm:space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-border/60 pb-3">
+          <div>
+            <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
+              📄 {t("invoices.title")}
+            </h1>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {t("invoices.subtitle")}
+            </p>
+          </div>
+
+          <TabsList className="h-9 p-1 bg-muted rounded-xl self-start sm:self-auto">
+            <TabsTrigger value="invoices" className="rounded-lg text-xs gap-1.5 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-xs">
+              <FileText className="w-3.5 h-3.5" />
+              {t("invoices.tabs.invoices")}
+            </TabsTrigger>
+            <TabsTrigger value="commissions" className="rounded-lg text-xs gap-1.5 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-xs">
+              <Coins className="w-3.5 h-3.5 text-emerald-600" />
+              {t("invoices.tabs.commissions")}
+            </TabsTrigger>
+          </TabsList>
         </div>
 
-        <div className="flex items-center gap-2">
-          <Button
-            onClick={() => {
-              setPreviewImage(null);
-              setOcrForm({
-                invoice_number: "",
-                client_name: "",
-                total_amount: 0,
-                status: "draft",
-                issue_date: "",
-                due_date: "",
-                notes: "",
-              });
-              setIsOcrOpen(true);
-            }}
-            variant="outline"
-            className="flex-1 sm:flex-none border-emerald-500/40 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 text-xs h-9 gap-1.5 rounded-xl cursor-pointer"
-          >
-            <Sparkles className="h-3.5 w-3.5 text-emerald-600 fill-emerald-600" /> {t("invoices.scan_ai_btn")}
-          </Button>
+        <TabsContent value="invoices" className="space-y-4 sm:space-y-6 focus-visible:outline-none mt-0">
+          <div className="flex justify-end gap-2">
+            <Button
+              onClick={() => {
+                setPreviewImage(null);
+                setOcrForm({
+                  invoice_number: "",
+                  client_name: "",
+                  total_amount: 0,
+                  status: "draft",
+                  issue_date: "",
+                  due_date: "",
+                  notes: "",
+                });
+                setIsOcrOpen(true);
+              }}
+              variant="outline"
+              className="flex-1 sm:flex-none border-emerald-500/40 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 text-xs h-9 gap-1.5 rounded-xl cursor-pointer"
+            >
+              <Sparkles className="h-3.5 w-3.5 text-emerald-600 fill-emerald-600" /> {t("invoices.scan_ai_btn")}
+            </Button>
 
-          <Button
-            onClick={() => router.push("/invoices/create")}
-            className="flex-1 sm:flex-none bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-9 shadow-md shadow-emerald-600/20 gap-1.5 rounded-xl font-medium cursor-pointer"
-          >
-            <Plus className="h-4 w-4" /> {t("invoices.create_btn")}
-          </Button>
-        </div>
-      </div>
+            <Button
+              onClick={() => router.push("/invoices/create")}
+              className="flex-1 sm:flex-none bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-9 shadow-md shadow-emerald-600/20 gap-1.5 rounded-xl font-medium cursor-pointer"
+            >
+              <Plus className="h-4 w-4" /> {t("invoices.create_btn")}
+            </Button>
+          </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5 sm:gap-4">
         {[
@@ -637,6 +653,12 @@ export default function InvoicesPage() {
           </CardContent>
         </Card>
       </div>
+        </TabsContent>
+
+        <TabsContent value="commissions" className="space-y-4 sm:space-y-6 focus-visible:outline-none mt-0">
+          <CommissionLedgerTable />
+        </TabsContent>
+      </Tabs>
 
       {/* 6. AI OCR INVOICE SCANNER DIALOG */}
       <Dialog open={isOcrOpen} onOpenChange={setIsOcrOpen}>

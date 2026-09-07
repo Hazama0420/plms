@@ -132,13 +132,17 @@ export function canAccessRoute(userRole: UserRole | null | undefined, route: str
     return hasAnyPermission(userRole, ["manage_own_properties", "manage_all_properties", "view_all_properties"]);
   }
 
-  // CRM, Leads, Follow-up, Survey — seluruhnya data pelanggan
+  // CRM, Leads, Follow-up — data pipeline operasional internal (hanya staf: Agen, Marketing, Admin, Super Admin, Commissioner)
   if (
     matchesSection(route, "crm") ||
-    matchesSection(route, "leads") ||
-    matchesSection(route, "surveys")
+    matchesSection(route, "leads")
   ) {
-    return hasAnyPermission(userRole, ["manage_own_crm", "manage_all_crm", "view_all_crm", "view_own_crm"]);
+    return hasAnyPermission(userRole, ["manage_own_crm", "manage_all_crm", "view_all_crm"]);
+  }
+
+  // Surveys — jadwal survei properti (dapat diakses staf internal maupun client terdaftar)
+  if (matchesSection(route, "surveys")) {
+    return true;
   }
 
   // Invoices — data keuangan internal (khusus Admin & Super Admin)

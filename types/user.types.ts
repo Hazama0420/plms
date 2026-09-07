@@ -89,7 +89,6 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   ],
   viewer: [
     "view_all_properties",
-    "view_own_crm",
   ],
   commissioner: [
     "view_all_properties",

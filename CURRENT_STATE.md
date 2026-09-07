@@ -1,7 +1,7 @@
 # CURRENT STATE — INLAND PROPERTY / PLMS
 
 ## Last Updated
-2026-09-07 — Phase 11 Step 6 (External Scheduler / Cron Integration) completed.
+2026-09-07 — Phase 11 Step 7 (Automated Regression Test Suite) completed. Phase 11 fully verified and finished.
 
 ## Project Identity
 
@@ -160,10 +160,19 @@
   - Minimum GitHub Actions runner permissions: `contents: read`.
   - Concurrency group `cron-schedulers` with `cancel-in-progress: false` to prevent duplicate or overlapping executions.
   - Failure isolation: separate steps for overdue follow-up sweep & survey reminder dispatch.
+- ✅ **Step 7 — Automated Regression Test Suite (Vitest)**: Added test runner and unit test suite covering critical Phase 11 safety nets without changing production business logic.
+  - Setup: Vitest 3.2.7 with v8 coverage provider (`vitest.config.ts`, `npm run test:run`, `npm run test:coverage`).
+  - Permissions & Role Guards: `tests/permissions.test.ts` (11 tests — viewer CRM rejection, agent CRM scope, commissioner read-only, admin invoices/CRM, role hierarchy).
+  - Phone Masking: `tests/phone-masker.test.ts` (9 tests — short numbers, standard ID format, whitespace, role-based phone visibility for admin/owner vs unauthorized).
+  - Revenue Operations & Deal Closing: `tests/revenue-operations.test.ts` (8 tests — atomic RPC call, duplicate closing protection, error propagation, missing migration 031 detection, admin-only status updates).
+  - Cron Authentication & Timing-Safe Security: `tests/cron-auth.test.ts` (6 tests — missing secret 503, invalid token 401, timing-safe buffer comparison, Vercel bypass distinction).
+  - Follow-up & Survey Idempotency: `tests/idempotency.test.ts` (2 tests — daily digest audit log locking, survey mark-before-send prevention of double dispatch).
+  - Commission Server Actions: `tests/commissions-action.test.ts` (7 tests — unauthenticated rejection, agent query scoping, admin mutation actor forwarding, commissioner mutation rejection).
+  - Test Results: 43/43 tests PASS, 81% overall statements coverage on target core modules, 0 TypeScript errors, build PASS.
 - ✅ **TypeScript**: 0 errors.
 
 ### Work Still In Progress (Phase 11)
-- [ ] Step 7 — Regression test suite (Vitest)
+- None (Phase 11 Steps 1–7 fully completed and verified).
 
 ### Important Decisions (Phase 11)
 - Authoritative deal representation: `crm_leads` table (`deal_state`, `deal_verified_at`)
@@ -173,6 +182,8 @@
 - No application-level fallback for closing mutations (RPC-only enforced)
 - Commission Ledger UI accessible via Invoices module Tabs (Admin & Super Admin full manage, Commissioner read-only)
 - External cron runner configured via GitHub Actions (`cron-schedulers.yml`) replacing Vercel Hobby-restricted cron schedule.
+- Dual-layer authentication architecture for cron runner: Vercel Edge protection bypass (`x-vercel-protection-bypass`) decoupled from application timing-safe Bearer authentication (`CRON_SECRET`).
+- Automated Regression Testing framework: Vitest selected for native TypeScript resolution without impacting production bundling or Next.js Turbopack build.
 - Required GitHub Repository Secrets/Variables:
   - `CRON_SECRET` (Secret, Mandatory): Shared secret matched against production server `CRON_SECRET` for timing-safe bearer authentication.
   - `APP_BASE_URL` (Secret/Variable, Mandatory): Canonical target origin (concept: `https://domain-production-app` or Preview URL, without trailing slash).
@@ -189,14 +200,21 @@
 - `app/(dashboard)/invoices/page.tsx` (tabs integration)
 - `lib/i18n/id.ts` & `lib/i18n/en.ts` (commission translations)
 - `.github/workflows/cron-schedulers.yml` (external cron scheduler workflow)
-- `CURRENT_STATE.md` (updated progress and GitHub secrets documentation)
+- `vitest.config.ts` (Vitest test runner configuration)
+- `tests/permissions.test.ts` (permission and route access tests)
+- `tests/phone-masker.test.ts` (phone masking utility tests)
+- `tests/revenue-operations.test.ts` (revenue operations & RPC closing tests)
+- `tests/cron-auth.test.ts` (timing-safe cron authentication tests)
+- `tests/idempotency.test.ts` (followup & survey idempotency simulation tests)
+- `tests/commissions-action.test.ts` (commission server actions tests)
+- `package.json` (test scripts and Vitest devDependencies)
+- `CURRENT_STATE.md` (updated project handover document)
 
 ## Phase Status
 
 ### Current Phase
-**PHASE 11: SALES & REVENUE OPERATIONS (IN PROGRESS)**
-- Steps 1–6: COMPLETED & VERIFIED
-- Step 7: Pending
+**PHASE 11: SALES & REVENUE OPERATIONS (COMPLETED & VERIFIED)**
+- Steps 1–7: COMPLETED & VERIFIED
 
 ### Completed Phases
 - ✅ **Phase 1 - 9.2**: Core CRM, Properties, V2 UI, Mobile Polish, Full-Page Bilingual
@@ -204,7 +222,7 @@
 - ✅ **Phase 10A**: Critical Stabilization (COMPLETED)
 - ✅ **Phase 10B**: Workflow Integration & Data Reconciliation (COMPLETED)
 - ✅ **Phase 10C**: BI, Automation & CRM Productivity (COMPLETED)
-- 🔄 **Phase 11**: Sales & Revenue Operations (IN PROGRESS — Steps 1-6 done)
+- ✅ **Phase 11**: Sales & Revenue Operations (COMPLETED & VERIFIED — Steps 1-7 done)
 
 ---
 

@@ -155,6 +155,7 @@
   - Invoices schema, partial unique index, commission ledger table, uniqueness constraint, RLS policies, atomic RPC signature & security definer, transaction boundary, remote migration history, data integrity (0 duplicates / 0 orphans).
 - ✅ **Step 6 — External Scheduler / Cron Integration**: Created `.github/workflows/cron-schedulers.yml` to trigger `/api/followups/process-overdue` (POST) and `/api/surveys/reminders` (GET) every 15 minutes (`*/15 * * * *`) via GitHub Actions.
   - Fail-fast curl with bearer authentication: `Authorization: Bearer ${{ secrets.CRON_SECRET }}` (no logging of credentials).
+  - Dual-layer authentication support: optional `x-vercel-protection-bypass: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}` for testing against protected Vercel Preview deployments without disabling Deployment Protection.
   - Configurable production base URL via `${{ secrets.APP_BASE_URL || vars.APP_BASE_URL }}` (concept: `https://domain-production-app`).
   - Minimum GitHub Actions runner permissions: `contents: read`.
   - Concurrency group `cron-schedulers` with `cancel-in-progress: false` to prevent duplicate or overlapping executions.
@@ -173,8 +174,9 @@
 - Commission Ledger UI accessible via Invoices module Tabs (Admin & Super Admin full manage, Commissioner read-only)
 - External cron runner configured via GitHub Actions (`cron-schedulers.yml`) replacing Vercel Hobby-restricted cron schedule.
 - Required GitHub Repository Secrets/Variables:
-  - `CRON_SECRET` (Secret): Shared secret matched against production server `CRON_SECRET` for timing-safe bearer authentication.
-  - `APP_BASE_URL` (Secret/Variable): Canonical production origin (concept: `https://domain-production-app` without trailing slash).
+  - `CRON_SECRET` (Secret, Mandatory): Shared secret matched against production server `CRON_SECRET` for timing-safe bearer authentication.
+  - `APP_BASE_URL` (Secret/Variable, Mandatory): Canonical target origin (concept: `https://domain-production-app` or Preview URL, without trailing slash).
+  - `VERCEL_AUTOMATION_BYPASS_SECRET` (Secret, Optional): Token from Vercel Project Settings > Deployment Protection > Protection Bypass for Automation, used only when testing/automating against protected Vercel Preview deployments. Production does not require this secret.
 
 ### Recently Changed Files (Phase 11)
 - `app/api/followups/route.ts` (secured)

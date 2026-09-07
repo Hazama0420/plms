@@ -22,10 +22,16 @@ jobs:
         env:
           APP_BASE_URL: ${{ secrets.APP_BASE_URL || vars.APP_BASE_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          VERCEL_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
         run: |
           if [ -z "$APP_BASE_URL" ] || [ -z "$CRON_SECRET" ]; then
             echo "::error::Required secret/variable APP_BASE_URL or secret CRON_SECRET is missing."
             exit 1
+          fi
+
+          BYPASS_ARGS=()
+          if [ -n "$VERCEL_BYPASS_SECRET" ]; then
+            BYPASS_ARGS=(--header "x-vercel-protection-bypass: ${VERCEL_BYPASS_SECRET}")
           fi
 
           echo "Dispatching POST request to /api/followups/process-overdue..."
@@ -33,6 +39,7 @@ jobs:
             --request POST \
             --header "Authorization: Bearer ${CRON_SECRET}" \
             --header "Accept: application/json" \
+            "${BYPASS_ARGS[@]}" \
             "${APP_BASE_URL%/}/api/followups/process-overdue"
           echo ""
 
@@ -40,10 +47,16 @@ jobs:
         env:
           APP_BASE_URL: ${{ secrets.APP_BASE_URL || vars.APP_BASE_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          VERCEL_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
         run: |
           if [ -z "$APP_BASE_URL" ] || [ -z "$CRON_SECRET" ]; then
             echo "::error::Required secret/variable APP_BASE_URL or secret CRON_SECRET is missing."
             exit 1
+          fi
+
+          BYPASS_ARGS=()
+          if [ -n "$VERCEL_BYPASS_SECRET" ]; then
+            BYPASS_ARGS=(--header "x-vercel-protection-bypass: ${VERCEL_BYPASS_SECRET}")
           fi
 
           echo "Dispatching GET request to /api/surveys/reminders..."
@@ -51,5 +64,6 @@ jobs:
             --request GET \
             --header "Authorization: Bearer ${CRON_SECRET}" \
             --header "Accept: application/json" \
+            "${BYPASS_ARGS[@]}" \
             "${APP_BASE_URL%/}/api/surveys/reminders"
           echo ""

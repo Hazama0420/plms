@@ -1,0 +1,55 @@
+name: External Cron Schedulers
+
+on:
+  schedule:
+    # Jalankan setiap 15 menit
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: cron-schedulers
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  run-schedulers:
+    name: Execute Scheduled Automations
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Overdue Follow-ups Sweep and Daily Digest
+        env:
+          APP_BASE_URL: ${{ secrets.APP_BASE_URL || vars.APP_BASE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$APP_BASE_URL" ] || [ -z "$CRON_SECRET" ]; then
+            echo "::error::Required secret/variable APP_BASE_URL or secret CRON_SECRET is missing."
+            exit 1
+          fi
+
+          echo "Dispatching POST request to /api/followups/process-overdue..."
+          curl --fail --silent --show-error --location --max-time 60 \
+            --request POST \
+            --header "Authorization: Bearer ${CRON_SECRET}" \
+            --header "Accept: application/json" \
+            "${APP_BASE_URL%/}/api/followups/process-overdue"
+          echo ""
+
+      - name: Trigger Survey Reminders Dispatch
+        env:
+          APP_BASE_URL: ${{ secrets.APP_BASE_URL || vars.APP_BASE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$APP_BASE_URL" ] || [ -z "$CRON_SECRET" ]; then
+            echo "::error::Required secret/variable APP_BASE_URL or secret CRON_SECRET is missing."
+            exit 1
+          fi
+
+          echo "Dispatching GET request to /api/surveys/reminders..."
+          curl --fail --silent --show-error --location --max-time 60 \
+            --request GET \
+            --header "Authorization: Bearer ${CRON_SECRET}" \
+            --header "Accept: application/json" \
+            "${APP_BASE_URL%/}/api/surveys/reminders"
+          echo ""

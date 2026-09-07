@@ -1,7 +1,7 @@
 # CURRENT STATE — INLAND PROPERTY / PLMS
 
 ## Last Updated
-2026-09-05 — Phase 11 Step 1 & 2 completed.
+2026-09-07 — Phase 11 Step 6 (External Scheduler / Cron Integration) completed.
 
 ## Project Identity
 
@@ -153,10 +153,15 @@
 - ✅ **Step 5 — Commission Ledger UI**: `components/invoices/CommissionLedgerTable.tsx` and `actions/commissions.action.ts` created; integrated into `app/(dashboard)/invoices/page.tsx` via Tabs (Faktur & Tagihan vs Buku Komisi); ID & EN translations added; verified build & typecheck PASS (0 errors).
 - ✅ **Pre-Step 5 LIVE DB Verification Audit**: 10/10 checks PASSED on live Supabase database:
   - Invoices schema, partial unique index, commission ledger table, uniqueness constraint, RLS policies, atomic RPC signature & security definer, transaction boundary, remote migration history, data integrity (0 duplicates / 0 orphans).
+- ✅ **Step 6 — External Scheduler / Cron Integration**: Created `.github/workflows/cron-schedulers.yml` to trigger `/api/followups/process-overdue` (POST) and `/api/surveys/reminders` (GET) every 15 minutes (`*/15 * * * *`) via GitHub Actions.
+  - Fail-fast curl with bearer authentication: `Authorization: Bearer ${{ secrets.CRON_SECRET }}` (no logging of credentials).
+  - Configurable production base URL via `${{ secrets.APP_BASE_URL || vars.APP_BASE_URL }}` (concept: `https://domain-production-app`).
+  - Minimum GitHub Actions runner permissions: `contents: read`.
+  - Concurrency group `cron-schedulers` with `cancel-in-progress: false` to prevent duplicate or overlapping executions.
+  - Failure isolation: separate steps for overdue follow-up sweep & survey reminder dispatch.
 - ✅ **TypeScript**: 0 errors.
 
 ### Work Still In Progress (Phase 11)
-- [ ] Step 6 — Scheduler / cron integration (CRON_SECRET-protected endpoints)
 - [ ] Step 7 — Regression test suite (Vitest)
 
 ### Important Decisions (Phase 11)
@@ -166,6 +171,10 @@
 - Atomic closing function owns state transition: `pending_verification → verified`
 - No application-level fallback for closing mutations (RPC-only enforced)
 - Commission Ledger UI accessible via Invoices module Tabs (Admin & Super Admin full manage, Commissioner read-only)
+- External cron runner configured via GitHub Actions (`cron-schedulers.yml`) replacing Vercel Hobby-restricted cron schedule.
+- Required GitHub Repository Secrets/Variables:
+  - `CRON_SECRET` (Secret): Shared secret matched against production server `CRON_SECRET` for timing-safe bearer authentication.
+  - `APP_BASE_URL` (Secret/Variable): Canonical production origin (concept: `https://domain-production-app` without trailing slash).
 
 ### Recently Changed Files (Phase 11)
 - `app/api/followups/route.ts` (secured)
@@ -177,13 +186,15 @@
 - `components/invoices/CommissionLedgerTable.tsx` (new commission management view)
 - `app/(dashboard)/invoices/page.tsx` (tabs integration)
 - `lib/i18n/id.ts` & `lib/i18n/en.ts` (commission translations)
+- `.github/workflows/cron-schedulers.yml` (external cron scheduler workflow)
+- `CURRENT_STATE.md` (updated progress and GitHub secrets documentation)
 
 ## Phase Status
 
 ### Current Phase
 **PHASE 11: SALES & REVENUE OPERATIONS (IN PROGRESS)**
-- Steps 1–4: COMPLETED & VERIFIED
-- Steps 5–7: Pending
+- Steps 1–6: COMPLETED & VERIFIED
+- Step 7: Pending
 
 ### Completed Phases
 - ✅ **Phase 1 - 9.2**: Core CRM, Properties, V2 UI, Mobile Polish, Full-Page Bilingual
@@ -191,7 +202,7 @@
 - ✅ **Phase 10A**: Critical Stabilization (COMPLETED)
 - ✅ **Phase 10B**: Workflow Integration & Data Reconciliation (COMPLETED)
 - ✅ **Phase 10C**: BI, Automation & CRM Productivity (COMPLETED)
-- 🔄 **Phase 11**: Sales & Revenue Operations (IN PROGRESS — Steps 1-4 done)
+- 🔄 **Phase 11**: Sales & Revenue Operations (IN PROGRESS — Steps 1-6 done)
 
 ---
 

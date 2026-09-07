@@ -1,7 +1,7 @@
 # CURRENT STATE — INLAND PROPERTY / PLMS
 
 ## Last Updated
-2026-09-07 — Hotfix: Super Admin deal verification role normalization (`superadmin` legacy compatibility). Phase 11 verified (62/62 tests passing, build pass).
+2026-09-07 — Debug Runtime Menyeluruh: Deal Won authorization boolean fix (`actions/crm-leads.action.ts`), Dashboard leads schema query fix (`contact:crm_contacts(full_name, phone)`), live Supabase audit (0 drift, 66/66 tests passing, build pass).
 
 ## Project Identity
 
@@ -206,9 +206,10 @@
 - `tests/revenue-operations.test.ts` (revenue operations & RPC closing tests)
 - `tests/cron-auth.test.ts` (timing-safe cron authentication tests)
 - `lib/permissions.ts` (`canReviewDeal` authoritative helper with `normalizeRole`)
-- `actions/crm-leads.action.ts` (normalized deal review role authorization)
+- `actions/crm-leads.action.ts` (normalized deal review role authorization, won transition boolean operator fix and deal closing trigger)
 - `services/revenue-operations.service.ts` (normalized commission status update role authorization)
-- `tests/deal-verification.test.ts` (19 regression tests for deal verification & normalization)
+- `app/(dashboard)/dashboard/page.tsx` (fixed crm_leads query to embed contact:crm_contacts for name and phone)
+- `tests/deal-verification.test.ts` (23 regression tests for deal verification, role normalization, and leads schema contract)
 - `CURRENT_STATE.md` (updated project handover document)
 
 ## Phase Status

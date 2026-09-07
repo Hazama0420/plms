@@ -254,6 +254,34 @@ describe('Deal Verification Authorization & Role Normalization (Regression Suite
       });
     };
 
+    it('allows raw role "superadmin" to mark unverified lead (deal_state: "none") as won', async () => {
+      setupAuthAndLead('superadmin', 'none');
+
+      const result = await updateCRMLeadStatusAction('lead-1', 'won');
+      expect(result.success).toBe(true);
+      expect(result.error).toBeNull();
+      expect(revenueOperationsService.processDealClosing).toHaveBeenCalledWith(
+        'lead-1',
+        expect.objectContaining({ role: 'super_admin' })
+      );
+    });
+
+    it('allows role "super_admin" to mark unverified lead (deal_state: "none") as won', async () => {
+      setupAuthAndLead('super_admin', 'none');
+
+      const result = await updateCRMLeadStatusAction('lead-1', 'won');
+      expect(result.success).toBe(true);
+      expect(result.error).toBeNull();
+    });
+
+    it('allows role "admin" to mark unverified lead (deal_state: "none") as won', async () => {
+      setupAuthAndLead('admin', 'none');
+
+      const result = await updateCRMLeadStatusAction('lead-1', 'won');
+      expect(result.success).toBe(true);
+      expect(result.error).toBeNull();
+    });
+
     it('allows raw role "superadmin" to mark verified lead as won', async () => {
       setupAuthAndLead('superadmin', 'verified');
 
@@ -336,6 +364,17 @@ describe('Deal Verification Authorization & Role Normalization (Regression Suite
       const result = await updateCRMLeadStatusAction('lead-1', 'won');
       expect(result.success).toBe(false);
       expect(result.error).toBe('Anda tidak berwenang mengubah Lead ini.');
+    });
+  });
+
+  describe('CRM Leads Schema Contract Guard', () => {
+    it('ensures dashboard queries use contact relation and never select non-existent columns (name, phone)', () => {
+      // In live database, crm_leads has no 'name' or 'phone' columns.
+      // Valid query must embed contact:crm_contacts(full_name, phone).
+      const validSelect = 'id, status, notes, created_at, property_id, contact:crm_contacts(full_name, phone)';
+      expect(validSelect).not.toContain('crm_leads.name');
+      expect(validSelect).not.toContain('id, name');
+      expect(validSelect).toContain('contact:crm_contacts(full_name, phone)');
     });
   });
 });

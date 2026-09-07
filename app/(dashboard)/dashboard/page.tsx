@@ -254,7 +254,7 @@ export default function DashboardPage() {
       if (role !== "viewer") {
         let leadsQuery = supabase
           .from("crm_leads")
-          .select("id, name, phone, status, notes, created_at, property_id")
+          .select("id, status, notes, created_at, property_id, contact:crm_contacts(full_name, phone)")
           .order("created_at", { ascending: false })
           .limit(5);
 
@@ -263,14 +263,17 @@ export default function DashboardPage() {
         }
 
         const { data: leadsData } = await leadsQuery;
-        const mappedLeads: DashboardLeadItem[] = (leadsData || []).map((l: any) => ({
-          id: l.id,
-          name: l.name || "Klien Prospek",
-          phone: l.phone || "-",
-          property: l.notes || "Properti Pilihan",
-          status: l.status,
-          created_at: l.created_at,
-        }));
+        const mappedLeads: DashboardLeadItem[] = (leadsData || []).map((l: any) => {
+          const contactObj = l.contact || l.crm_contacts || {};
+          return {
+            id: l.id,
+            name: contactObj.full_name || "Klien Prospek",
+            phone: contactObj.phone || "-",
+            property: l.notes || "Properti Pilihan",
+            status: l.status,
+            created_at: l.created_at,
+          };
+        });
         setRecentLeads(mappedLeads);
 
         // 4. Fetch Surveys

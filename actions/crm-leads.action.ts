@@ -41,7 +41,7 @@ export async function updateCRMLeadStatusAction(
   if (!isPipelineTransitionAllowed(currentStatus, newStatus)) {
     return { success: false, error: `Transisi status tidak valid dari '${currentStatus}' ke '${newStatus}'.` };
   }
-  if (newStatus === 'won' && (!privileged || lead.deal_state !== 'verified')) {
+  if (newStatus === 'won' && (!privileged && lead.deal_state !== 'verified')) {
     return { success: false, error: 'Deal harus diverifikasi Admin atau Super Admin.' };
   }
   if (newStatus === 'lost') {
@@ -57,6 +57,10 @@ export async function updateCRMLeadStatusAction(
     status: newStatus,
     updated_at: new Date().toISOString(),
   };
+  if (newStatus === 'won') {
+    patch.deal_state = 'verified';
+    patch.deal_verified_at = new Date().toISOString();
+  }
   if (newStatus === 'lost') {
     patch.lost_reason = options?.lostReason;
     patch.lost_explanation = options?.lostExplanation?.trim() || null;
@@ -67,6 +71,15 @@ export async function updateCRMLeadStatusAction(
 
   if (newStatus === 'won') {
     await syncPropertyStatusOnDealWon(supabase, actor, leadId, lead.property_id);
+    try {
+      await revenueOperationsService.processDealClosing(leadId, {
+        userId: actor.user.id,
+        email: actor.user.email ?? null,
+        role: actor.role,
+      });
+    } catch (closingErr) {
+      console.error('Gagal memproses revenue operations saat deal won:', closingErr);
+    }
   }
 
   await recordAudit({

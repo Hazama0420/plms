@@ -150,12 +150,12 @@
 - ✅ **Step 4 — verifyCRMDealAction Integration**: Atomic closing RPC now owns the entire closing (deal_state → verified, status → won, property update, invoice, commission) in a single DB transaction (Guardrail 3 enforced).
   - `syncPropertyStatusOnDealWon` call removed from verification path (handled by RPC).
   - Audit recorded AFTER successful atomic close only.
+- ✅ **Step 5 — Commission Ledger UI**: `components/invoices/CommissionLedgerTable.tsx` and `actions/commissions.action.ts` created; integrated into `app/(dashboard)/invoices/page.tsx` via Tabs (Faktur & Tagihan vs Buku Komisi); ID & EN translations added; verified build & typecheck PASS (0 errors).
 - ✅ **Pre-Step 5 LIVE DB Verification Audit**: 10/10 checks PASSED on live Supabase database:
   - Invoices schema, partial unique index, commission ledger table, uniqueness constraint, RLS policies, atomic RPC signature & security definer, transaction boundary, remote migration history, data integrity (0 duplicates / 0 orphans).
 - ✅ **TypeScript**: 0 errors.
 
 ### Work Still In Progress (Phase 11)
-- [ ] Step 5 — Commission Ledger UI (admin commission management view)
 - [ ] Step 6 — Scheduler / cron integration (CRON_SECRET-protected endpoints)
 - [ ] Step 7 — Regression test suite (Vitest)
 
@@ -165,6 +165,7 @@
 - Commission uniqueness: `UNIQUE(lead_id)` on `commission_ledger`
 - Atomic closing function owns state transition: `pending_verification → verified`
 - No application-level fallback for closing mutations (RPC-only enforced)
+- Commission Ledger UI accessible via Invoices module Tabs (Admin & Super Admin full manage, Commissioner read-only)
 
 ### Recently Changed Files (Phase 11)
 - `app/api/followups/route.ts` (secured)
@@ -172,6 +173,10 @@
 - `supabase/migrations/031_phase11_sales_revenue_operations.sql` (applied LIVE)
 - `services/revenue-operations.service.ts` (new service, RPC-only path)
 - `actions/crm-leads.action.ts` (verifyCRMDealAction integrated with revenue service)
+- `actions/commissions.action.ts` (new server actions for commission ledger)
+- `components/invoices/CommissionLedgerTable.tsx` (new commission management view)
+- `app/(dashboard)/invoices/page.tsx` (tabs integration)
+- `lib/i18n/id.ts` & `lib/i18n/en.ts` (commission translations)
 
 ## Phase Status
 

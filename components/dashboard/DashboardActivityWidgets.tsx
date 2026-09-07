@@ -29,7 +29,9 @@ export interface DashboardFollowupSummary {
   name: string;
   scheduled_at: string;
   status?: string;
-  priority?: string;
+  priority?: "overdue" | "today" | "upcoming" | string;
+  lead_id?: string | null;
+  property_title?: string | null;
 }
 
 interface DashboardActivityWidgetsProps {
@@ -290,36 +292,71 @@ export function DashboardActivityWidgets({
                     </p>
                   </div>
                 ) : (
-                  followups.slice(0, 4).map((item) => (
-                    <div
-                      key={item.id}
-                      className="p-3 sm:px-4 flex items-center justify-between gap-3 hover:bg-muted/30 transition-colors"
-                    >
-                      <div className="min-w-0 space-y-0.5">
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-xs text-foreground truncate">
-                            {item.name}
-                          </span>
-                          <span className="text-[10px] text-muted-foreground flex items-center gap-1">
-                            <Clock className="w-3 h-3 text-muted-foreground" />
-                            {item.scheduled_at}
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-muted-foreground truncate">
-                          Status: <span className="text-foreground font-medium">{item.status || "Terjadwal"}</span>
-                        </p>
-                      </div>
+                  followups.slice(0, 4).map((item) => {
+                    const isOverdue = item.priority === "overdue" || item.status === "overdue";
+                    const isToday = item.priority === "today";
+                    const targetUrl = item.lead_id
+                      ? `/crm/leads/${item.lead_id}?tab=followups`
+                      : `/crm/followups/${item.id}`;
 
-                      <Link href="/crm/followups">
-                        <Button
-                          size="sm"
-                          className="h-7.5 px-2.5 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
-                        >
-                          Hubungi
-                        </Button>
-                      </Link>
-                    </div>
-                  ))
+                    return (
+                      <div
+                        key={item.id}
+                        className="p-3 sm:px-4 flex items-center justify-between gap-3 hover:bg-muted/30 transition-colors"
+                      >
+                        <div className="min-w-0 space-y-0.5">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <Link
+                              href={targetUrl}
+                              className="font-bold text-xs text-foreground truncate hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors cursor-pointer"
+                            >
+                              {item.name}
+                            </Link>
+                            {isOverdue ? (
+                              <Badge
+                                variant="outline"
+                                className="text-[9px] font-bold px-1.5 py-px border bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20"
+                              >
+                                Terlambat
+                              </Badge>
+                            ) : isToday ? (
+                              <Badge
+                                variant="outline"
+                                className="text-[9px] font-bold px-1.5 py-px border bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20"
+                              >
+                                Hari Ini
+                              </Badge>
+                            ) : (
+                              <Badge
+                                variant="outline"
+                                className="text-[9px] font-semibold px-1.5 py-px border bg-muted text-muted-foreground border-border"
+                              >
+                                Terjadwal
+                              </Badge>
+                            )}
+                            <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                              <Clock className="w-3 h-3 text-muted-foreground" />
+                              {item.scheduled_at}
+                            </span>
+                          </div>
+                          {item.property_title && (
+                            <p className="text-[11px] text-muted-foreground truncate">
+                              Minat: <span className="text-foreground font-medium">{item.property_title}</span>
+                            </p>
+                          )}
+                        </div>
+
+                        <Link href={targetUrl}>
+                          <Button
+                            size="sm"
+                            className="h-7.5 px-2.5 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer shrink-0"
+                          >
+                            Hubungi
+                          </Button>
+                        </Link>
+                      </div>
+                    );
+                  })
                 )}
               </div>
 

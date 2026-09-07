@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { formatKprShort } from "@/lib/kpr";
+import { useTranslation } from "@/lib/i18n/useTranslation";
 
 interface AgentStatsGridProps {
   myLeadsCount: number;
@@ -31,38 +32,40 @@ export function AgentStatsGrid({
   myPublishedCount,
   dealsWonCount,
 }: AgentStatsGridProps) {
+  const { t } = useTranslation();
+
   const stats = [
     {
-      title: "Prospek CRM Saya",
+      title: t("dashboard.stats.myLeads"),
       value: myLeadsCount,
-      subValue: `${newLeadsCount} Prospek Baru`,
+      subValue: `${newLeadsCount} ${t("dashboard.stats.newLeads")}`,
       icon: Users,
       color: "text-emerald-600 dark:text-emerald-400",
       bg: "bg-emerald-500/10",
       border: "border-emerald-500/20",
     },
     {
-      title: "Follow-Up Terjadwal",
+      title: t("dashboard.stats.scheduledFollowups"),
       value: scheduledFollowupsCount,
-      subValue: overdueFollowupsCount > 0 ? `⚠️ ${overdueFollowupsCount} Menunggu Aksi` : "Semua Tepat Waktu",
+      subValue: overdueFollowupsCount > 0 ? `⚠️ ${overdueFollowupsCount} ${t("dashboard.stats.pendingAction")}` : t("dashboard.stats.onTime"),
       icon: CalendarCheck,
       color: overdueFollowupsCount > 0 ? "text-rose-600 dark:text-rose-400" : "text-blue-600 dark:text-blue-400",
       bg: overdueFollowupsCount > 0 ? "bg-rose-500/10" : "bg-blue-500/10",
       border: overdueFollowupsCount > 0 ? "border-rose-500/20" : "border-blue-500/20",
     },
     {
-      title: "Listing Portofolio",
+      title: t("dashboard.stats.portfolioListings"),
       value: myPropertiesCount,
-      subValue: `${myPublishedCount} Tayang Aktif`,
+      subValue: `${myPublishedCount} ${t("dashboard.stats.activePublished")}`,
       icon: Building2,
       color: "text-amber-600 dark:text-amber-400",
       bg: "bg-amber-500/10",
       border: "border-amber-500/20",
     },
     {
-      title: "Pencapaian Closing",
+      title: t("dashboard.stats.closingAchievement"),
       value: dealsWonCount,
-      subValue: "Kesepakatan Berhasil",
+      subValue: t("dashboard.stats.successfulDeals"),
       icon: Trophy,
       color: "text-purple-600 dark:text-purple-400",
       bg: "bg-purple-500/10",

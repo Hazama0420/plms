@@ -43,18 +43,10 @@ export function PropertySpecsGrid({
   const { t } = useTranslation();
 
   const items = [
-    bedrooms !== null && bedrooms !== undefined && bedrooms > 0
-      ? { label: t("propertyDetail.specs.bedrooms"), value: `${bedrooms} ${t("propertyDetail.specs.rooms")}`, icon: Bed }
-      : null,
-    bathrooms !== null && bathrooms !== undefined && bathrooms > 0
-      ? { label: t("propertyDetail.specs.bathrooms"), value: `${bathrooms} ${t("propertyDetail.specs.spaces")}`, icon: Bath }
-      : null,
-    buildingArea !== null && buildingArea !== undefined && buildingArea > 0
-      ? { label: t("propertyDetail.specs.buildingArea"), value: `${buildingArea} m²`, icon: Building2 }
-      : null,
-    landArea !== null && landArea !== undefined && landArea > 0
-      ? { label: t("propertyDetail.specs.landArea"), value: `${landArea} m²`, icon: Maximize2 }
-      : null,
+    { label: t("propertyDetail.specs.bedrooms"), value: `${Number(bedrooms ?? 0)} ${t("propertyDetail.specs.rooms")}`, icon: Bed },
+    { label: t("propertyDetail.specs.bathrooms"), value: `${Number(bathrooms ?? 0)} ${t("propertyDetail.specs.spaces")}`, icon: Bath },
+    { label: t("propertyDetail.specs.buildingArea"), value: `${Number(buildingArea ?? 0)} m²`, icon: Building2 },
+    { label: t("propertyDetail.specs.landArea"), value: `${Number(landArea ?? 0)} m²`, icon: Maximize2 },
     certificate
       ? { label: t("propertyDetail.specs.legality"), value: certificate, icon: FileCheck }
       : null,

@@ -1,7 +1,7 @@
 import { useI18nStore } from "@/lib/store/i18n-store";
 import { id } from "@/lib/i18n/id";
 import { en } from "@/lib/i18n/en";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 
 type Dictionaries = typeof id;
 type DictionaryPath<T, Prefix extends string = ""> = T extends object
@@ -24,11 +24,14 @@ export function useTranslation() {
     setMounted(true);
   }, []);
 
-  const t = (key: TranslationKey): string => {
-    // Prevent hydration mismatch by using default (id) on first render
-    const dict = mounted ? (language === "en" ? en : id) : id;
-    return getNestedValue(dict, key as string);
-  };
+  const t = useCallback(
+    (key: TranslationKey): string => {
+      // Prevent hydration mismatch by using default (id) on first render
+      const dict = mounted ? (language === "en" ? en : id) : id;
+      return getNestedValue(dict, key as string);
+    },
+    [mounted, language]
+  );
 
   return { t, language: mounted ? language : "id", setLanguage };
 }

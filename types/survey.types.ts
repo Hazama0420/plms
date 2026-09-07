@@ -75,6 +75,7 @@ export interface Survey {
   property_id: string;
   request_id?: string | null;
   client_id?: string | null;
+  lead_id?: string | null;
   client_name: string;
   client_phone?: string | null;
   agent_id: string;

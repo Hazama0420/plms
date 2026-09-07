@@ -29,6 +29,7 @@ interface AdminAttentionRequiredProps {
   upcomingSurveysCount?: number;
   draftPropertiesCount?: number;
   newLeadsCount?: number;
+  dataHealthIssuesCount?: number;
 }
 
 export function AdminAttentionRequired({
@@ -36,6 +37,7 @@ export function AdminAttentionRequired({
   upcomingSurveysCount = 0,
   draftPropertiesCount = 0,
   newLeadsCount = 0,
+  dataHealthIssuesCount = 0,
 }: AdminAttentionRequiredProps) {
   const items: AttentionItem[] = [
     {
@@ -45,6 +47,14 @@ export function AdminAttentionRequired({
       hint: "Prospek belum dihubungi tepat waktu",
       href: "/crm/followups",
       tone: "danger" as const,
+    },
+    {
+      id: "data_health",
+      title: "Peringatan Kesehatan Data",
+      count: dataHealthIssuesCount,
+      hint: "Data properti/CRM incomplete atau orphan",
+      href: "/admin/logs?tab=health",
+      tone: "warning" as const,
     },
     {
       id: "surveys",

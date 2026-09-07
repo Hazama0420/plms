@@ -3,6 +3,7 @@
 
 import Link from "next/link";
 import { MapPin, Users, CalendarClock, TriangleAlert } from "lucide-react";
+import { useTranslation } from "@/hooks/use-translation";
 
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -82,6 +83,7 @@ function initials(name: string | null | undefined): string {
 }
 
 export function ProjectCard({ project }: { project: Project }) {
+  const { t } = useTranslation();
   const status = PROJECT_STATUS_CONFIG[project.status];
   const sisaHari = daysUntilDeadline(project.end_date);
   const serapan = budgetUsagePct(project.budget, Number(project.spent ?? 0));
@@ -94,16 +96,10 @@ export function ProjectCard({ project }: { project: Project }) {
     project.status !== "cancelled";
 
   return (
-    // Seluruh kartu adalah tautan. Versi lama hanya bereaksi pada
-    // `onDoubleClick` dengan tulisan petunjuk "klik 2x" — mustahil dilakukan di
-    // layar sentuh, tidak bisa dibuka di tab baru, dan tak terbaca pembaca
-    // layar. Ini yang paling merusak kegunaan halaman lama.
     <Link
       href={`/projects/${project.id}`}
       className="group flex flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-xs transition-all hover:-translate-y-0.5 hover:border-emerald-500/40 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50"
     >
-      {/* Pita status: penanda warna yang terbaca sekilas dari jauh, tanpa
-          memerlukan kolom foto yang alur unggahnya belum ada. */}
       <div className={cn("h-1 w-full shrink-0", status.bar)} />
 
       <div className="flex flex-1 flex-col gap-3 p-4">
@@ -117,12 +113,10 @@ export function ProjectCard({ project }: { project: Project }) {
               variant="outline"
               className={cn("shrink-0 text-[10px] font-bold", status.badge)}
             >
-              {status.label}
+              {t(`projects.status.${project.status}`) || status.label}
             </Badge>
           </div>
 
-          {/* line-clamp-2, bukan truncate: nama cluster sering panjang dan
-              memotongnya di satu baris menghilangkan fasenya ("… Phase 2"). */}
           <h3 className="line-clamp-2 text-sm font-bold leading-snug text-foreground group-hover:text-emerald-600 dark:group-hover:text-emerald-400">
             {project.title}
           </h3>
@@ -138,14 +132,14 @@ export function ProjectCard({ project }: { project: Project }) {
         {/* Dua batang berdampingan */}
         <div className="grid grid-cols-2 gap-3 border-y border-border/60 py-3">
           <ProgressBar
-            label="Fisik"
+            label={t("projects.card.physical")}
             value={project.progress}
             caption={
               kesehatan === "behind"
-                ? "Tertinggal jadwal"
+                ? t("projects.card.behind_schedule")
                 : kesehatan === "at_risk"
-                  ? "Perlu perhatian"
-                  : "Sesuai rencana"
+                  ? t("projects.card.at_risk")
+                  : t("projects.card.on_track")
             }
             barClass={
               kesehatan === "behind"
@@ -158,12 +152,12 @@ export function ProjectCard({ project }: { project: Project }) {
           />
 
           <ProgressBar
-            label="Anggaran"
+            label={t("projects.card.budget")}
             value={serapan}
             caption={
               project.budget
                 ? `${formatCompactRupiah(Number(project.spent ?? 0))} / ${formatCompactRupiah(project.budget)}`
-                : "Pagu belum ditetapkan"
+                : t("projects.card.no_budget")
             }
             barClass={
               serapan !== null && serapan > 100
@@ -186,7 +180,7 @@ export function ProjectCard({ project }: { project: Project }) {
               </AvatarFallback>
             </Avatar>
             <span className="truncate text-[11px] font-semibold text-muted-foreground">
-              {project.manager?.full_name ?? "Belum ada PM"}
+              {project.manager?.full_name ?? t("projects.card.no_pm")}
             </span>
           </div>
 
@@ -206,14 +200,16 @@ export function ProjectCard({ project }: { project: Project }) {
                     ? "bg-rose-50 text-rose-700 dark:bg-rose-950 dark:text-rose-300"
                     : "bg-muted text-muted-foreground"
                 )}
-                title={`Tenggat ${formatTanggal(project.end_date)}`}
+                title={`${t("projects.card.deadline")} ${formatTanggal(project.end_date)}`}
               >
                 {telat ? (
                   <TriangleAlert className="h-3 w-3" />
                 ) : (
                   <CalendarClock className="h-3 w-3" />
                 )}
-                {telat ? `Telat ${Math.abs(sisaHari)}h` : `${sisaHari}h lagi`}
+                {telat
+                  ? t("projects.card.overdue_days").replace("{days}", String(Math.abs(sisaHari)))
+                  : t("projects.card.days_left").replace("{days}", String(sisaHari))}
               </span>
             )}
           </div>

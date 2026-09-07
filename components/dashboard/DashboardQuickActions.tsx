@@ -4,6 +4,7 @@
 import Link from "next/link";
 import { Plus, Users, Calendar, Calculator, FileText, Sparkles } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
+import { useTranslation } from "@/lib/i18n/useTranslation";
 
 interface DashboardQuickActionsProps {
   canManageProperties?: boolean;
@@ -14,11 +15,13 @@ export function DashboardQuickActions({
   canManageProperties = true,
   canManageCrm = true,
 }: DashboardQuickActionsProps) {
+  const { t } = useTranslation();
+
   const actions = [
     canManageProperties
       ? {
-          title: "Tambah Listing",
-          desc: "Daftarkan properti baru",
+          title: t("dashboard.quickActions.addListing"),
+          desc: t("dashboard.quickActions.addListingDesc"),
           href: "/properties/create",
           icon: Plus,
           color: "text-emerald-600 dark:text-emerald-400",
@@ -27,8 +30,8 @@ export function DashboardQuickActions({
       : null,
     canManageCrm
       ? {
-          title: "Catat Lead Baru",
-          desc: "Simpan data calon klien",
+          title: t("dashboard.quickActions.recordLead"),
+          desc: t("dashboard.quickActions.recordLeadDesc"),
           href: "/crm/leads/create",
           icon: Users,
           color: "text-blue-600 dark:text-blue-400",
@@ -37,8 +40,8 @@ export function DashboardQuickActions({
       : null,
     canManageCrm
       ? {
-          title: "Agenda Follow-up",
-          desc: "Jadwal interaksi prospek",
+          title: t("dashboard.quickActions.followupAgenda"),
+          desc: t("dashboard.quickActions.followupAgendaDesc"),
           href: "/crm/followups",
           icon: Calendar,
           color: "text-purple-600 dark:text-purple-400",
@@ -46,8 +49,8 @@ export function DashboardQuickActions({
         }
       : null,
     {
-      title: "Simulasi KPR",
-      desc: "Hitung cicilan & DP",
+      title: t("dashboard.quickActions.mortgageSimulation"),
+      desc: t("dashboard.quickActions.mortgageSimulationDesc"),
       href: "/kpr-calculator",
       icon: Calculator,
       color: "text-amber-600 dark:text-amber-400",

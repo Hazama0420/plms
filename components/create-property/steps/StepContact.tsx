@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/select";
 import { supabase } from "@/lib/supabase/client";
 import { Users, UserCheck, Lock } from "lucide-react";
+import { useTranslation } from "@/lib/i18n/hooks";
 
 interface StepContactProps {
   formData: any;
@@ -24,6 +25,7 @@ interface StepContactProps {
 }
 
 export function StepContact({ formData, updateFormData, nextStep, prevStep }: StepContactProps) {
+  const { t } = useTranslation();
   const [agents, setAgents] = useState<any[]>([]);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -89,10 +91,10 @@ export function StepContact({ formData, updateFormData, nextStep, prevStep }: St
       <div>
         <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
           <UserCheck className="w-6 h-6 text-emerald-600" />
-          Kontak Pemilik & Penanggung Jawab
+          {t("createProperty.contactStep.title")}
         </h2>
         <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
-          Lengkapi data pemilik aset dan penanggung jawab listing
+          {t("createProperty.contactStep.subtitle")}
         </p>
       </div>
 
@@ -100,11 +102,11 @@ export function StepContact({ formData, updateFormData, nextStep, prevStep }: St
       <div className="p-4 bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/50 rounded-2xl space-y-2">
         <div className="flex items-center justify-between">
           <Label htmlFor="assigned_to" className="text-xs font-bold flex items-center gap-1.5 text-emerald-800 dark:text-emerald-300">
-            <Users className="w-4 h-4 text-emerald-600" /> Penanggung Jawab Properti (Agen)
+            <Users className="w-4 h-4 text-emerald-600" /> {t("createProperty.contactStep.agentAssignmentTitle")}
           </Label>
           {!isAdmin && (
             <span className="text-[10px] bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded-full font-semibold flex items-center gap-1 border border-emerald-300/50">
-              <Lock className="w-3 h-3" /> Otomatis Terikat ke Akun Anda
+              <Lock className="w-3 h-3" /> {t("createProperty.contactStep.lockedToYou")}
             </span>
           )}
         </div>
@@ -116,7 +118,7 @@ export function StepContact({ formData, updateFormData, nextStep, prevStep }: St
             onValueChange={(val) => handleChange("assigned_to", val)}
           >
             <SelectTrigger className="bg-background text-xs h-9">
-              <SelectValue placeholder="Pilih agen penanggung jawab...">
+              <SelectValue placeholder={t("createProperty.contactStep.selectAgent")}>
                 {(() => {
                   const selectedId = formData.assigned_to || currentUser?.id;
                   const selectedAgent = agents.find((a) => a.id === selectedId);
@@ -138,10 +140,10 @@ export function StepContact({ formData, updateFormData, nextStep, prevStep }: St
           <div className="flex items-center justify-between bg-background border px-3 py-2 rounded-xl text-xs font-semibold text-foreground shadow-2xs">
             <span className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              {loadingUser ? "Memuat data agen..." : currentAgentName}
+              {loadingUser ? t("createProperty.contactStep.loadingAgent") : currentAgentName}
             </span>
             <span className="text-[10px] text-muted-foreground font-mono">
-              (ID Terkunci)
+              {t("createProperty.contactStep.lockedId")}
             </span>
           </div>
         )}
@@ -150,10 +152,10 @@ export function StepContact({ formData, updateFormData, nextStep, prevStep }: St
       {/* 📌 SEKSI 2: INFORMASI UTAMA PEMILIK */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="space-y-1.5">
-          <Label htmlFor="owner_name" className="text-xs font-semibold">Nama Lengkap Pemilik</Label>
+          <Label htmlFor="owner_name" className="text-xs font-semibold">{t("createProperty.contactStep.ownerName")}</Label>
           <Input
             id="owner_name"
-            placeholder="Contoh: Budi Santoso"
+            placeholder={t("createProperty.contactStep.ownerNamePlaceholder")}
             value={formData.owner_name || ""}
             onChange={(e) => handleChange("owner_name", e.target.value)}
             className="h-9 text-xs"
@@ -161,7 +163,7 @@ export function StepContact({ formData, updateFormData, nextStep, prevStep }: St
         </div>
 
         <div className="space-y-1.5">
-          <Label htmlFor="owner_phone" className="text-xs font-semibold">Nomor Telepon Pemilik</Label>
+          <Label htmlFor="owner_phone" className="text-xs font-semibold">{t("createProperty.contactStep.ownerPhone")}</Label>
           <Input
             id="owner_phone"
             placeholder="081234567890"
@@ -172,7 +174,7 @@ export function StepContact({ formData, updateFormData, nextStep, prevStep }: St
         </div>
 
         <div className="space-y-1.5">
-          <Label htmlFor="owner_whatsapp" className="text-xs font-semibold">Nomor WhatsApp Pemilik</Label>
+          <Label htmlFor="owner_whatsapp" className="text-xs font-semibold">{t("createProperty.contactStep.ownerWhatsapp")}</Label>
           <Input
             id="owner_whatsapp"
             placeholder="081234567890"
@@ -183,7 +185,7 @@ export function StepContact({ formData, updateFormData, nextStep, prevStep }: St
         </div>
 
         <div className="space-y-1.5">
-          <Label htmlFor="owner_email" className="text-xs font-semibold">Email Pemilik (Opsional)</Label>
+          <Label htmlFor="owner_email" className="text-xs font-semibold">{t("createProperty.contactStep.ownerEmail")}</Label>
           <Input
             id="owner_email"
             type="email"
@@ -198,10 +200,10 @@ export function StepContact({ formData, updateFormData, nextStep, prevStep }: St
       {/* 📌 SEKSI 3: ALAMAT & CATATAN PEMILIK */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
         <div className="space-y-1.5">
-          <Label htmlFor="owner_address" className="text-xs font-semibold">Alamat Lengkap Pemilik</Label>
+          <Label htmlFor="owner_address" className="text-xs font-semibold">{t("createProperty.contactStep.ownerAddress")}</Label>
           <Textarea
             id="owner_address"
-            placeholder="Jl. Raya Utama No. 123, Jakarta Selatan"
+            placeholder={t("createProperty.contactStep.ownerAddressPlaceholder")}
             value={formData.owner_address || ""}
             onChange={(e) => handleChange("owner_address", e.target.value)}
             rows={2}
@@ -210,10 +212,10 @@ export function StepContact({ formData, updateFormData, nextStep, prevStep }: St
         </div>
 
         <div className="space-y-1.5">
-          <Label htmlFor="owner_notes" className="text-xs font-semibold">Catatan Khusus Pemilik</Label>
+          <Label htmlFor="owner_notes" className="text-xs font-semibold">{t("createProperty.contactStep.ownerNotes")}</Label>
           <Textarea
             id="owner_notes"
-            placeholder="Catatan tambahan seperti jam survei lokasi atau harga nett..."
+            placeholder={t("createProperty.contactStep.ownerNotesPlaceholder")}
             value={formData.owner_notes || ""}
             onChange={(e) => handleChange("owner_notes", e.target.value)}
             rows={2}

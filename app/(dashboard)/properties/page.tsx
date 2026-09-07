@@ -183,7 +183,7 @@ const mapPropertyItem = (
 
   const legalObj = Array.isArray(p.legalities) ? p.legalities[0] : p.legalities;
 
-  const uploaderId = p.created_by || p.user_id || "";
+  const uploaderId = p.assigned_to || p.created_by || p.user_id || "";
   const profileFromJoin = Array.isArray(p.user_profiles) ? p.user_profiles[0] : p.user_profiles;
   const profileFromMap = uploaderId ? profilesMap[uploaderId] : null;
 
@@ -512,7 +512,7 @@ function PropertiesCatalogContent() {
       const userIds = Array.from(
         new Set(
           rawProperties
-            .map((p: any) => p.created_by || p.user_id)
+            .map((p: any) => p.assigned_to || p.created_by || p.user_id)
             .filter(Boolean)
         )
       );
@@ -778,7 +778,7 @@ function PropertiesCatalogContent() {
               onToggleFeatured={handleToggleFeatured}
               onDelete={handleDelete}
               onClick={goToDetail}
-              onEdit={(id) => router.push(`/properties/edit/${id}`)}
+              onEdit={(id) => router.push(`/properties/${id}/edit`)}
             />
           ))}
         </div>
@@ -848,9 +848,9 @@ function PropertiesCatalogContent() {
                       </TableCell>
                       <TableCell className="py-3 px-3.5">
                         <div className="text-xs text-muted-foreground font-medium flex items-center gap-1.5 flex-wrap">
-                          <span>{prop.bedrooms || 0} KT</span> • <span>{prop.bathrooms || 0} KM</span> •
-                          <span className="inline-flex items-center gap-0.5"><Building2 className="w-3.5 h-3.5 text-emerald-600" /> LB {prop.building_area || 0}m²</span> •
-                          <span className="inline-flex items-center gap-0.5"><Maximize2 className="w-3.5 h-3.5 text-emerald-600" /> LT {prop.land_area || 0}m²</span>
+                          <span>{prop.bedrooms ?? 0} KT</span> • <span>{prop.bathrooms ?? 0} KM</span> •
+                          <span className="inline-flex items-center gap-0.5"><Building2 className="w-3.5 h-3.5 text-emerald-600" /> LB {prop.building_area ?? 0} m²</span> •
+                          <span className="inline-flex items-center gap-0.5"><Maximize2 className="w-3.5 h-3.5 text-emerald-600" /> LT {prop.land_area ?? 0} m²</span>
                         </div>
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground max-w-[150px] truncate py-3 px-3.5">
@@ -893,7 +893,7 @@ function PropertiesCatalogContent() {
                                 <MoreVertical className="h-3.5 w-3.5 text-muted-foreground" />
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end" className="rounded-xl">
-                                <DropdownMenuItem onClick={() => router.push(`/properties/edit/${prop.id}`)}>
+                                <DropdownMenuItem onClick={() => router.push(`/properties/${prop.id}/edit`)}>
                                   <Edit className="w-3.5 h-3.5 mr-2" /> {t("properties.edit")}
                                 </DropdownMenuItem>
                                 <DropdownMenuItem className="text-rose-600" onClick={(e) => handleDelete(prop.id, e)}>

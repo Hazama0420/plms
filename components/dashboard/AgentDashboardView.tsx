@@ -3,7 +3,7 @@
 
 import { useRouter } from "next/navigation";
 import { AgentTodayPriority } from "./AgentTodayPriority";
-import { DashboardActivityWidgets } from "./DashboardActivityWidgets";
+import { DashboardActivityWidgets, type DashboardFollowupSummary } from "./DashboardActivityWidgets";
 import { AgentPipelineStrip } from "./AgentPipelineStrip";
 import { AgentPortfolioCard } from "./AgentPortfolioCard";
 import { DashboardPropertySection, type PropertyCategoryFilter } from "./DashboardPropertySection";
@@ -25,6 +25,7 @@ interface AgentDashboardViewProps {
   setFeaturedFilter: (f: PropertyCategoryFilter) => void;
   recentLeads: DashboardLeadItem[];
   upcomingSurveys: Survey[];
+  followups?: DashboardFollowupSummary[];
   onPropertyClick: (id: string) => void;
   onOpenAiSummary?: () => void;
 }
@@ -41,6 +42,7 @@ export function AgentDashboardView({
   setFeaturedFilter,
   recentLeads,
   upcomingSurveys,
+  followups = [],
   onPropertyClick,
 }: AgentDashboardViewProps) {
   const router = useRouter();
@@ -69,6 +71,7 @@ export function AgentDashboardView({
       <DashboardActivityWidgets
         leads={recentLeads}
         surveys={upcomingSurveys}
+        followups={followups}
         totalLeadsCount={myLeadsTotal}
         scheduledFollowupsCount={scheduledCount}
         overdueFollowupsCount={overdueCount}

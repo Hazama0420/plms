@@ -34,10 +34,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "@/hooks/use-translation";
 
 interface SystemTabProps {
   preferences: any;
   persistPreferences: (partial: any) => void;
+  language?: "id" | "en";
+  handleLanguageSelect?: (lang: "id" | "en") => void;
   now: Date;
   formatTimeInZone: (date: Date, tz: string) => string;
   handleExportData: () => void;
@@ -62,6 +65,8 @@ interface SystemTabProps {
 export function SystemTab({
   preferences,
   persistPreferences,
+  language: propLanguage,
+  handleLanguageSelect: propHandleLanguageSelect,
   now,
   formatTimeInZone,
   handleExportData,
@@ -82,6 +87,9 @@ export function SystemTab({
   lastSignInAt,
   isViewer = false,
 }: SystemTabProps) {
+  const { language: activeLanguage, setLanguage, t } = useTranslation();
+  const currentLang = propLanguage || activeLanguage;
+  const onSelectLang = propHandleLanguageSelect || ((lang: "id" | "en") => setLanguage(lang));
   // --- STATE LOKAL TAMBAHAN UNTUK NOTIFIKASI TOAST & AUTO-SAVE ---
   const [toastPosition, setToastPosition] = useState<string>("bottom-right");
   const [toastDuration, setToastDuration] = useState<number>(4000);
@@ -142,47 +150,74 @@ export function SystemTab({
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
-      {/* 1. REGIONAL & ZONA WAKTU */}
+      {/* 1. REGIONAL, BAHASA & ZONA WAKTU */}
       <Card className="border border-border/80 shadow-xs rounded-2xl bg-card">
         <CardHeader className="p-4 sm:p-5 border-b border-border/60 bg-muted/20">
           <CardTitle className="text-xs sm:text-sm font-bold flex items-center gap-2">
             <Globe className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-            Format Regional & Lokalisasi Operasional
+            {t("settings.systemTab.regionalTitle")}
           </CardTitle>
           <CardDescription className="text-xs">
-            Sesuaikan mata uang standar transaksi dan zona waktu untuk sinkronisasi jadwal laporan.
+            {t("settings.systemTab.regionalDesc")}
           </CardDescription>
         </CardHeader>
         <CardContent className="p-4 sm:p-5 space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {/* Bahasa / Language */}
             <div className="space-y-1.5">
-              <Label className="font-semibold text-xs text-foreground">Mata Uang Default</Label>
+              <Label className="font-semibold text-xs text-foreground">{t("settings.language")}</Label>
               <Select
-                value={preferences?.currency || "IDR"}
-                onValueChange={(val) => persistPreferences({ currency: val })}
+                value={currentLang}
+                onValueChange={(val) => {
+                  if (val === "id" || val === "en") {
+                    onSelectLang(val);
+                  }
+                }}
               >
                 <SelectTrigger className="h-9 text-xs rounded-xl bg-background border-border/80">
-                  <SelectValue placeholder="Pilih Mata Uang" />
+                  <SelectValue placeholder={t("settings.language")} />
                 </SelectTrigger>
                 <SelectContent className="rounded-xl">
-                  <SelectItem value="IDR" className="text-xs">
-                    Rupiah Indonesia (IDR - Rp)
+                  <SelectItem value="id" className="text-xs">
+                    {t("settings.languageOptions.id")} (ID)
                   </SelectItem>
-                  <SelectItem value="USD" className="text-xs">
-                    US Dollar (USD - $)
+                  <SelectItem value="en" className="text-xs">
+                    {t("settings.languageOptions.en")} (EN)
                   </SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
+            {/* Mata Uang */}
             <div className="space-y-1.5">
-              <Label className="font-semibold text-xs text-foreground">Zona Waktu Operasional</Label>
+              <Label className="font-semibold text-xs text-foreground">{t("settings.systemTab.currencyLabel")}</Label>
+              <Select
+                value={preferences?.currency || "IDR"}
+                onValueChange={(val) => persistPreferences({ currency: val })}
+              >
+                <SelectTrigger className="h-9 text-xs rounded-xl bg-background border-border/80">
+                  <SelectValue placeholder={t("settings.systemTab.currencyLabel")} />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl">
+                  <SelectItem value="IDR" className="text-xs">
+                    {t("settings.systemTab.currencyIdr")}
+                  </SelectItem>
+                  <SelectItem value="USD" className="text-xs">
+                    {t("settings.systemTab.currencyUsd")}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Zona Waktu */}
+            <div className="space-y-1.5">
+              <Label className="font-semibold text-xs text-foreground">{t("settings.systemTab.timezoneLabel")}</Label>
               <Select
                 value={preferences?.timezone || "Asia/Jakarta"}
                 onValueChange={(val) => persistPreferences({ timezone: val })}
               >
                 <SelectTrigger className="h-9 text-xs rounded-xl bg-background border-border/80">
-                  <SelectValue placeholder="Pilih Zona Waktu" />
+                  <SelectValue placeholder={t("settings.systemTab.timezoneLabel")} />
                 </SelectTrigger>
                 <SelectContent className="rounded-xl">
                   <SelectItem value="Asia/Jakarta" className="text-xs">
@@ -197,7 +232,7 @@ export function SystemTab({
                 </SelectContent>
               </Select>
               <p className="text-[11px] text-muted-foreground pt-0.5 font-mono">
-                🕐 Waktu sistem: {formatTimeInZone(now, preferences?.timezone || "Asia/Jakarta")}
+                🕐 {t("settings.systemTab.systemTime")}: {formatTimeInZone(now, preferences?.timezone || "Asia/Jakarta")}
               </p>
             </div>
           </div>

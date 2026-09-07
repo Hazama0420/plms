@@ -19,6 +19,7 @@ import {
   type DashboardPropertyItem,
   type PropertyCategoryFilter,
   type DashboardLeadItem,
+  type DashboardFollowupSummary,
 } from "@/components/dashboard";
 
 type UserRole =
@@ -42,7 +43,10 @@ const capitalizeWords = (str: string) => {
     .join(" ");
 };
 
-const formatPropertyItem = (p: any): DashboardPropertyItem => {
+const formatPropertyItem = (
+  p: any,
+  profilesMap: Record<string, { full_name: string; avatar_url: string; phone?: string; whatsapp?: string }> = {}
+): DashboardPropertyItem => {
   const addrObj = Array.isArray(p.address) ? p.address[0] : p.address;
   const priceObj = Array.isArray(p.price) ? p.price[0] : p.price;
   const specObj = Array.isArray(p.specifications)
@@ -52,13 +56,35 @@ const formatPropertyItem = (p: any): DashboardPropertyItem => {
   const landObj = Array.isArray(p.land) ? p.land[0] : p.land;
   const mediaArr = Array.isArray(p.media) ? p.media : [];
 
-  const agentObj = Array.isArray(p.agent)
-    ? p.agent[0]
-    : p.agent || (Array.isArray(p.user) ? p.user[0] : p.user) || (Array.isArray(p.users) ? p.users[0] : p.users);
+  const uploaderId = p.assigned_to || p.created_by || "";
+  const profileFromJoin = Array.isArray(p.user_profiles) ? p.user_profiles[0] : p.user_profiles;
+  const agentObj = Array.isArray(p.agent) ? p.agent[0] : p.agent;
+  const profileFromMap = uploaderId ? profilesMap[uploaderId] : null;
 
-  const rawAgentName = agentObj?.full_name || agentObj?.name || p.agent_name || "Agen Inland";
-  const agentAvatar = agentObj?.avatar_url || agentObj?.photo_url || agentObj?.avatar || p.agent_avatar || null;
-  const agentPhone = agentObj?.phone || agentObj?.whatsapp || p.agent_phone || p.phone || null;
+  const rawAgentName =
+    profileFromMap?.full_name ||
+    profileFromJoin?.full_name ||
+    agentObj?.full_name ||
+    p.users?.full_name ||
+    p.uploader_name ||
+    p.agent_name ||
+    "Agen Resmi";
+
+  const agentAvatar =
+    profileFromMap?.avatar_url ||
+    profileFromJoin?.avatar_url ||
+    agentObj?.avatar_url ||
+    p.users?.avatar_url ||
+    p.uploader_avatar ||
+    p.agent_avatar ||
+    null;
+
+  const agentPhone =
+    profileFromMap?.phone ||
+    profileFromMap?.whatsapp ||
+    p.agent_phone ||
+    p.phone ||
+    null;
 
   const rawCategory = p.category || p.property_type || p.type || "Rumah";
   const categoryName = typeof rawCategory === "string" ? capitalizeWords(rawCategory) : "Rumah";
@@ -91,6 +117,11 @@ const formatPropertyItem = (p: any): DashboardPropertyItem => {
 
   const locationText = formatLocationShort(addrObj) || p.location || "Lokasi Terverifikasi";
 
+  const bedrooms = Number(specObj?.bedroom ?? specObj?.bedrooms ?? p.bedrooms ?? p.bedroom ?? 0);
+  const bathrooms = Number(specObj?.bathroom ?? specObj?.bathrooms ?? p.bathrooms ?? p.bathroom ?? 0);
+  const buildingArea = Number(bldObj?.building_area ?? specObj?.building_area ?? p.building_area ?? p.building_size ?? 0);
+  const landArea = Number(landObj?.land_area ?? specObj?.land_area ?? p.land_area ?? p.land_size ?? 0);
+
   return {
     id: p.id,
     title: p.title || "Properti Inland",
@@ -99,14 +130,17 @@ const formatPropertyItem = (p: any): DashboardPropertyItem => {
     category: categoryName,
     price: priceVal,
     location: locationText,
-    bedrooms: specObj?.bedroom ?? specObj?.bedrooms ?? p.bedrooms ?? null,
-    bathrooms: specObj?.bathroom ?? specObj?.bathrooms ?? p.bathrooms ?? null,
-    building_area: bldObj?.building_area ?? specObj?.building_area ?? p.building_area ?? null,
-    land_area: landObj?.land_area ?? specObj?.land_area ?? p.land_area ?? null,
+    bedrooms,
+    bathrooms,
+    building_area: buildingArea,
+    land_area: landArea,
     thumbnail,
     agent_name: rawAgentName.trim(),
     agent_avatar: agentAvatar,
     agent_phone: agentPhone,
+    uploader_name: rawAgentName.trim(),
+    uploader_avatar: agentAvatar,
+    is_featured: Boolean(p.is_featured),
     slug: p.slug || undefined,
   };
 };
@@ -126,6 +160,7 @@ export default function DashboardPage() {
 
   const [featuredFilter, setFeaturedFilter] = useState<PropertyCategoryFilter>("semua");
   const [recentLeads, setRecentLeads] = useState<DashboardLeadItem[]>([]);
+  const [recentFollowups, setRecentFollowups] = useState<DashboardFollowupSummary[]>([]);
   const [upcomingSurveys, setUpcomingSurveys] = useState<Survey[]>([]);
   const [agents, setAgents] = useState<any[]>([]);
 
@@ -136,32 +171,34 @@ export default function DashboardPage() {
 
     try {
       // 1. Fetch Stats from DashboardService
-      const statsData = await dashboardService.getStats();
+      const statsData = await dashboardService.getStats(role, userId);
       const enrichedStats: any = {
         ...statsData,
         totalProperties: statsData?.totalProperties || 0,
         publishedProperties: statsData?.totalPublished || statsData?.activeListings || 0,
         draftProperties: statsData?.totalDraft || 0,
-        totalLeads: statsData?.todayLeads || 0,
-        activeLeads: statsData?.todayLeads || 0,
-        closedDealsCount: statsData?.totalSold || 0,
-        pipelineValue: (statsData?.totalSold || 1) * 850_000_000,
+        totalLeads: statsData?.totalLeads || 0,
+        activeLeads: statsData?.activeLeads || 0,
+        closedDealsCount: statsData?.dealsWonCount || statsData?.totalSold || 0,
+        pipelineValue: statsData?.pipelineValue || 0,
         activeAgentsCount: statsData?.registeredAgents || 0,
-        myPropertiesCount: statsData?.activeListings || 0,
-        myPublishedCount: statsData?.totalPublished || statsData?.activeListings || 0,
-        dealsWonCount: statsData?.totalSold || 0,
-        myLeadsCount: statsData?.todayLeads || 0,
-        newLeadsCount: statsData?.todayLeads || 0,
-        scheduledFollowupsCount: 0,
-        overdueFollowupsCount: 0,
+        myPropertiesCount: statsData?.myPropertiesCount || statsData?.activeListings || 0,
+        myPublishedCount: statsData?.myPublishedCount || statsData?.totalPublished || statsData?.activeListings || 0,
+        dealsWonCount: statsData?.dealsWonCount || statsData?.totalSold || 0,
+        myLeadsCount: statsData?.totalLeads || 0,
+        newLeadsCount: statsData?.newLeadsCount || 0,
+        scheduledFollowupsCount: statsData?.scheduledFollowupsCount || 0,
+        overdueFollowupsCount: statsData?.overdueFollowupsCount || 0,
       };
       setStats(enrichedStats);
 
       // 2. Fetch Featured / Published Properties
-      const { data: featuredData } = await supabase
+      const { data: featuredData, error: featuredError } = await supabase
         .from("properties")
         .select(`
-          id, title, listing_code, listing_type, property_type, status,
+          id, title, listing_code, listing_type, property_type, status, slug,
+          created_by, assigned_to, is_featured,
+          agent:users!assigned_to(full_name, avatar_url),
           address:property_address(*),
           price:property_price(*),
           specifications:property_specifications(*),
@@ -170,9 +207,46 @@ export default function DashboardPage() {
           media:property_media(*)
         `)
         .eq("status", "published")
+        .order("created_at", { ascending: false })
         .limit(12);
 
-      const formatted = (featuredData || []).map(formatPropertyItem);
+      if (featuredError) {
+        console.error("Gagal memuat properti dashboard:", featuredError);
+      }
+
+      const userIds = Array.from(
+        new Set(
+          (featuredData || [])
+            .map((p: any) => p.assigned_to || p.created_by)
+            .filter(Boolean)
+        )
+      );
+
+      let profilesMap: Record<string, { full_name: string; avatar_url: string; phone?: string; whatsapp?: string }> = {};
+
+      if (userIds.length > 0) {
+        try {
+          const { data: userData, error: userError } = await supabase
+            .from("users")
+            .select("id, full_name, avatar_url, phone, whatsapp")
+            .in("id", userIds);
+
+          if (!userError && userData && Array.isArray(userData)) {
+            userData.forEach((prof: any) => {
+              profilesMap[prof.id] = {
+                full_name: prof.full_name || "Agen Resmi",
+                avatar_url: prof.avatar_url || "",
+                phone: prof.phone || "",
+                whatsapp: prof.whatsapp || "",
+              };
+            });
+          }
+        } catch (err) {
+          console.error("Error fetching agent profiles in dashboard:", err);
+        }
+      }
+
+      const formatted = (featuredData || []).map((p) => formatPropertyItem(p, profilesMap));
       setFeaturedProperties(formatted);
       setLatestProperties(formatted.slice(0, 4));
 
@@ -208,6 +282,66 @@ export default function DashboardPage() {
           .limit(5);
 
         setUpcomingSurveys((surveysData || []) as Survey[]);
+
+        // 4b. Fetch Prioritized Follow-ups
+        let folQuery = supabase
+          .from("crm_followups")
+          .select(`
+            id,
+            lead_id,
+            followup_date,
+            status,
+            notes,
+            assigned_to,
+            lead:crm_leads (
+              id,
+              notes,
+              interest_type,
+              contact:crm_contacts (
+                full_name,
+                phone
+              )
+            )
+          `)
+          .in("status", ["pending", "overdue"])
+          .order("followup_date", { ascending: true })
+          .limit(8);
+
+        if (role === "agent" && userId) {
+          folQuery = folQuery.eq("assigned_to", userId);
+        }
+
+        const { data: followupsRaw } = await folQuery;
+        const nowTime = new Date().getTime();
+        const mappedFollowups: DashboardFollowupSummary[] = (followupsRaw || []).map((f: any) => {
+          const leadObj = f.lead || {};
+          const contactObj = leadObj.contact || {};
+          const clientName = contactObj.full_name || "Klien Prospek";
+          const d = f.followup_date ? new Date(f.followup_date) : null;
+          const isOverdue = f.status === "overdue" || (d ? d.getTime() < nowTime : false);
+          const isToday = d ? new Date().toDateString() === d.toDateString() : false;
+          const priority = isOverdue ? "overdue" : isToday ? "today" : "upcoming";
+
+          const scheduledStr = d
+            ? d.toLocaleDateString("id-ID", {
+                day: "numeric",
+                month: "short",
+                hour: "2-digit",
+                minute: "2-digit",
+              })
+            : "-";
+
+          return {
+            id: f.id,
+            name: clientName,
+            scheduled_at: scheduledStr,
+            status: isOverdue ? "Terlambat" : isToday ? "Hari Ini" : "Terjadwal",
+            priority,
+            lead_id: f.lead_id,
+            property_title: leadObj.interest_type || leadObj.notes || null,
+          };
+        });
+        setRecentFollowups(mappedFollowups);
       }
 
       // 5. Fetch Public Agents
@@ -280,7 +414,8 @@ export default function DashboardPage() {
   }, [featuredProperties, featuredFilter]);
 
   const handlePropertyClick = (id: string) => {
-    router.push(`/properties/${id}`);
+    const prop = featuredProperties.find((p) => p.id === id);
+    router.push(`/properties/${prop?.slug || id}`);
   };
 
   // Loading skeleton
@@ -317,6 +452,7 @@ export default function DashboardPage() {
           setFeaturedFilter={setFeaturedFilter}
           recentLeads={recentLeads}
           upcomingSurveys={upcomingSurveys}
+          followups={recentFollowups}
           agents={agents}
           onPropertyClick={handlePropertyClick}
         />
@@ -333,6 +469,7 @@ export default function DashboardPage() {
           setFeaturedFilter={setFeaturedFilter}
           recentLeads={recentLeads}
           upcomingSurveys={upcomingSurveys}
+          followups={recentFollowups}
           onPropertyClick={handlePropertyClick}
         />
       ) : (

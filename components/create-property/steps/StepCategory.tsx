@@ -39,6 +39,7 @@ import {
 import { toast } from "sonner";
 import { compressImage } from "@/lib/imageCompressor";
 import { supabase } from "@/lib/supabase/client";
+import { useTranslation } from "@/lib/i18n/hooks";
 import { WatermarkedImage } from "@/components/ui/WatermarkedImage";
 
 // DATA STATIS
@@ -101,6 +102,7 @@ function dataURLtoFile(dataurl: string, filename: string): File {
 }
 
 export function StepCategory({ formData, updateFormData, nextStep }: StepCategoryProps) {
+  const { t } = useTranslation();
   const [parseText, setParseText] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
 
@@ -531,10 +533,10 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
       <div>
         <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
           <Building2 className="w-6 h-6 text-emerald-600" />
-          Kategori & Foto Properti
+          {t("createProperty.categoryStep.title")}
         </h2>
         <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
-          Atur tipe properti, geser urutan foto, dan tinjau atau crop foto sesuai kebutuhan.
+          {t("createProperty.categoryStep.subtitle")}
         </p>
       </div>
 
@@ -547,7 +549,7 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
                 <Sparkles className="w-5 h-5 text-indigo-300 animate-pulse" />
               </span>
               <h3 className="text-sm font-bold tracking-wide text-indigo-100">
-                AI Listing Auto-Fill
+                {t("createProperty.categoryStep.aiTitle")}
               </h3>
             </div>
             <Badge className="bg-gradient-to-r from-indigo-500 to-purple-500 text-[10px] px-2 py-0.5 border-0">
@@ -556,7 +558,7 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
           </div>
 
           <Textarea
-            placeholder="Tempel teks deskripsi (contoh: Dijual Rumah BSD Sektor 1.2 LT 120 LB 90 KT 3 KM 2 Rp 1.5 Milyar)..."
+            placeholder={t("createProperty.categoryStep.aiPlaceholder")}
             value={parseText}
             onChange={(e) => setParseText(e.target.value)}
             rows={2}
@@ -573,12 +575,12 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
               {aiLoading ? (
                 <>
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  Mengekstrak Data...
+                  {t("createProperty.categoryStep.extractingBtn")}
                 </>
               ) : (
                 <>
                   <Wand2 className="w-4 h-4" />
-                  Ekstrak dengan AI
+                  {t("createProperty.categoryStep.extractBtn")}
                 </>
               )}
             </Button>
@@ -590,7 +592,7 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
       <div className="space-y-6">
         <div className="space-y-3">
           <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">
-            Tipe Properti <span className="text-rose-500">*</span>
+            {t("createProperty.categoryStep.propertyTypeLabel")} <span className="text-rose-500">*</span>
           </Label>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
             {propertyTypes.map((type) => (
@@ -616,7 +618,7 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
 
         <div className="space-y-3">
           <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">
-            Tipe Listing <span className="text-rose-500">*</span>
+            {t("createProperty.categoryStep.listingTypeLabel")} <span className="text-rose-500">*</span>
           </Label>
           <div className="grid grid-cols-2 gap-3 max-w-md">
             {listingTypes.map((type) => (
@@ -639,7 +641,7 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
 
         <div className="space-y-3">
           <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">
-            Kondisi Properti
+            {t("createProperty.categoryStep.conditionLabel")}
           </Label>
           <div className="flex flex-wrap gap-2">
             {statusOptions.map((status) => (
@@ -663,8 +665,8 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
           <div className="p-4 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border flex items-center justify-between">
             <div className="space-y-0.5">
-              <Label className="text-xs font-bold">Kerjasama Co-Broke</Label>
-              <p className="text-[11px] text-muted-foreground">Izinkan agen eksternal menjual unit ini</p>
+              <Label className="text-xs font-bold">{t("createProperty.categoryStep.cobrokeLabel")}</Label>
+              <p className="text-[11px] text-muted-foreground">{t("createProperty.categoryStep.cobrokeDesc")}</p>
             </div>
             <Switch
               checked={showCoBrok}
@@ -677,10 +679,10 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
 
           <div className="space-y-1.5">
             <Label className="text-xs font-bold flex items-center gap-1.5">
-              <Video className="w-4 h-4 text-rose-500" /> Link Video YouTube (Opsional)
+              <Video className="w-4 h-4 text-rose-500" /> {t("createProperty.categoryStep.youtubeLabel")}
             </Label>
             <Input
-              placeholder="https://www.youtube.com/watch?v=..."
+              placeholder={t("createProperty.categoryStep.youtubePlaceholder")}
               value={youtubeUrl}
               onChange={(e) => {
                 setYoutubeUrl(e.target.value);
@@ -698,11 +700,9 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
           <div>
             <Label className="text-xs font-bold flex items-center gap-1.5">
               <ImageIcon className="w-4 h-4 text-emerald-600" />
-              Galeri Foto Properti ({photos.length})
+              {t("createProperty.categoryStep.galleryLabel")} ({photos.length})
             </Label>
-            <p className="text-[11px] text-muted-foreground mt-0.5">
-              <strong>Tips:</strong> Geser foto untuk mengurutkan. Foto <strong>baris/urutan pertama otomatis dijadikan Cover</strong>.
-            </p>
+            <p className="text-[11px] text-muted-foreground mt-0.5" dangerouslySetInnerHTML={{ __html: t("createProperty.categoryStep.galleryDesc") }} />
           </div>
         </div>
 
@@ -738,10 +738,10 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
               )}
             </div>
             <p className="text-xs font-semibold">
-              {isCompressing ? "Sedang Mengompresi & Mengunggah Foto..." : "Klik atau seret file foto ke area ini"}
+              {isCompressing ? t("createProperty.categoryStep.dropzoneCompressing") : t("createProperty.categoryStep.dropzoneTitle")}
             </p>
             <p className="text-[10px] text-muted-foreground">
-              Format JPG, PNG, WEBP — Foto otomatis dikompresi & disimpan ke Supabase Storage (Watermark otomatis tampil di layar)
+              {t("createProperty.categoryStep.dropzoneDesc")}
             </p>
           </div>
         </div>
@@ -780,12 +780,12 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
                 <div className="absolute top-1.5 right-1.5 flex flex-col items-end gap-1 z-10">
                   {idx === 0 && (
                     <Badge className="bg-amber-500 text-white text-[9px] px-1.5 py-0 border-0 flex items-center gap-1 font-bold shadow-sm">
-                      <Star className="w-2.5 h-2.5 fill-current" /> Cover Utama
+                      <Star className="w-2.5 h-2.5 fill-current" /> {t("createProperty.categoryStep.mainCover")}
                     </Badge>
                   )}
                   {photo.isExisting && (
                     <Badge variant="secondary" className="text-[9px] px-1.5 py-0 bg-black/60 text-white border-0 flex items-center gap-1 backdrop-blur-xs">
-                      <Database className="w-2.5 h-2.5 text-emerald-400" /> Database
+                      <Database className="w-2.5 h-2.5 text-emerald-400" /> {t("createProperty.categoryStep.database")}
                     </Badge>
                   )}
                 </div>
@@ -830,10 +830,10 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
           <DialogHeader className="pb-2 border-b border-slate-800 flex flex-row items-center justify-between">
             <DialogTitle className="text-sm sm:text-base font-bold flex items-center gap-2">
               <ImageIcon className="w-4 h-4 text-emerald-400" />
-              Review & Edit Foto {previewIndex !== null ? `#${previewIndex + 1}` : ""}
+              {t("createProperty.categoryStep.reviewPhotoTitle")} {previewIndex !== null ? `#${previewIndex + 1}` : ""}
               {previewIndex === 0 && (
                 <Badge className="bg-amber-500 text-white text-[9px] px-1.5 py-0 border-0">
-                  Cover Utama
+                  {t("createProperty.categoryStep.mainCover")}
                 </Badge>
               )}
             </DialogTitle>
@@ -864,7 +864,7 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
                     />
                     <div className="absolute inset-0 border-2 border-dashed border-emerald-400/80 pointer-events-none m-6 sm:m-12 rounded-lg flex items-center justify-center">
                       <span className="bg-black/70 backdrop-blur-xs text-white text-[11px] px-3 py-1 rounded font-semibold border border-emerald-400/30">
-                        Area Hasil Potongan
+                        {t("createProperty.categoryStep.cropResultArea")}
                       </span>
                     </div>
                   </div>
@@ -902,7 +902,7 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
                       onClick={() => setCropRotation((r) => (r + 90) % 360)}
                       className="h-8 gap-1.5 text-white border-slate-700 text-xs hover:bg-slate-800"
                     >
-                      <RotateCw className="w-4 h-4" /> Putar 90°
+                      <RotateCw className="w-4 h-4" /> {t("createProperty.categoryStep.rotate90")}
                     </Button>
                   </div>
 
@@ -913,21 +913,21 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
                       onClick={() => setIsCropping(false)}
                       className="h-8 text-xs text-slate-400 hover:text-white"
                     >
-                      Batal
+                      {t("createProperty.categoryStep.cancelBtn")}
                     </Button>
                     <Button
                       size="sm"
                       onClick={applyCrop}
                       className="h-8 text-xs bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 font-semibold"
                     >
-                      <Check className="w-4 h-4" /> Terapkan Hasil Potong
+                      <Check className="w-4 h-4" /> {t("createProperty.categoryStep.applyCropBtn")}
                     </Button>
                   </div>
                 </div>
               ) : (
                 <div className="flex justify-between items-center pt-1">
                   <p className="text-xs text-slate-400">
-                    {photos[previewIndex].uploaded ? "Foto tersimpan di Supabase Storage" : "Foto siap diunggah"}
+                    {photos[previewIndex].uploaded ? t("createProperty.categoryStep.photoSaved") : t("createProperty.categoryStep.photoReady")}
                   </p>
                   <Button
                     size="sm"
@@ -935,7 +935,7 @@ export function StepCategory({ formData, updateFormData, nextStep }: StepCategor
                     onClick={() => setIsCropping(true)}
                     className="h-8 text-xs border-slate-700 text-white hover:bg-slate-800 gap-1.5"
                   >
-                    <Crop className="w-3.5 h-3.5 text-emerald-400" /> Mode Crop & Rotasi
+                    <Crop className="w-3.5 h-3.5 text-emerald-400" /> {t("createProperty.categoryStep.cropMode")}
                   </Button>
                 </div>
               )}

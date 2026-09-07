@@ -57,6 +57,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { format, isBefore, isToday } from "date-fns";
 import { id } from "date-fns/locale";
+import { useTranslation } from "@/hooks/use-translation";
 
 // ============================================================
 // TIPE DATA & STATUS CONFIG
@@ -78,27 +79,31 @@ export interface FollowUpItem {
   assigned_user_name: string;
 }
 
-const statusConfig: Record<string, { label: string; color: string }> = {
-  pending: {
-    label: "Pending",
-    color: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20",
-  },
-  completed: {
-    label: "Selesai",
-    color: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
-  },
-  cancelled: {
-    label: "Dibatalkan",
-    color: "bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20",
-  },
-  overdue: {
-    label: "Overdue",
-    color: "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20",
-  },
-};
+// statusConfig moved inside component to react to language changes
 
 export default function FollowupsPage() {
   const router = useRouter();
+  const { t } = useTranslation();
+
+  const statusConfig: Record<string, { label: string; color: string }> = {
+    pending: {
+      label: t("crm.followups.statusLabel.pending"),
+      color: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20",
+    },
+    completed: {
+      label: t("crm.followups.statusLabel.completed"),
+      color: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
+    },
+    cancelled: {
+      label: t("crm.followups.statusLabel.cancelled"),
+      color: "bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20",
+    },
+    overdue: {
+      label: t("crm.followups.statusLabel.overdue"),
+      color: "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20",
+    },
+  };
+
   const [followups, setFollowups] = useState<FollowUpItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -121,14 +126,23 @@ export default function FollowupsPage() {
     );
   }, [currentUserRole]);
 
-  // 🔒 SENSOR NOMOR HP TERSTANDAR UNTUK AGENT
+  // 🔒 SENSOR NOMOR HP TERSTANDAR: HANYA ADMIN & AGEN PENANGGUNG JAWAB YANG DAPAT MELIHAT
+  const canAccessContact = useCallback(
+    (item?: FollowUpItem) => {
+      if (isAdminOrSuperAdmin) return true;
+      if (!currentUserId || !item) return false;
+      return item.assigned_to === currentUserId;
+    },
+    [isAdminOrSuperAdmin, currentUserId]
+  );
+
   const formatPhoneForUser = useCallback(
-    (phone?: string) => {
+    (phone?: string, item?: FollowUpItem) => {
       if (!phone) return "-";
-      if (isAdminOrSuperAdmin) return phone;
+      if (isAdminOrSuperAdmin || (item && canAccessContact(item))) return phone;
       return "08xx-xxxx-xxxx";
     },
-    [isAdminOrSuperAdmin]
+    [isAdminOrSuperAdmin, canAccessContact]
   );
 
   const canModifyFollowup = useCallback(
@@ -240,7 +254,7 @@ export default function FollowupsPage() {
       setFollowups(mapped);
     } catch (error: any) {
       console.error("Error loading followups:", error?.message || error);
-      toast.error("Gagal memuat jadwal follow-up");
+      toast.error(t("crm.followups.toastLoadError"));
     } finally {
       setLoading(false);
     }
@@ -255,8 +269,8 @@ export default function FollowupsPage() {
     e.stopPropagation();
 
     if (!canModifyFollowup(item)) {
-      toast.error("Akses Ditolak!", {
-        description: "Anda tidak memiliki izin mengubah agenda follow-up ini.",
+      toast.error(t("crm.followups.toastAccessDenied"), {
+        description: t("crm.followups.toastAgentModifyWarning"),
       });
       return;
     }
@@ -277,22 +291,22 @@ export default function FollowupsPage() {
       );
 
       if (result.lifecycle.shouldOfferNextFollowup) {
-        toast.success(`Follow-up dengan ${item.lead_name} selesai!`, {
-          description: "Buat Follow-Up berikutnya agar Lead tetap tertangani.",
+        toast.success(t("crm.followups.toastFollowupSuccess").replace("{name}", item.lead_name), {
+          description: t("crm.followups.toastFollowupSuggestion"),
           action: {
-            label: "Buat berikutnya",
+            label: t("crm.followups.toastCreateNext"),
             onClick: () => router.push(`/crm/followups/create?lead_id=${result.lifecycle.leadId}`),
           },
         });
       } else {
         toast.success(
           isCompleted
-            ? "Status dikembalikan ke Pending"
-            : `Follow-up dengan ${item.lead_name} selesai!`
+            ? t("crm.followups.toastStatusReverted")
+            : t("crm.followups.toastFollowupSuccess").replace("{name}", item.lead_name)
         );
       }
     } catch (err: any) {
-      toast.error("Gagal memperbarui status: " + err.message);
+      toast.error(t("common.error") + ": " + err.message);
       loadData();
     }
   };
@@ -300,13 +314,13 @@ export default function FollowupsPage() {
   // ===== HAPUS FOLLOW-UP (KHUSUS ADMIN / SUPER ADMIN) =====
   const handleDelete = async (item: FollowUpItem) => {
     if (!isAdminOrSuperAdmin) {
-      toast.error("Akses Ditolak!", {
-        description: "Hanya Admin yang memiliki wewenang untuk menghapus agenda follow-up.",
+      toast.error(t("crm.followups.toastAccessDenied"), {
+        description: t("crm.followups.toastDeleteWarning"),
       });
       return;
     }
 
-    if (!confirm(`Yakin ingin menghapus jadwal follow-up dengan "${item.lead_name}"?`)) return;
+    if (!confirm(t("crm.followups.toastDeleteConfirm").replace("{name}", item.lead_name))) return;
 
     try {
       await crmService.deleteFollowup(item.id);
@@ -323,38 +337,38 @@ export default function FollowupsPage() {
         ]);
       }
 
-      toast.success("Follow-up berhasil dihapus");
+      toast.success(t("crm.followups.toastDeleteSuccess"));
       setFollowups((prev) => prev.filter((f) => f.id !== item.id));
     } catch (error: any) {
-      toast.error("Gagal menghapus follow-up: " + error.message);
+      toast.error(t("common.error") + ": " + error.message);
     }
   };
 
-  // 🛡️ CHAT WA & PENCATATAN LOG AKTIVITAS DENGAN BLOKIR UNTUK AGENT
+  // 🛡️ CHAT WA & PENCATATAN LOG AKTIVITAS DENGAN PROTEKSI AKSES KONTAK
   const handleOpenWhatsApp = async (e: React.MouseEvent, item: FollowUpItem) => {
     e.stopPropagation();
 
-    if (!isAdminOrSuperAdmin) {
-      toast.error("Akses Kontak Terkunci!", {
-        description:
-          "Nomor kontak disembunyikan demi keamanan data perusahaan. Gunakan sistem pesan terpusat atau hubungi Admin.",
+    if (!canAccessContact(item)) {
+      toast.error(t("crm.followups.toastAccessDenied"), {
+        description: t("crm.followups.toastWaLockedWarning"),
       });
       return;
     }
 
     if (!item.lead_phone) {
-      toast.error("Nomor WhatsApp/HP lead tidak ditemukan");
+      toast.error(t("crm.followups.toastNoPhone"));
       return;
     }
 
     if (currentUserId && item.lead_id) {
       try {
+        const actorLabel = isAdminOrSuperAdmin ? "Admin" : "Agen";
         await supabase.from("crm_activities").insert([
           {
             lead_id: item.lead_id,
             user_id: currentUserId,
             activity_type: "WhatsApp Chat",
-            notes: `Admin mengontak ${item.lead_name} via WhatsApp Direct`,
+            notes: `${actorLabel} mengontak ${item.lead_name} via WhatsApp Direct`,
             created_at: new Date().toISOString(),
           },
         ]);
@@ -376,14 +390,14 @@ export default function FollowupsPage() {
     e.stopPropagation();
 
     if (!isAdminOrSuperAdmin) {
-      toast.error("Fitur Terkunci!", {
-        description: "Fitur AI Writer Follow-Up khusus untuk Super Admin dan Admin.",
+      toast.error(t("crm.followups.toastAccessDenied"), {
+        description: t("crm.followups.toastAiLockedWarning"),
       });
       return;
     }
 
     if (!currentUserId) {
-      toast.error("Sesi pengguna belum dimuat, silakan coba lagi.");
+      toast.error(t("crm.followups.toastNoSession"));
       return;
     }
 
@@ -405,13 +419,13 @@ export default function FollowupsPage() {
 
       if (!res.ok) {
         if (res.status === 429) {
-          toast.error("Kuota AI hari ini telah habis.");
+          toast.error(t("crm.followups.toastAiLimit"));
         } else if (res.status === 403) {
-          toast.error("Fitur AI tidak tersedia.");
+          toast.error(t("crm.followups.toastAiUnavailable"));
         } else if (res.status === 503) {
-          toast.error("Layanan AI sedang tidak tersedia.");
+          toast.error(t("crm.followups.toastAiServiceDown"));
         } else {
-          toast.error("Gagal mendapatkan respons AI dari server.");
+          toast.error(t("crm.followups.toastAiError"));
         }
         setIsAiModalOpen(false);
         return;
@@ -421,11 +435,11 @@ export default function FollowupsPage() {
       if (data?.message) {
         setAiMessage(data.message);
       } else {
-        toast.error("Format respons AI tidak valid.");
+        toast.error(t("crm.followups.toastAiFormatError"));
         setIsAiModalOpen(false);
       }
     } catch (err) {
-      toast.error("Terjadi kesalahan jaringan.");
+      toast.error(t("crm.followups.toastNetworkError"));
       setIsAiModalOpen(false);
     } finally {
       setGeneratingAi(false);
@@ -475,10 +489,10 @@ export default function FollowupsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
-            📅 Manajemen Follow-up CRM
+            📅 {t("crm.followups.title")}
           </h1>
           <p className="text-sm text-muted-foreground">
-            Jadwalkan dan pantau komitmen interaksi dengan calon pembeli. Klik 2x pada baris untuk melihat detail.
+            {t("crm.followups.subtitle")}
           </p>
         </div>
 
@@ -486,7 +500,7 @@ export default function FollowupsPage() {
           onClick={() => router.push("/crm/followups/create")}
           className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20 gap-2 shrink-0 cursor-pointer"
         >
-          <Plus className="h-4 w-4" /> Buat Follow-up
+          <Plus className="h-4 w-4" /> {t("crm.followups.createBtn")}
         </Button>
       </div>
 
@@ -494,7 +508,7 @@ export default function FollowupsPage() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Card className="p-3.5 border border-border shadow-xs bg-card hover:border-emerald-500/30 transition">
           <span className="text-[11px] font-semibold text-muted-foreground block">
-            Total Agenda
+            {t("crm.followups.stats.total")}
           </span>
           <span className="text-xl font-bold font-mono text-foreground mt-0.5 block">
             {stats.total}
@@ -502,7 +516,7 @@ export default function FollowupsPage() {
         </Card>
         <Card className="p-3.5 border border-border shadow-xs bg-card hover:border-amber-500/30 transition">
           <span className="text-[11px] font-semibold text-muted-foreground block">
-            Pending / Mendatang
+            {t("crm.followups.stats.pending")}
           </span>
           <span className="text-xl font-bold font-mono text-amber-600 dark:text-amber-400 mt-0.5 block">
             {stats.pending}
@@ -510,7 +524,7 @@ export default function FollowupsPage() {
         </Card>
         <Card className="p-3.5 border border-border shadow-xs bg-card hover:border-rose-500/30 transition">
           <span className="text-[11px] font-semibold text-muted-foreground block">
-            Terlewat (Overdue)
+            {t("crm.followups.stats.overdue")}
           </span>
           <span className="text-xl font-bold font-mono text-rose-600 dark:text-rose-400 mt-0.5 block">
             {stats.overdue}
@@ -518,7 +532,7 @@ export default function FollowupsPage() {
         </Card>
         <Card className="p-3.5 border border-border shadow-xs bg-card hover:border-emerald-500/30 transition">
           <span className="text-[11px] font-semibold text-muted-foreground block">
-            Selesai (Completed)
+            {t("crm.followups.stats.completed")}
           </span>
           <span className="text-xl font-bold font-mono text-emerald-600 dark:text-emerald-400 mt-0.5 block">
             {stats.completed}
@@ -531,7 +545,7 @@ export default function FollowupsPage() {
         <div className="relative w-full sm:w-80">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Cari nama lead, catatan, atau agent..."
+            placeholder={t("crm.followups.searchPlaceholder")}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9 h-9 text-xs border-border bg-background text-foreground"
@@ -542,16 +556,16 @@ export default function FollowupsPage() {
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-auto max-w-full">
             <TabsList className="bg-muted p-1 h-9 border border-border overflow-x-auto scrollbar-none whitespace-nowrap flex w-auto">
               <TabsTrigger value="all" className="text-xs px-2.5">
-                Semua ({stats.total})
+                {t("crm.followups.tabs.all")} ({stats.total})
               </TabsTrigger>
               <TabsTrigger value="pending" className="text-xs px-2.5">
-                Pending ({stats.pending})
+                {t("crm.followups.tabs.pending")} ({stats.pending})
               </TabsTrigger>
               <TabsTrigger value="overdue" className="text-xs px-2.5 text-rose-600 dark:text-rose-400">
-                Overdue ({stats.overdue})
+                {t("crm.followups.tabs.overdue")} ({stats.overdue})
               </TabsTrigger>
               <TabsTrigger value="completed" className="text-xs px-2.5">
-                Selesai ({stats.completed})
+                {t("crm.followups.tabs.completed")} ({stats.completed})
               </TabsTrigger>
             </TabsList>
           </Tabs>
@@ -584,9 +598,9 @@ export default function FollowupsPage() {
           <CardContent className="p-0">
             <div className="flex h-64 flex-col items-center justify-center p-8 text-center text-muted-foreground">
               <Calendar className="h-10 w-10 mb-2 opacity-40" />
-              <p className="text-sm font-semibold text-foreground">Tidak Ada Agenda Follow-up Ditemukan</p>
+              <p className="text-sm font-semibold text-foreground">{t("crm.followups.emptyTitle")}</p>
               <p className="text-xs max-w-sm mt-1">
-                Belum ada jadwal follow-up pada kategori ini. Klik &quot;Buat Follow-up&quot; untuk menambah agenda baru.
+                {t("crm.followups.emptyDesc")}
               </p>
             </div>
           </CardContent>
@@ -607,7 +621,7 @@ export default function FollowupsPage() {
               return (
                 <Card
                   key={item.id}
-                  onClick={() => router.push(`/crm/followups/${item.id}`)}
+                  onClick={() => router.push(item.lead_id ? `/crm/leads/${item.lead_id}?tab=followups` : `/crm/followups/${item.id}`)}
                   className="border border-border bg-card rounded-xl p-3 space-y-2 cursor-pointer hover:bg-muted/50 transition"
                 >
                   <div className="flex items-center justify-between gap-2">
@@ -627,7 +641,7 @@ export default function FollowupsPage() {
                     </p>
                     {item.lead_phone && (
                       <p className="text-[10px] text-muted-foreground font-mono pl-5">
-                        {formatPhoneForUser(item.lead_phone)}
+                        {formatPhoneForUser(item.lead_phone, item)}
                       </p>
                     )}
                   </div>
@@ -649,19 +663,19 @@ export default function FollowupsPage() {
                         )}
                       >
                         <Check className="w-3 h-3" />
-                        {item.status === "completed" ? "Selesai" : "Done"}
+                        {item.status === "completed" ? t("crm.followups.statusLabel.completed") : t("crm.followups.markDone")}
                       </button>
                       <button
                         onClick={(e) => handleOpenWhatsApp(e, item)}
                         className={cn(
                           "h-7 px-2 text-[10px] rounded-lg flex items-center gap-1",
-                          isAdminOrSuperAdmin
+                          canAccessContact(item)
                             ? "bg-emerald-600/10 text-emerald-600 dark:text-emerald-400"
                             : "bg-muted text-muted-foreground"
                         )}
-                        title={isAdminOrSuperAdmin ? "WhatsApp" : "Terkunci"}
+                        title={canAccessContact(item) ? "WhatsApp" : "Terkunci"}
                       >
-                        {isAdminOrSuperAdmin ? <MessageCircle className="w-3 h-3" /> : <Lock className="w-3 h-3" />}
+                        {canAccessContact(item) ? <MessageCircle className="w-3 h-3" /> : <Lock className="w-3 h-3" />}
                         WA
                       </button>
                     </div>
@@ -679,13 +693,13 @@ export default function FollowupsPage() {
                   <Table>
                     <TableHeader className="bg-muted/50">
                       <TableRow className="border-b border-border">
-                        <TableHead className="w-10 text-center">Done</TableHead>
-                        <TableHead className="text-xs font-semibold text-muted-foreground">Lead Klien</TableHead>
-                        <TableHead className="text-xs font-semibold text-muted-foreground">Catatan Activity</TableHead>
-                        <TableHead className="text-xs font-semibold text-muted-foreground">Jadwal Follow-up</TableHead>
-                        <TableHead className="text-xs font-semibold text-muted-foreground">Status</TableHead>
-                        <TableHead className="text-xs font-semibold text-muted-foreground">Penanggung Jawab</TableHead>
-                        <TableHead className="text-xs font-semibold text-muted-foreground text-right">Aksi & Direct WA</TableHead>
+                        <TableHead className="w-10 text-center">{t("crm.followups.table.done")}</TableHead>
+                        <TableHead className="text-xs font-semibold text-muted-foreground">{t("crm.followups.table.leadClient")}</TableHead>
+                        <TableHead className="text-xs font-semibold text-muted-foreground">{t("crm.followups.table.activityNotes")}</TableHead>
+                        <TableHead className="text-xs font-semibold text-muted-foreground">{t("crm.followups.table.followupSchedule")}</TableHead>
+                        <TableHead className="text-xs font-semibold text-muted-foreground">{t("crm.followups.table.status")}</TableHead>
+                        <TableHead className="text-xs font-semibold text-muted-foreground">{t("crm.followups.table.pic")}</TableHead>
+                        <TableHead className="text-xs font-semibold text-muted-foreground text-right">{t("crm.followups.table.actionWa")}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -702,12 +716,12 @@ export default function FollowupsPage() {
                         return (
                           <TableRow
                             key={item.id}
-                            onDoubleClick={() => router.push(`/crm/followups/${item.id}`)}
+                            onDoubleClick={() => router.push(item.lead_id ? `/crm/leads/${item.lead_id}?tab=followups` : `/crm/followups/${item.id}`)}
                             className={cn(
                               "hover:bg-muted/60 border-b border-border transition-colors cursor-pointer select-none",
                               item.status === "completed" && "opacity-75 bg-muted/20"
                             )}
-                            title="Klik 2x untuk membuka detail agenda"
+                            title="Klik 2x untuk membuka detail lead & agenda"
                           >
                             <TableCell className="text-center p-2">
                               <div
@@ -722,8 +736,8 @@ export default function FollowupsPage() {
                                 )}
                                 title={
                                   item.status === "completed"
-                                    ? "Tandai Belum Selesai"
-                                    : "Tandai Sudah Selesai"
+                                    ? t("crm.followups.statusLabel.pending")
+                                    : t("crm.followups.statusLabel.completed")
                                 }
                               >
                                 {item.status === "completed" && <Check className="w-3.5 h-3.5 stroke-[3]" />}
@@ -732,13 +746,19 @@ export default function FollowupsPage() {
 
                             <TableCell className="p-3">
                               <div className="flex flex-col">
-                                <span className="font-bold text-xs text-foreground flex items-center gap-1.5">
+                                <span
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    router.push(item.lead_id ? `/crm/leads/${item.lead_id}?tab=followups` : `/crm/followups/${item.id}`);
+                                  }}
+                                  className="font-bold text-xs text-foreground flex items-center gap-1.5 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors cursor-pointer"
+                                >
                                   <User className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
                                   {item.lead_name}
                                 </span>
                                 {item.lead_phone && (
                                   <span className="text-[10px] text-muted-foreground font-mono pl-5">
-                                    {formatPhoneForUser(item.lead_phone)}
+                                    {formatPhoneForUser(item.lead_phone, item)}
                                   </span>
                                 )}
                               </div>
@@ -760,7 +780,7 @@ export default function FollowupsPage() {
                                 </span>
                                 {isItemOverdue && (
                                   <span className="text-[9px] font-bold text-rose-600 dark:text-rose-400 flex items-center gap-0.5 mt-0.5">
-                                    <AlertCircle className="w-2.5 h-2.5" /> Terlewat dari jadwal
+                                    <AlertCircle className="w-2.5 h-2.5" /> {t("crm.followups.overdueLabel")}
                                   </span>
                                 )}
                               </div>
@@ -776,7 +796,7 @@ export default function FollowupsPage() {
                                     : st.color
                                 )}
                               >
-                                {isItemOverdue ? "Overdue" : st.label}
+                                {isItemOverdue ? t("crm.followups.overdueBadge") : st.label}
                               </Badge>
                             </TableCell>
 
@@ -796,10 +816,10 @@ export default function FollowupsPage() {
                                       ? "text-amber-600 dark:text-amber-400 hover:text-amber-700 hover:bg-amber-500/10"
                                       : "text-muted-foreground hover:bg-muted"
                                   )}
-                                  title={isAdminOrSuperAdmin ? "Tulis Draf Pesan AI" : "Khusus Admin"}
+                                  title={isAdminOrSuperAdmin ? t("crm.followups.aiWriterBtn") : t("crm.followups.toastAiLockedWarning")}
                                 >
                                   {isAdminOrSuperAdmin ? <Sparkles className="w-3.5 h-3.5 fill-amber-500 text-amber-500" /> : <Lock className="w-3.5 h-3.5 text-muted-foreground" />}
-                                  AI Writer
+                                  {t("crm.followups.aiWriterBtn")}
                                 </Button>
 
                                 <Button
@@ -808,31 +828,36 @@ export default function FollowupsPage() {
                                   onClick={(e) => handleOpenWhatsApp(e, item)}
                                   className={cn(
                                     "h-8 text-xs px-2 gap-1 cursor-pointer",
-                                    isAdminOrSuperAdmin
+                                    canAccessContact(item)
                                       ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20"
                                       : "border-border bg-muted text-muted-foreground"
                                   )}
-                                  title={isAdminOrSuperAdmin ? "Hubungi Via WhatsApp Direct" : "Kontak Terkunci"}
+                                  title={canAccessContact(item) ? t("crm.followups.chatWaBtn") : t("crm.followups.toastWaLockedWarning")}
                                 >
-                                  {isAdminOrSuperAdmin ? <MessageCircle className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" /> : <Lock className="w-3.5 h-3.5 text-amber-500" />} Chat WA
+                                  {canAccessContact(item) ? <MessageCircle className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" /> : <Lock className="w-3.5 h-3.5 text-amber-500" />} {t("crm.followups.chatWaBtn")}
                                 </Button>
 
                                 <DropdownMenu>
                                   <DropdownMenuTrigger className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors focus:outline-hidden cursor-pointer">
                                     <MoreHorizontal className="w-4 h-4" />
                                   </DropdownMenuTrigger>
-                                  <DropdownMenuContent align="end" className="w-44 bg-card border-border text-card-foreground">
+                                  <DropdownMenuContent align="end" className="w-48 bg-card border-border text-card-foreground">
+                                    {item.lead_id && (
+                                      <DropdownMenuItem onClick={() => router.push(`/crm/leads/${item.lead_id}?tab=followups`)}>
+                                        <User className="w-3.5 h-3.5 mr-2 text-emerald-600 dark:text-emerald-400" /> Detail Lead & Properti
+                                      </DropdownMenuItem>
+                                    )}
                                     <DropdownMenuItem onClick={() => router.push(`/crm/followups/${item.id}`)}>
-                                      <Eye className="w-3.5 h-3.5 mr-2 text-emerald-600 dark:text-emerald-400" /> Lihat Detail Agenda
+                                      <Eye className="w-3.5 h-3.5 mr-2 text-blue-600 dark:text-blue-400" /> {t("crm.followups.detailMenu")}
                                     </DropdownMenuItem>
                                     {hasAccess && (
                                       <DropdownMenuItem onClick={() => router.push(`/crm/followups/${item.id}/edit`)}>
-                                        <Pencil className="w-3.5 h-3.5 mr-2" /> Edit Agenda
+                                        <Pencil className="w-3.5 h-3.5 mr-2" /> {t("crm.followups.editMenu")}
                                       </DropdownMenuItem>
                                     )}
                                     {isAdminOrSuperAdmin && (
                                       <DropdownMenuItem onClick={() => handleDelete(item)} className="text-rose-600 dark:text-rose-400">
-                                        <Trash2 className="w-3.5 h-3.5 mr-2" /> Hapus
+                                        <Trash2 className="w-3.5 h-3.5 mr-2" /> {t("crm.followups.deleteMenu")}
                                       </DropdownMenuItem>
                                     )}
                                   </DropdownMenuContent>
@@ -857,18 +882,18 @@ export default function FollowupsPage() {
           <DialogHeader>
             <div className="flex items-center justify-between">
               <DialogTitle className="text-base font-bold flex items-center gap-2 text-foreground">
-                <Sparkles className="w-4 h-4 text-amber-500 fill-amber-500" /> AI Follow-up Message Generator
+                <Sparkles className="w-4 h-4 text-amber-500 fill-amber-500" /> {t("crm.followups.aiModal.title")}
               </DialogTitle>
             </div>
             <DialogDescription className="text-xs text-muted-foreground">
-              Draf pesan ramah & profesional yang disiapkan otomatis oleh AI untuk dikirimkan ke {selectedFollowup?.lead_name}.
+              {t("crm.followups.aiModal.desc").replace("{name}", selectedFollowup?.lead_name ?? "")}
             </DialogDescription>
           </DialogHeader>
 
           {generatingAi ? (
             <div className="p-8 text-center space-y-2">
               <RefreshCw className="w-8 h-8 text-emerald-600 dark:text-emerald-400 animate-spin mx-auto" />
-              <p className="text-xs text-muted-foreground">AI sedang merangkai pesan follow-up...</p>
+              <p className="text-xs text-muted-foreground">{t("crm.followups.aiModal.generating")}</p>
             </div>
           ) : (
             <div className="space-y-3 py-2 text-xs">
@@ -887,19 +912,19 @@ export default function FollowupsPage() {
               size="sm"
               onClick={() => {
                 navigator.clipboard.writeText(aiMessage);
-                toast.success("Pesan berhasil disalin ke clipboard!");
+                toast.success(t("crm.followups.toastCopySuccess"));
               }}
               className="text-xs gap-1.5 cursor-pointer border-border bg-background text-foreground"
             >
-              <Copy className="w-3.5 h-3.5" /> Salin Pesan
+              <Copy className="w-3.5 h-3.5" /> {t("crm.followups.aiModal.copyBtn")}
             </Button>
 
             <Button
               size="sm"
               onClick={async () => {
                 if (!isAdminOrSuperAdmin) {
-                  toast.error("Akses Kontak Terkunci!", {
-                    description: "Hanya Admin yang dapat mengirim WhatsApp secara langsung.",
+                  toast.error(t("crm.followups.toastAccessDenied"), {
+                    description: t("crm.followups.toastAdminWaWarning"),
                   });
                   return;
                 }
@@ -926,12 +951,12 @@ export default function FollowupsPage() {
                   window.open(`https://wa.me/${clean}?text=${encodeURIComponent(aiMessage)}`, "_blank");
                   setIsAiModalOpen(false);
                 } else {
-                  toast.error("Nomor HP lead tidak tersedia");
+                  toast.error(t("crm.followups.toastNoPhoneAvail"));
                 }
               }}
               className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs gap-1.5 cursor-pointer"
             >
-              <Send className="w-3.5 h-3.5" /> Kirim ke WhatsApp
+              <Send className="w-3.5 h-3.5" /> {t("crm.followups.aiModal.sendWaBtn")}
             </Button>
           </DialogFooter>
         </DialogContent>

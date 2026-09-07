@@ -97,13 +97,14 @@ export default function FollowupDetailPage() {
   }, [currentUserRole]);
 
   const canModify = isAdmin || followup?.assigned_to === currentUserId || followup?.created_by === currentUserId;
+  const canAccessContact = isAdmin || (followup?.assigned_to && followup.assigned_to === currentUserId);
 
-  // 🔒 HELPER SENSOR NOMOR HP TERSTANDAR UNTUK AGENT
+  // 🔒 HELPER SENSOR NOMOR HP TERSTANDAR (HANYA ADMIN & AGEN PENANGGUNG JAWAB YANG DAPAT MELIHAT)
   const formatPhoneForUser = useCallback((phone?: string) => {
     if (!phone) return "-";
-    if (isAdmin) return phone;
+    if (canAccessContact) return phone;
     return "08xx-xxxx-xxxx";
-  }, [isAdmin]);
+  }, [canAccessContact]);
 
   // ===== FETCH DATA =====
   const fetchData = useCallback(async () => {
@@ -212,12 +213,12 @@ export default function FollowupDetailPage() {
     }
   };
 
-  // 🛡️ DIRECT WHATSAPP LINK DENGAN BLOKIR TOTAL UNTUK AGENT
+  // 🛡️ DIRECT WHATSAPP LINK DENGAN PROTEKSI AKSES KONTAK
   const handleOpenWhatsApp = async () => {
-    if (!isAdmin) {
+    if (!canAccessContact) {
       toast.error("Akses Kontak Terkunci!", {
         description:
-          "Nomor kontak disembunyikan demi keamanan data perusahaan. Gunakan sistem pesan terpusat atau hubungi Admin.",
+          "Nomor kontak disembunyikan demi keamanan data perusahaan. Hanya Admin dan Agen penanggung jawab yang memiliki akses kontak langsung.",
       });
       return;
     }
@@ -337,12 +338,12 @@ export default function FollowupDetailPage() {
             onClick={handleOpenWhatsApp}
             className={cn(
               "text-xs gap-1 h-8 px-2.5 shadow-xs cursor-pointer",
-              isAdmin
+              canAccessContact
                 ? "bg-emerald-600 hover:bg-emerald-700 text-white"
                 : "bg-muted text-muted-foreground border border-border"
             )}
           >
-            {isAdmin ? <MessageCircle className="w-3.5 h-3.5 fill-white" /> : <Lock className="w-3.5 h-3.5 text-amber-500" />} Chat WA
+            {canAccessContact ? <MessageCircle className="w-3.5 h-3.5 fill-white" /> : <Lock className="w-3.5 h-3.5 text-amber-500" />} Chat WA
           </Button>
 
           {/* 🎯 EDIT BUTTON DENGAN ROUTING /edit */}

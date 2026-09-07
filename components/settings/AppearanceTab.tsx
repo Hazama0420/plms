@@ -9,12 +9,14 @@ import {
   Sun,
   Moon,
   Monitor,
+  Globe,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "@/hooks/use-translation";
 
 export type ThemeChoice = "light" | "dark" | "system";
 export type CatalogViewMode = "grid" | "table";
@@ -23,6 +25,10 @@ interface AppearanceTabProps {
   // Mode Tema
   theme: string | undefined;
   handleThemeSelect: (selectedTheme: ThemeChoice) => void;
+
+  // Language Setting (Optional override; uses useTranslation internally)
+  language?: "id" | "en";
+  handleLanguageSelect?: (lang: "id" | "en") => void;
 
   // Compact Mode
   compactView: boolean;
@@ -40,6 +46,8 @@ interface AppearanceTabProps {
 export function AppearanceTab({
   theme,
   handleThemeSelect,
+  language: propLanguage,
+  handleLanguageSelect: propHandleLanguageSelect,
   compactView,
   handleCompactToggle,
   defaultCatalogView = "grid",
@@ -47,25 +55,81 @@ export function AppearanceTab({
   fontSize = "normal",
   handleFontSizeChange,
 }: AppearanceTabProps) {
+  const { language: activeLanguage, setLanguage, t } = useTranslation();
+
+  const currentLang = propLanguage || activeLanguage;
+  const onSelectLang = propHandleLanguageSelect || ((lang: "id" | "en") => setLanguage(lang));
+
   return (
     <div className="space-y-6">
-      {/* ☀️/🌙 SAKELAR TEMA TERANG, GELAP & OTOMATIS */}
+      {/* 🌐 PENGATURAN BAHASA APLIKASI (LANGUAGE SETTINGS) */}
       <Card className="border shadow-xs">
         <CardHeader className="p-5 border-b bg-muted/20">
           <CardTitle className="text-sm font-bold flex items-center gap-2">
-            <Sliders className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-            Mode Tema Tampilan (Light & Dark Mode)
+            <Globe className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+            {t("settings.language")}
           </CardTitle>
           <CardDescription className="text-xs">
-            Ubah skema warna dasar aplikasi antara mode terang, mode gelap, atau ikuti pengaturan perangkat Anda.
+            {t("settings.languageDesc")}
           </CardDescription>
         </CardHeader>
         <CardContent className="p-5">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 rounded-xl border bg-card gap-4">
             <div className="space-y-0.5">
-              <Label className="text-xs font-bold text-foreground">Mode Tampilan Aplikasi</Label>
+              <Label className="text-xs font-bold text-foreground">{t("settings.language")}</Label>
               <p className="text-[11px] text-muted-foreground">
-                Tersinkronisasi otomatis dengan tombol tema di Header Layout Global
+                {t("settings.languageSyncDesc")}
+              </p>
+            </div>
+
+            <div className="inline-flex p-1 bg-muted rounded-xl border gap-1 self-stretch sm:self-auto justify-stretch">
+              <button
+                type="button"
+                onClick={() => onSelectLang("id")}
+                className={cn(
+                  "flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-medium transition-all cursor-pointer",
+                  currentLang === "id"
+                    ? "bg-background text-foreground shadow-xs font-bold ring-1 ring-border"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <span>{t("settings.languageOptions.id")}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => onSelectLang("en")}
+                className={cn(
+                  "flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-medium transition-all cursor-pointer",
+                  currentLang === "en"
+                    ? "bg-background text-foreground shadow-xs font-bold ring-1 ring-border"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <span>{t("settings.languageOptions.en")}</span>
+              </button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ☀️/🌙 SAKELAR TEMA TERANG, GELAP & OTOMATIS */}
+      <Card className="border shadow-xs">
+        <CardHeader className="p-5 border-b bg-muted/20">
+          <CardTitle className="text-sm font-bold flex items-center gap-2">
+            <Sliders className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+            {t("settings.appearance.themeTitle")}
+          </CardTitle>
+          <CardDescription className="text-xs">
+            {t("settings.appearance.themeDesc")}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="p-5">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 rounded-xl border bg-card gap-4">
+            <div className="space-y-0.5">
+              <Label className="text-xs font-bold text-foreground">{t("settings.appearance.themeLabel")}</Label>
+              <p className="text-[11px] text-muted-foreground">
+                {t("settings.appearance.themeSyncDesc")}
               </p>
             </div>
 
@@ -81,7 +145,7 @@ export function AppearanceTab({
                 )}
               >
                 <Sun className="w-4 h-4 text-amber-500" />
-                <span>Terang</span>
+                <span>{t("settings.appearance.light")}</span>
               </button>
 
               <button
@@ -95,7 +159,7 @@ export function AppearanceTab({
                 )}
               >
                 <Moon className="w-4 h-4 text-indigo-400" />
-                <span>Gelap</span>
+                <span>{t("settings.appearance.dark")}</span>
               </button>
 
               <button
@@ -109,7 +173,7 @@ export function AppearanceTab({
                 )}
               >
                 <Monitor className="w-4 h-4 text-slate-500" />
-                <span>Otomatis</span>
+                <span>{t("settings.appearance.system")}</span>
               </button>
             </div>
           </div>
@@ -121,10 +185,10 @@ export function AppearanceTab({
         <CardHeader className="p-5 border-b bg-muted/20">
           <CardTitle className="text-sm font-bold flex items-center gap-2">
             <Sliders className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-            Preferensi Layout & Kepadatan Layar
+            {t("settings.appearance.layoutTitle")}
           </CardTitle>
           <CardDescription className="text-xs">
-            Atur kerapatan antarmuka dan tampilan standar katalog properti sesuai kenyamanan kerja Anda.
+            {t("settings.appearance.layoutDesc")}
           </CardDescription>
         </CardHeader>
 
@@ -133,10 +197,10 @@ export function AppearanceTab({
           <div className="flex items-center justify-between p-3.5 rounded-xl border bg-card">
             <div className="space-y-0.5">
               <Label className="text-xs font-bold text-foreground block">
-                Tampilan Padat (Compact Mode)
+                {t("settings.appearance.compactLabel")}
               </Label>
               <p className="text-[11px] text-muted-foreground">
-                Memangkas jarak padding & margin tabel untuk memuat lebih banyak data properti di layar
+                {t("settings.appearance.compactDesc")}
               </p>
             </div>
             <Switch checked={compactView} onCheckedChange={handleCompactToggle} />
@@ -148,10 +212,10 @@ export function AppearanceTab({
           <div className="flex flex-col sm:flex-row sm:items-center justify-between p-3.5 rounded-xl border bg-card gap-3">
             <div className="space-y-0.5">
               <Label className="text-xs font-bold text-foreground block">
-                Tampilan Default Katalog Properti
+                {t("settings.appearance.catalogLabel")}
               </Label>
               <p className="text-[11px] text-muted-foreground">
-                Pilih format otomatis saat pertama kali membuka halaman direktori properti
+                {t("settings.appearance.catalogDesc")}
               </p>
             </div>
 
@@ -167,7 +231,7 @@ export function AppearanceTab({
                 )}
               >
                 <LayoutGrid className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Kartu (Grid)</span>
+                <span>{t("settings.appearance.catalogGrid")}</span>
               </button>
 
               <button
@@ -181,7 +245,7 @@ export function AppearanceTab({
                 )}
               >
                 <List className="w-3.5 h-3.5 text-blue-600" />
-                <span>Tabel Rinci</span>
+                <span>{t("settings.appearance.catalogTable")}</span>
               </button>
             </div>
           </div>
@@ -192,10 +256,10 @@ export function AppearanceTab({
           <div className="flex flex-col sm:flex-row sm:items-center justify-between p-3.5 rounded-xl border bg-card gap-3">
             <div className="space-y-0.5">
               <Label className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                <Type className="w-3.5 h-3.5 text-muted-foreground" /> Skala Ukuran Teks Antarmuka
+                <Type className="w-3.5 h-3.5 text-muted-foreground" /> {t("settings.appearance.fontScaleLabel")}
               </Label>
               <p className="text-[11px] text-muted-foreground">
-                Sesuaikan keterbacaan huruf judul dan teks informasi pada menu dasbor
+                {t("settings.appearance.fontScaleDesc")}
               </p>
             </div>
 
@@ -212,7 +276,11 @@ export function AppearanceTab({
                       : "text-muted-foreground hover:text-foreground"
                   )}
                 >
-                  {size === "compact" ? "Kecil" : size === "normal" ? "Normal" : "Besar"}
+                  {size === "compact"
+                    ? t("settings.appearance.fontSmall")
+                    : size === "normal"
+                    ? t("settings.appearance.fontNormal")
+                    : t("settings.appearance.fontLarge")}
                 </button>
               ))}
             </div>
@@ -221,7 +289,7 @@ export function AppearanceTab({
           <div className="flex items-start gap-2 p-3 rounded-lg bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 text-[11px] text-muted-foreground">
             <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />
             <span>
-              Semua preferensi tema dan tampilan tersimpan secara otomatis ke akun Anda dan tersinkron saat login di perangkat lain.
+              {t("settings.appearance.savedNotice")}
             </span>
           </div>
         </CardContent>

@@ -10,6 +10,7 @@ import {
   PaginationItem,
 } from "@/components/ui/pagination";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "@/lib/i18n/hooks";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
 interface NumberedPaginationProps {
@@ -18,6 +19,7 @@ interface NumberedPaginationProps {
 }
 
 export function NumberedPagination({ currentPage, totalPages }: NumberedPaginationProps) {
+  const { t } = useTranslation();
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
@@ -61,12 +63,12 @@ export function NumberedPagination({ currentPage, totalPages }: NumberedPaginati
               className="flex items-center h-9 sm:h-10 px-2.5 sm:px-4 rounded-xl text-xs sm:text-sm font-semibold cursor-pointer hover:bg-emerald-50 hover:text-emerald-700 text-muted-foreground border-transparent hover:border-emerald-200 border transition-colors"
             >
               <ChevronLeft className="w-4 h-4 mr-1" />
-              <span className="hidden sm:inline">Sebelumnya</span>
+              <span className="hidden sm:inline">{t("properties.pagination.prev")}</span>
             </Link>
           ) : (
             <div className="flex items-center h-9 sm:h-10 px-2.5 sm:px-4 rounded-xl text-xs sm:text-sm font-semibold border-transparent border opacity-50 pointer-events-none text-muted-foreground">
               <ChevronLeft className="w-4 h-4 mr-1" />
-              <span className="hidden sm:inline">Sebelumnya</span>
+              <span className="hidden sm:inline">{t("properties.pagination.prev")}</span>
             </div>
           )}
         </PaginationItem>
@@ -107,12 +109,12 @@ export function NumberedPagination({ currentPage, totalPages }: NumberedPaginati
               href={createPageURL(currentPage + 1)}
               className="flex items-center h-9 sm:h-10 px-2.5 sm:px-4 rounded-xl text-xs sm:text-sm font-semibold cursor-pointer hover:bg-emerald-50 hover:text-emerald-700 text-muted-foreground border-transparent hover:border-emerald-200 border transition-colors"
             >
-              <span className="hidden sm:inline">Berikutnya</span>
+              <span className="hidden sm:inline">{t("properties.pagination.next")}</span>
               <ChevronRight className="w-4 h-4 ml-1" />
             </Link>
           ) : (
             <div className="flex items-center h-9 sm:h-10 px-2.5 sm:px-4 rounded-xl text-xs sm:text-sm font-semibold border-transparent border opacity-50 pointer-events-none text-muted-foreground">
-              <span className="hidden sm:inline">Berikutnya</span>
+              <span className="hidden sm:inline">{t("properties.pagination.next")}</span>
               <ChevronRight className="w-4 h-4 ml-1" />
             </div>
           )}

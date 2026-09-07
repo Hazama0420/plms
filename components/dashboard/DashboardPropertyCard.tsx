@@ -24,6 +24,9 @@ export interface DashboardPropertyItem {
   agent_avatar: string | null;
   agent_phone: string | null;
   slug?: string;
+  uploader_name?: string;
+  uploader_avatar?: string | null;
+  is_featured?: boolean;
 }
 
 export interface DashboardPropertyCardProps {

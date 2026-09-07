@@ -32,6 +32,8 @@ import {
   Sparkles,
 } from "lucide-react";
 
+import { useTranslation } from "@/hooks/use-translation";
+
 interface StepSpecificationProps {
   formData: any;
   updateFormData: (data: any) => void;
@@ -39,51 +41,57 @@ interface StepSpecificationProps {
   prevStep: () => void;
 }
 
-// Data Pilihan
-const certificateOptions = [
-  { value: "SHM", label: "SHM (Sertifikat Hak Milik)" },
-  { value: "HGB", label: "HGB (Hak Guna Bangunan)" },
-  { value: "Hak Pakai", label: "Hak Pakai" },
-  { value: "Hak Sewa", label: "Hak Sewa" },
-  { value: "HGU", label: "HGU" },
-  { value: "Adat", label: "Adat" },
-  { value: "Girik", label: "Girik" },
-  { value: "PPJB", label: "PPJB" },
-  { value: "Lainnya", label: "Lainnya" },
-];
-
-const conditionOptions = [
-  { value: "Bagus", label: "✨ Bagus / Siap Huni" },
-  { value: "Butuh Minim Renovasi", label: "🛠️ Minim Renovasi" },
-  { value: "Butuh Renovasi Total", label: "🏚️ Renovasi Total" },
-  { value: "Terenovasi", label: "🏗️ Baru Terenovasi" },
-];
-
-const furnishingOptions = [
-  { value: "Furnished", label: "🛋️ Full Furnished" },
-  { value: "Semi Furnished", label: "🪑 Semi Furnished" },
-  { value: "Unfurnished", label: "📦 Unfurnished (Kosong)" },
-];
-
-const facingOptions = [
-  "Utara",
-  "Selatan",
-  "Timur",
-  "Barat",
-  "Timur Laut",
-  "Tenggara",
-  "Barat Daya",
-  "Barat Laut",
-];
-
-const waterOptions = ["PAM / PDAM", "Sumur Bor / Jetpump", "PDAM & Sumur", "Lainnya"];
-
 export function StepSpecification({
   formData,
   updateFormData,
   nextStep,
   prevStep,
 }: StepSpecificationProps) {
+  const { t } = useTranslation();
+
+  const certificateOptions = [
+    { value: "SHM", label: t("createProperty.specificationStep.certificates.shm") },
+    { value: "HGB", label: t("createProperty.specificationStep.certificates.hgb") },
+    { value: "Hak Pakai", label: t("createProperty.specificationStep.certificates.hak_pakai") },
+    { value: "Hak Sewa", label: t("createProperty.specificationStep.certificates.hak_sewa") },
+    { value: "HGU", label: t("createProperty.specificationStep.certificates.hgu") },
+    { value: "Adat", label: t("createProperty.specificationStep.certificates.adat") },
+    { value: "Girik", label: t("createProperty.specificationStep.certificates.girik") },
+    { value: "PPJB", label: t("createProperty.specificationStep.certificates.ppjb") },
+    { value: "Lainnya", label: t("createProperty.specificationStep.certificates.lainnya") },
+  ];
+
+  const conditionOptions = [
+    { value: "Bagus", label: t("createProperty.specificationStep.conditions.bagus") },
+    { value: "Butuh Minim Renovasi", label: t("createProperty.specificationStep.conditions.minim_renovasi") },
+    { value: "Butuh Renovasi Total", label: t("createProperty.specificationStep.conditions.renovasi_total") },
+    { value: "Terenovasi", label: t("createProperty.specificationStep.conditions.terenovasi") },
+  ];
+
+  const furnishingOptions = [
+    { value: "Furnished", label: t("createProperty.specificationStep.furnishings.furnished") },
+    { value: "Semi Furnished", label: t("createProperty.specificationStep.furnishings.semi_furnished") },
+    { value: "Unfurnished", label: t("createProperty.specificationStep.furnishings.unfurnished") },
+  ];
+
+  const facingOptions = [
+    { value: "Utara", label: t("createProperty.specificationStep.directions.utara") },
+    { value: "Selatan", label: t("createProperty.specificationStep.directions.selatan") },
+    { value: "Timur", label: t("createProperty.specificationStep.directions.timur") },
+    { value: "Barat", label: t("createProperty.specificationStep.directions.barat") },
+    { value: "Timur Laut", label: t("createProperty.specificationStep.directions.timur_laut") },
+    { value: "Tenggara", label: t("createProperty.specificationStep.directions.tenggara") },
+    { value: "Barat Daya", label: t("createProperty.specificationStep.directions.barat_daya") },
+    { value: "Barat Laut", label: t("createProperty.specificationStep.directions.barat_laut") },
+  ];
+
+  const waterOptions = [
+    { value: "PAM / PDAM", label: t("createProperty.specificationStep.waterOptions.pam") },
+    { value: "Sumur Bor / Jetpump", label: t("createProperty.specificationStep.waterOptions.sumur") },
+    { value: "PDAM & Sumur", label: t("createProperty.specificationStep.waterOptions.pam_sumur") },
+    { value: "Lainnya", label: t("createProperty.specificationStep.waterOptions.lainnya") },
+  ];
+
   const handleChange = (field: string, value: any) => {
     updateFormData({ [field]: value });
   };
@@ -94,10 +102,10 @@ export function StepSpecification({
       <div>
         <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
           <Sparkles className="w-6 h-6 text-emerald-600" />
-          Spesifikasi Properti
+          {t("createProperty.specificationStep.title")}
         </h2>
         <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
-          Lengkapi detail fisik, ukuran, kelengkapan legalitas, dan kondisi properti Anda.
+          {t("createProperty.specificationStep.subtitle")}
         </p>
       </div>
 
@@ -105,14 +113,14 @@ export function StepSpecification({
       <div className="p-5 rounded-2xl bg-slate-50/70 dark:bg-slate-900/40 border border-slate-200/80 dark:border-slate-800 space-y-4">
         <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 flex items-center gap-2">
           <Bed className="w-4 h-4 text-emerald-600" />
-          Kapasitas & Fasilitas Utama
+          {t("createProperty.specificationStep.capacityTitle")}
         </h3>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
           {/* Kamar Tidur */}
           <div className="space-y-1.5">
             <Label htmlFor="bedroom" className="text-xs font-semibold flex items-center gap-1.5">
-              <Bed className="w-3.5 h-3.5 text-slate-500" /> Kamar Tidur
+              <Bed className="w-3.5 h-3.5 text-slate-500" /> {t("createProperty.specificationStep.bedroom")}
             </Label>
               <Input
                 id="bedroom"
@@ -127,7 +135,7 @@ export function StepSpecification({
           {/* Kamar Mandi */}
           <div className="space-y-1.5">
             <Label htmlFor="bathroom" className="text-xs font-semibold flex items-center gap-1.5">
-              <Bath className="w-3.5 h-3.5 text-slate-500" /> Kamar Mandi
+              <Bath className="w-3.5 h-3.5 text-slate-500" /> {t("createProperty.specificationStep.bathroom")}
             </Label>
               <Input
                 id="bathroom"
@@ -142,7 +150,7 @@ export function StepSpecification({
           {/* Garasi */}
           <div className="space-y-1.5">
             <Label htmlFor="garage" className="text-xs font-semibold flex items-center gap-1.5">
-              <Warehouse className="w-3.5 h-3.5 text-slate-500" /> Garasi
+              <Warehouse className="w-3.5 h-3.5 text-slate-500" /> {t("createProperty.specificationStep.garage")}
             </Label>
             <Input
               id="garage"
@@ -157,7 +165,7 @@ export function StepSpecification({
           {/* Carport */}
           <div className="space-y-1.5">
             <Label htmlFor="carport" className="text-xs font-semibold flex items-center gap-1.5">
-              <Car className="w-3.5 h-3.5 text-slate-500" /> Carport
+              <Car className="w-3.5 h-3.5 text-slate-500" /> {t("createProperty.specificationStep.carport")}
             </Label>
             <Input
               id="carport"
@@ -175,14 +183,14 @@ export function StepSpecification({
       <div className="p-5 rounded-2xl bg-slate-50/70 dark:bg-slate-900/40 border border-slate-200/80 dark:border-slate-800 space-y-4">
         <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 flex items-center gap-2">
           <Maximize2 className="w-4 h-4 text-emerald-600" />
-          Dimensi & Bangunan
+          {t("createProperty.specificationStep.dimensionTitle")}
         </h3>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
           {/* Luas Tanah */}
           <div className="space-y-1.5">
             <Label htmlFor="land_area" className="text-xs font-semibold flex items-center gap-1.5">
-              <Maximize2 className="w-3.5 h-3.5 text-slate-500" /> Luas Tanah (m²)
+              <Maximize2 className="w-3.5 h-3.5 text-slate-500" /> {t("createProperty.specificationStep.landArea")}
             </Label>
               <Input
                 id="land_area"
@@ -197,7 +205,7 @@ export function StepSpecification({
           {/* Luas Bangunan */}
           <div className="space-y-1.5">
             <Label htmlFor="building_area" className="text-xs font-semibold flex items-center gap-1.5">
-              <Home className="w-3.5 h-3.5 text-slate-500" /> Luas Bangunan (m²)
+              <Home className="w-3.5 h-3.5 text-slate-500" /> {t("createProperty.specificationStep.buildingArea")}
             </Label>
               <Input
                 id="building_area"
@@ -212,7 +220,7 @@ export function StepSpecification({
           {/* Jumlah Lantai */}
           <div className="space-y-1.5">
             <Label htmlFor="floor" className="text-xs font-semibold flex items-center gap-1.5">
-              <Layers className="w-3.5 h-3.5 text-slate-500" /> Jumlah Lantai
+              <Layers className="w-3.5 h-3.5 text-slate-500" /> {t("createProperty.specificationStep.floors")}
             </Label>
             <Input
               id="floor"
@@ -227,7 +235,7 @@ export function StepSpecification({
           {/* Tahun Bangun */}
           <div className="space-y-1.5">
             <Label htmlFor="year_built" className="text-xs font-semibold flex items-center gap-1.5">
-              <Calendar className="w-3.5 h-3.5 text-slate-500" /> Tahun Bangun
+              <Calendar className="w-3.5 h-3.5 text-slate-500" /> {t("createProperty.specificationStep.yearBuilt")}
             </Label>
             <Input
               id="year_built"
@@ -245,21 +253,21 @@ export function StepSpecification({
       <div className="p-5 rounded-2xl bg-slate-50/70 dark:bg-slate-900/40 border border-slate-200/80 dark:border-slate-800 space-y-4">
         <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 flex items-center gap-2">
           <FileCheck className="w-4 h-4 text-emerald-600" />
-          Legalitas & Utilitas
+          {t("createProperty.specificationStep.legalityTitle")}
         </h3>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
           {/* Sertifikat */}
           <div className="space-y-1.5">
             <Label className="text-xs font-semibold flex items-center gap-1.5">
-              <FileCheck className="w-3.5 h-3.5 text-slate-500" /> Jenis Sertifikat
+              <FileCheck className="w-3.5 h-3.5 text-slate-500" /> {t("createProperty.specificationStep.certificate")}
             </Label>
             <Select
               value={formData.certificate || ""}
               onValueChange={(val) => handleChange("certificate", val)}
             >
               <SelectTrigger className="h-9 text-xs bg-background">
-                <SelectValue placeholder="Pilih Sertifikat" />
+                <SelectValue placeholder={t("createProperty.specificationStep.selectCertificate")} />
               </SelectTrigger>
               <SelectContent>
                 {certificateOptions.map((opt) => (
@@ -274,7 +282,7 @@ export function StepSpecification({
           {/* Daya Listrik */}
           <div className="space-y-1.5">
             <Label htmlFor="electricity" className="text-xs font-semibold flex items-center gap-1.5">
-              <Zap className="w-3.5 h-3.5 text-slate-500" /> Daya Listrik (VA)
+              <Zap className="w-3.5 h-3.5 text-slate-500" /> {t("createProperty.specificationStep.electricity")}
             </Label>
             <Input
               id="electricity"
@@ -289,19 +297,19 @@ export function StepSpecification({
           {/* Sumber Air */}
           <div className="space-y-1.5">
             <Label className="text-xs font-semibold flex items-center gap-1.5">
-              <Droplets className="w-3.5 h-3.5 text-slate-500" /> Sumber Air
+              <Droplets className="w-3.5 h-3.5 text-slate-500" /> {t("createProperty.specificationStep.waterSource")}
             </Label>
             <Select
               value={formData.water_source || ""}
               onValueChange={(val) => handleChange("water_source", val)}
             >
               <SelectTrigger className="h-9 text-xs bg-background">
-                <SelectValue placeholder="Pilih Sumber Air" />
+                <SelectValue placeholder={t("createProperty.specificationStep.selectWater")} />
               </SelectTrigger>
               <SelectContent>
                 {waterOptions.map((w) => (
-                  <SelectItem key={w} value={w} className="text-xs">
-                    {w}
+                  <SelectItem key={w.value} value={w.value} className="text-xs">
+                    {w.label}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -311,19 +319,19 @@ export function StepSpecification({
           {/* Arah Hadap */}
           <div className="space-y-1.5">
             <Label className="text-xs font-semibold flex items-center gap-1.5">
-              <Compass className="w-3.5 h-3.5 text-slate-500" /> Hadap / Arah
+              <Compass className="w-3.5 h-3.5 text-slate-500" /> {t("createProperty.specificationStep.facing")}
             </Label>
             <Select
               value={formData.facing || ""}
               onValueChange={(val) => handleChange("facing", val)}
             >
               <SelectTrigger className="h-9 text-xs bg-background">
-                <SelectValue placeholder="Pilih Arah Hadap" />
+                <SelectValue placeholder={t("createProperty.specificationStep.selectFacing")} />
               </SelectTrigger>
               <SelectContent>
                 {facingOptions.map((f) => (
-                  <SelectItem key={f} value={f} className="text-xs">
-                    {f}
+                  <SelectItem key={f.value} value={f.value} className="text-xs">
+                    {f.label}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -336,14 +344,14 @@ export function StepSpecification({
       <div className="p-5 rounded-2xl bg-slate-50/70 dark:bg-slate-900/40 border border-slate-200/80 dark:border-slate-800 space-y-4">
         <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 flex items-center gap-2">
           <Wrench className="w-4 h-4 text-emerald-600" />
-          Kondisi Bangunan & Interior
+          {t("createProperty.specificationStep.conditionTitle")}
         </h3>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* Kondisi Properti Selector Cards */}
           <div className="space-y-2">
             <Label className="text-xs font-semibold flex items-center gap-1.5">
-              <Wrench className="w-3.5 h-3.5 text-slate-500" /> Kondisi Bangunan
+              <Wrench className="w-3.5 h-3.5 text-slate-500" /> {t("createProperty.specificationStep.buildingCondition")}
             </Label>
             <div className="grid grid-cols-2 gap-2">
               {conditionOptions.map((cond) => (
@@ -367,7 +375,7 @@ export function StepSpecification({
           {/* Perabotan Selector Cards */}
           <div className="space-y-2">
             <Label className="text-xs font-semibold flex items-center gap-1.5">
-              <Armchair className="w-3.5 h-3.5 text-slate-500" /> Kondisi Perabotan (Furnishing)
+              <Armchair className="w-3.5 h-3.5 text-slate-500" /> {t("createProperty.specificationStep.furnishing")}
             </Label>
             <div className="grid grid-cols-1 gap-2">
               {furnishingOptions.map((furn) => (

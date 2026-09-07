@@ -34,6 +34,7 @@ import {
   Edit3,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useTranslation } from "@/lib/i18n/hooks";
 
 interface StepReviewProps {
   formData: any;
@@ -51,6 +52,7 @@ export function StepReview({
   propertyId,
   onSuccess,
 }: StepReviewProps) {
+  const { t } = useTranslation();
   const router = useRouter();
   const [publishing, setPublishing] = useState(false);
 
@@ -85,34 +87,34 @@ export function StepReview({
   // Status Checklist Persiapan Publikasi
   const checklist = [
     {
-      label: "Kategori & Judul Listing",
+      label: t("createProperty.reviewStep.checklistItems.categoryTitle"),
       valid: Boolean(formData.title && formData.property_type),
       stepIndex: 0,
     },
     {
-      label: "Wilayah Administratif Resmi",
+      label: t("createProperty.reviewStep.checklistItems.regionAdmin"),
       valid: regionValid,
       stepIndex: 2,
       critical: true,
-      errorMsg: "Wilayah belum dipilih dari database",
+      errorMsg: t("createProperty.reviewStep.checklistItems.regionError"),
     },
     {
-      label: "Harga Penawaran",
+      label: t("createProperty.reviewStep.checklistItems.price"),
       valid: Boolean(formData.selling_price || formData.rental_price),
       stepIndex: 4,
     },
     {
-      label: "Spesifikasi Fisik (KT/KM/LT)",
+      label: t("createProperty.reviewStep.checklistItems.specs"),
       valid: Boolean(formData.bedroom || formData.land_area || formData.building_area),
       stepIndex: 1,
     },
     {
-      label: "Foto Listing",
+      label: t("createProperty.reviewStep.checklistItems.photos"),
       valid: Boolean(Array.isArray(formData.photos) && formData.photos.length > 0),
       stepIndex: 0,
     },
     {
-      label: "Penanggung Jawab Listing",
+      label: t("createProperty.reviewStep.checklistItems.agent"),
       valid: Boolean(formData.assigned_to),
       stepIndex: 5,
     },
@@ -127,10 +129,10 @@ export function StepReview({
         data: { user },
         error: userError,
       } = await supabase.auth.getUser();
-      if (userError || !user) throw new Error("Sesi login tidak valid. Silakan login kembali.");
+      if (userError || !user) throw new Error(t("createProperty.reviewStep.errors.invalidSession"));
 
-      if (!formData.title) throw new Error("Judul wajib diisi.");
-      if (!formData.property_type) throw new Error("Tipe properti wajib dipilih.");
+      if (!formData.title) throw new Error(t("createProperty.reviewStep.errors.titleRequired"));
+      if (!formData.property_type) throw new Error(t("createProperty.reviewStep.errors.propertyTypeRequired"));
       // Yang wajib adalah wilayah hasil pencarian `regions`; nama jalan opsional.
       if (!hasRegion(formData)) throw new Error(NO_REGION_MESSAGE);
 
@@ -176,7 +178,7 @@ export function StepReview({
             .eq("id", existingOwnerId);
 
           if (updateOwnerErr) {
-            throw new Error(`Gagal update data pemilik: ${updateOwnerErr.message}`);
+            throw new Error(t("createProperty.reviewStep.errors.updateOwnerFailed").replace("{msg}", updateOwnerErr.message));
           }
           ownerId = existingOwnerId;
         } else {
@@ -191,7 +193,7 @@ export function StepReview({
             .single();
 
           if (insertOwnerErr) {
-            throw new Error(`Gagal menyimpan data pemilik baru: ${insertOwnerErr.message}`);
+            throw new Error(t("createProperty.reviewStep.errors.insertOwnerFailed").replace("{msg}", insertOwnerErr.message));
           }
           if (newOwner) ownerId = newOwner.id;
         }
@@ -218,14 +220,14 @@ export function StepReview({
           })
           .eq("id", propertyId);
 
-        if (propertyError) throw new Error(`Gagal update properti: ${propertyError.message}`);
+        if (propertyError) throw new Error(t("createProperty.reviewStep.errors.updatePropertyFailed").replace("{msg}", propertyError.message));
 
         // UPSERT ALAMAT
         const { error: addressError } = await supabase.from("property_address").upsert(
           { property_id: propertyId, ...addressPayload },
           { onConflict: "property_id" }
         );
-        if (addressError) throw new Error(`Gagal menyimpan alamat: ${addressError.message}`);
+        if (addressError) throw new Error(t("createProperty.reviewStep.errors.saveAddressFailed").replace("{msg}", addressError.message));
 
         // UPSERT HARGA
         if (formData.selling_price || formData.rental_price) {
@@ -240,7 +242,7 @@ export function StepReview({
             },
             { onConflict: "property_id" }
           );
-          if (priceError) throw new Error(`Gagal menyimpan harga: ${priceError.message}`);
+          if (priceError) throw new Error(t("createProperty.reviewStep.errors.savePriceFailed").replace("{msg}", priceError.message));
         }
 
         // UPSERT SPESIFIKASI
@@ -262,7 +264,7 @@ export function StepReview({
           },
           { onConflict: "property_id" }
         );
-        if (specError) throw new Error(`Gagal menyimpan spesifikasi: ${specError.message}`);
+        if (specError) throw new Error(t("createProperty.reviewStep.errors.saveSpecFailed").replace("{msg}", specError.message));
 
         // UPSERT LUAS TANAH
         if (formData.land_area) {
@@ -276,7 +278,7 @@ export function StepReview({
             },
             { onConflict: "property_id" }
           );
-          if (landError) throw new Error(`Gagal menyimpan data tanah: ${landError.message}`);
+          if (landError) throw new Error(t("createProperty.reviewStep.errors.saveLandFailed").replace("{msg}", landError.message));
         }
 
         // UPSERT BANGUNAN
@@ -290,7 +292,7 @@ export function StepReview({
             },
             { onConflict: "property_id" }
           );
-          if (buildingError) throw new Error(`Gagal menyimpan data bangunan: ${buildingError.message}`);
+          if (buildingError) throw new Error(t("createProperty.reviewStep.errors.saveBuildingFailed").replace("{msg}", buildingError.message));
         }
 
         // 🟢 FIX FOTO HILANG: DELETE HANYA DILAKUKAN JIKA PAYLOAD BARU VALID
@@ -315,12 +317,12 @@ export function StepReview({
             const { error: insertError } = await supabase.from("property_media").insert(mediaPayload);
             if (insertError) {
               console.error("Gagal menyimpan media foto baru:", insertError.message);
-              toast.error("Sebagian data tersimpan, tapi foto gagal disinkronkan: " + insertError.message);
+              toast.error(t("createProperty.reviewStep.errors.syncPhotoFailed").replace("{msg}", insertError.message));
             }
           }
         }
 
-        toast.success("Properti berhasil diperbarui!", { duration: 4000 });
+        toast.success(t("createProperty.reviewStep.successUpdate"), { duration: 4000 });
         if (onSuccess) onSuccess();
         else setTimeout(() => router.push("/properties"), 1200);
         return;
@@ -356,7 +358,7 @@ export function StepReview({
         .select()
         .single();
 
-      if (propertyError) throw new Error(`Gagal menyimpan properti: ${propertyError.message}`);
+      if (propertyError) throw new Error(t("createProperty.reviewStep.errors.insertPropertyFailed").replace("{msg}", propertyError.message));
 
       const newPropertyId = property.id;
 
@@ -365,7 +367,7 @@ export function StepReview({
         { property_id: newPropertyId, ...addressPayload },
         { onConflict: "property_id" }
       );
-      if (newAddressError) throw new Error(`Gagal menyimpan alamat: ${newAddressError.message}`);
+      if (newAddressError) throw new Error(t("createProperty.reviewStep.errors.saveAddressFailed").replace("{msg}", newAddressError.message));
 
       // UPSERT HARGA
       if (formData.selling_price || formData.rental_price) {
@@ -380,7 +382,7 @@ export function StepReview({
           },
           { onConflict: "property_id" }
         );
-        if (newPriceError) throw new Error(`Gagal menyimpan harga: ${newPriceError.message}`);
+        if (newPriceError) throw new Error(t("createProperty.reviewStep.errors.savePriceFailed").replace("{msg}", newPriceError.message));
       }
 
       // UPSERT SPESIFIKASI
@@ -402,7 +404,7 @@ export function StepReview({
         },
         { onConflict: "property_id" }
       );
-      if (newSpecError) throw new Error(`Gagal menyimpan spesifikasi: ${newSpecError.message}`);
+      if (newSpecError) throw new Error(t("createProperty.reviewStep.errors.saveSpecFailed").replace("{msg}", newSpecError.message));
 
       // UPSERT LUAS TANAH
       if (formData.land_area) {
@@ -416,7 +418,7 @@ export function StepReview({
           },
           { onConflict: "property_id" }
         );
-        if (newLandError) throw new Error(`Gagal menyimpan data tanah: ${newLandError.message}`);
+        if (newLandError) throw new Error(t("createProperty.reviewStep.errors.saveLandFailed").replace("{msg}", newLandError.message));
       }
 
       // UPSERT BANGUNAN
@@ -430,7 +432,7 @@ export function StepReview({
           },
           { onConflict: "property_id" }
         );
-        if (newBuildingError) throw new Error(`Gagal menyimpan data bangunan: ${newBuildingError.message}`);
+        if (newBuildingError) throw new Error(t("createProperty.reviewStep.errors.saveBuildingFailed").replace("{msg}", newBuildingError.message));
       }
 
       // SIMPAN MEDIA FOTO
@@ -461,17 +463,17 @@ export function StepReview({
       } catch {}
 
       if (publish.downgraded) {
-        toast.warning("Properti tersimpan sebagai draf", {
+        toast.warning(t("createProperty.reviewStep.successDraft"), {
           description: NO_AGENT_MESSAGE,
           duration: 6000,
         });
       } else {
-        toast.success("Properti berhasil dipublikasikan!", { duration: 4000 });
+        toast.success(t("createProperty.reviewStep.successPublish"), { duration: 4000 });
       }
       setTimeout(() => router.push("/properties"), 1200);
     } catch (error: any) {
       console.error("Publish error:", error);
-      toast.error(error.message || "Gagal mempublikasikan properti");
+      toast.error(error.message || t("createProperty.reviewStep.errors.publishFailed"));
     } finally {
       setPublishing(false);
     }
@@ -487,10 +489,10 @@ export function StepReview({
       <div>
         <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
           <Sparkles className="w-6 h-6 text-emerald-600" />
-          {mode === "edit" ? "Tinjau & Update Properti" : "Tinjau & Publikasikan"}
+          {mode === "edit" ? t("createProperty.reviewStep.titleEdit") : t("createProperty.reviewStep.titleReview")}
         </h2>
         <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
-          Periksa kembali checklist kesiapan data, tampilan kartu listing, dan kelengkapan spesifikasi sebelum disimpan.
+          {t("createProperty.reviewStep.subtitle")}
         </p>
       </div>
 
@@ -499,10 +501,12 @@ export function StepReview({
         <div className="flex items-center justify-between">
           <h3 className="text-xs font-bold uppercase tracking-wider text-foreground flex items-center gap-2">
             <CheckCircle className="w-4 h-4 text-emerald-600" />
-            Checklist Kelengkapan Listing
+            {t("createProperty.reviewStep.checklistTitle")}
           </h3>
           <span className="text-[11px] font-semibold text-muted-foreground">
-            {checklist.filter((c) => c.valid).length} dari {checklist.length} Lengkap
+            {t("createProperty.reviewStep.checklistComplete")
+              .replace("{validCount}", checklist.filter((c) => c.valid).length.toString())
+              .replace("{totalCount}", checklist.length.toString())}
           </span>
         </div>
 
@@ -533,7 +537,7 @@ export function StepReview({
                   onClick={() => goToStep(item.stepIndex)}
                   className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 hover:underline shrink-0 flex items-center gap-0.5"
                 >
-                  Lengkapi <ArrowRight className="w-3 h-3" />
+                  {t("createProperty.reviewStep.completeBtn")} <ArrowRight className="w-3 h-3" />
                 </button>
               )}
             </div>
@@ -547,11 +551,11 @@ export function StepReview({
           <div className="flex items-center gap-2">
             <ShieldCheck className="w-5 h-5 text-emerald-400" />
             <h3 className="text-xs font-bold uppercase tracking-wider text-indigo-200">
-              Skor Kualitas Listing Properti
+              {t("createProperty.reviewStep.qualityScoreTitle")}
             </h3>
           </div>
           <span className="bg-emerald-500 text-slate-950 font-black text-xs px-2.5 py-0.5 rounded-full inline-block self-start sm:self-auto">
-            {qualityScore}% Sangat Bagus
+            {t("createProperty.reviewStep.excellentScore").replace("{score}", qualityScore.toString())}
           </span>
         </div>
 
@@ -563,7 +567,7 @@ export function StepReview({
         </div>
 
         <p className="text-[11px] text-indigo-200/80 mt-2">
-          Listing dengan skor tinggi berpeluang menarik pembeli 3x lebih cepat di portal pencarian.
+          {t("createProperty.reviewStep.scoreHint")}
         </p>
       </div>
 
@@ -572,7 +576,7 @@ export function StepReview({
         {/* KARTU PREVIEW PROPERTI */}
         <div className="lg:col-span-5 space-y-3">
           <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block">
-            Preview Kartu Listing
+            {t("createProperty.reviewStep.previewTitle")}
           </label>
 
           <div className="overflow-hidden border border-slate-200 dark:border-slate-800 bg-card shadow-lg rounded-2xl group">
@@ -586,22 +590,22 @@ export function StepReview({
               ) : (
                 <div className="w-full h-full flex flex-col items-center justify-center text-slate-500">
                   <ImageIcon className="w-10 h-10 mb-2 opacity-50" />
-                  <span className="text-xs">Foto Sampul Belum Diunggah</span>
+                  <span className="text-xs">{t("createProperty.reviewStep.noCoverPhoto")}</span>
                 </div>
               )}
 
               <div className="absolute top-3 left-3 flex flex-wrap gap-1.5 z-10">
                 <span className="bg-emerald-600 text-white font-bold text-[10px] uppercase px-2 py-0.5 rounded-md shadow-md">
-                  {formData.listing_type === "sewa" ? "📋 Sewa" : "💰 Jual"}
+                  {formData.listing_type === "sewa" ? t("createProperty.reviewStep.rent") : t("createProperty.reviewStep.sell")}
                 </span>
                 <span className="bg-black/60 text-white text-[10px] px-2 py-0.5 rounded-md backdrop-blur-xs capitalize">
-                  {formData.property_type || "Properti"}
+                  {formData.property_type || t("createProperty.reviewStep.propertyTypePlaceholder")}
                 </span>
               </div>
 
               {formData.photos && formData.photos.length > 1 && (
                 <div className="absolute bottom-3 right-3 bg-black/70 text-white text-[10px] px-2 py-1 rounded-lg backdrop-blur-xs font-mono">
-                  +{formData.photos.length - 1} Foto
+                  {t("createProperty.reviewStep.morePhotos").replace("{count}", (formData.photos.length - 1).toString())}
                 </div>
               )}
             </div>
@@ -609,28 +613,28 @@ export function StepReview({
             <div className="p-4 space-y-3">
               <div>
                 <h3 className="text-base font-bold text-slate-900 dark:text-white line-clamp-1">
-                  {formData.title || "Judul Listing Properti"}
+                  {formData.title || t("createProperty.reviewStep.listingTitlePlaceholder")}
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 flex items-center gap-1 mt-0.5">
                   <MapPin className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-                  {composeFullAddress(formData.address, formData) || "Wilayah belum dipilih"}
+                  {composeFullAddress(formData.address, formData) || t("createProperty.reviewStep.regionNotSelected")}
                 </p>
               </div>
 
               <div className="pt-2 border-t flex items-baseline justify-between">
                 <div>
-                  <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider block">Harga Penawaran</span>
+                  <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider block">{t("createProperty.reviewStep.offeringPrice")}</span>
                   <p className="text-lg font-black text-emerald-600 dark:text-emerald-400 font-mono">
                     {formData.selling_price
                       ? `Rp ${new Intl.NumberFormat("id-ID").format(formData.selling_price)}`
                       : formData.rental_price
                       ? `Rp ${new Intl.NumberFormat("id-ID").format(formData.rental_price)} /bln`
-                      : "Harga Kontak Agen"}
+                      : t("createProperty.reviewStep.priceContactAgent")}
                   </p>
                 </div>
                 {formData.negotiable && (
                   <span className="text-[10px] border border-emerald-500/40 text-emerald-600 px-2 py-0.5 rounded-full font-semibold">
-                    Nego
+                    {t("createProperty.reviewStep.negotiable")}
                   </span>
                 )}
               </div>
@@ -660,29 +664,29 @@ export function StepReview({
         {/* DETAILS & RINGKASAN DATA */}
         <div className="lg:col-span-7 space-y-3">
           <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block">
-            Rincian Lengkap Formulir
+            {t("createProperty.reviewStep.detailsTitle")}
           </label>
 
           <div className="space-y-3">
             <div className="p-4 rounded-2xl bg-slate-50/80 dark:bg-slate-900/40 border border-slate-200/80 dark:border-slate-800 space-y-2.5">
               <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                <Building2 className="w-4 h-4 text-emerald-600" /> Spesifikasi & Bangunan
+                <Building2 className="w-4 h-4 text-emerald-600" /> {t("createProperty.reviewStep.specsBuilding")}
               </h4>
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <div className="flex justify-between py-1 border-b border-slate-200/50 dark:border-slate-800">
-                  <span className="text-muted-foreground">Kategori:</span>
+                  <span className="text-muted-foreground">{t("createProperty.reviewStep.categoryLabel")}</span>
                   <span className="font-semibold capitalize">{formData.property_status || formData.property_category || "-"}</span>
                 </div>
                 <div className="flex justify-between py-1 border-b border-slate-200/50 dark:border-slate-800">
-                  <span className="text-muted-foreground">Sertifikat:</span>
+                  <span className="text-muted-foreground">{t("createProperty.reviewStep.certificateLabel")}</span>
                   <span className="font-semibold">{formData.certificate || "-"}</span>
                 </div>
                 <div className="flex justify-between py-1 border-b border-slate-200/50 dark:border-slate-800">
-                  <span className="text-muted-foreground">Daya Listrik:</span>
+                  <span className="text-muted-foreground">{t("createProperty.reviewStep.electricityLabel")}</span>
                   <span className="font-semibold">{formData.electricity ? `${formData.electricity} VA` : "-"}</span>
                 </div>
                 <div className="flex justify-between py-1 border-b border-slate-200/50 dark:border-slate-800">
-                  <span className="text-muted-foreground">Kondisi Perabot:</span>
+                  <span className="text-muted-foreground">{t("createProperty.reviewStep.furnishingLabel")}</span>
                   <span className="font-semibold">{formData.furnishing || "-"}</span>
                 </div>
               </div>
@@ -690,7 +694,7 @@ export function StepReview({
 
             <div className="p-4 rounded-2xl bg-slate-50/80 dark:bg-slate-900/40 border border-slate-200/80 dark:border-slate-800 space-y-2.5">
               <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                <Layers className="w-4 h-4 text-emerald-600" /> Fasilitas Terpasang
+                <Layers className="w-4 h-4 text-emerald-600" /> {t("createProperty.reviewStep.installedFacilities")}
               </h4>
               {formData.facilities && formData.facilities.length > 0 ? (
                 <div className="flex flex-wrap gap-1.5">
@@ -701,27 +705,27 @@ export function StepReview({
                   ))}
                 </div>
               ) : (
-                <p className="text-xs text-slate-400 italic">Tidak ada fasilitas spesifik yang dipilih.</p>
+                <p className="text-xs text-slate-400 italic">{t("createProperty.reviewStep.noSpecificFacilities")}</p>
               )}
             </div>
 
             <div className="p-4 rounded-2xl bg-slate-50/80 dark:bg-slate-900/40 border border-slate-200/80 dark:border-slate-800 space-y-2.5">
               <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                <UserCheck className="w-4 h-4 text-emerald-600" /> Informasi Pemilik & Identitas
+                <UserCheck className="w-4 h-4 text-emerald-600" /> {t("createProperty.reviewStep.ownerInfoTitle")}
               </h4>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                 <div className="flex items-center gap-2">
                   <UserCheck className="w-3.5 h-3.5 text-slate-400" />
-                  <span className="font-semibold">{formData.owner_name || "Pemilik tidak dicatat"}</span>
+                  <span className="font-semibold">{formData.owner_name || t("createProperty.reviewStep.noOwnerRecorded")}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Phone className="w-3.5 h-3.5 text-slate-400" />
                   <span className="font-mono">{formData.owner_phone || formData.owner_whatsapp || "-"}</span>
                 </div>
                 <div className="col-span-2 flex justify-between py-1 border-t border-slate-200/50 dark:border-slate-800">
-                  <span className="text-muted-foreground">Jenis & Nomor Identitas:</span>
+                  <span className="text-muted-foreground">{t("createProperty.reviewStep.identityTypeLabel")}</span>
                   <span className="font-mono font-semibold">
-                    {formData.owner_identity_type || "KTP"} - {formData.owner_identity_number || "Tidak ada nomor"}
+                    {formData.owner_identity_type || "KTP"} - {formData.owner_identity_number || t("createProperty.reviewStep.noIdentityNumber")}
                   </span>
                 </div>
               </div>
@@ -737,7 +741,7 @@ export function StepReview({
             <AlertCircle className="w-5 h-5 text-rose-600 dark:text-rose-400 mt-0.5 shrink-0" />
             <div className="text-xs space-y-0.5">
               <p className="font-bold text-rose-900 dark:text-rose-200">
-                Wilayah Administratif Belum Lengkap
+                {t("createProperty.reviewStep.incompleteRegionAlert")}
               </p>
               <p className="text-muted-foreground">
                 {NO_REGION_MESSAGE} Listing tidak dapat dipublikasikan tanpa data wilayah resmi.
@@ -753,7 +757,7 @@ export function StepReview({
               className="h-8 px-3 text-xs font-bold rounded-xl bg-rose-600 hover:bg-rose-700 text-white shrink-0 cursor-pointer shadow-xs"
             >
               <Edit3 className="w-3.5 h-3.5 mr-1.5" />
-              Perbaiki Lokasi Sekarang
+              {t("createProperty.reviewStep.fixLocationBtn")}
             </Button>
           )}
         </div>
@@ -764,11 +768,11 @@ export function StepReview({
         <div className="text-xs text-muted-foreground">
           {!regionValid ? (
             <span className="text-rose-600 dark:text-rose-400 font-semibold flex items-center gap-1">
-              <AlertTriangle className="w-3.5 h-3.5" /> Tombol publikasi nonaktif: lengkapi wilayah terlebih dahulu
+              <AlertTriangle className="w-3.5 h-3.5" /> {t("createProperty.reviewStep.publishDisabledAlert")}
             </span>
           ) : (
             <span className="text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
-              <Check className="w-3.5 h-3.5" /> Semua data wajib telah lengkap dan siap dipublikasikan
+              <Check className="w-3.5 h-3.5" /> {t("createProperty.reviewStep.publishReadyAlert")}
             </span>
           )}
         </div>
@@ -786,12 +790,12 @@ export function StepReview({
           {publishing ? (
             <>
               <Loader2 className="w-4 h-4 animate-spin mr-1.5" />
-              <span>{mode === "edit" ? "Menyimpan Perubahan..." : "Mempublikasikan..."}</span>
+              <span>{mode === "edit" ? t("createProperty.reviewStep.savingChanges") : t("createProperty.reviewStep.publishing")}</span>
             </>
           ) : (
             <>
               <CheckCircle className="w-4 h-4 mr-1.5" />
-              <span>{mode === "edit" ? "Update Sekarang" : "Publikasikan Sekarang"}</span>
+              <span>{mode === "edit" ? t("createProperty.reviewStep.updateNowBtn") : t("createProperty.reviewStep.publishNowBtn")}</span>
             </>
           )}
         </Button>

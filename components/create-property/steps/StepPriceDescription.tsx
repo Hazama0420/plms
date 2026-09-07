@@ -37,6 +37,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
+import { useTranslation } from "@/lib/i18n/hooks";
+
 interface StepPriceDescriptionProps {
   formData: any;
   updateFormData: (data: any) => void;
@@ -45,20 +47,20 @@ interface StepPriceDescriptionProps {
 }
 
 // Helper Terbilang Singkat untuk Angka Rupiah Besar
-function formatTerbilangRupiah(numString: string) {
+function formatTerbilangRupiah(numString: string, t: any) {
   const num = parseInt(numString.replace(/[^0-9]/g, ""));
   if (isNaN(num) || num === 0) return "";
 
   if (num >= 1_000_000_000_000) {
-    return `${(num / 1_000_000_000_000).toFixed(2).replace(/\.00$/, "")} Triliun Rupiah`;
+    return `${(num / 1_000_000_000_000).toFixed(2).replace(/\.00$/, "")} ${t("createProperty.priceStep.terbilang.trillion")}`;
   }
   if (num >= 1_000_000_000) {
-    return `${(num / 1_000_000_000).toFixed(2).replace(/\.00$/, "")} Miliar Rupiah`;
+    return `${(num / 1_000_000_000).toFixed(2).replace(/\.00$/, "")} ${t("createProperty.priceStep.terbilang.billion")}`;
   }
   if (num >= 1_000_000) {
-    return `${(num / 1_000_000).toFixed(2).replace(/\.00$/, "")} Juta Rupiah`;
+    return `${(num / 1_000_000).toFixed(2).replace(/\.00$/, "")} ${t("createProperty.priceStep.terbilang.million")}`;
   }
-  return `${new Intl.NumberFormat("id-ID").format(num)} Rupiah`;
+  return `${new Intl.NumberFormat("id-ID").format(num)} ${t("createProperty.priceStep.terbilang.rupiah")}`;
 }
 
 export function StepPriceDescription({
@@ -67,6 +69,7 @@ export function StepPriceDescription({
   nextStep,
   prevStep,
 }: StepPriceDescriptionProps) {
+  const { t } = useTranslation();
   const [aiLoading, setAiLoading] = useState(false);
   const [aiLoadingEnhance, setAiLoadingEnhance] = useState(false);
 
@@ -152,13 +155,13 @@ export function StepPriceDescription({
       updateFormData({ selling_price: Math.round(price).toString() });
     }
     setShowPredictModal(false);
-    toast.success("Harga prediksi AI berhasil diterapkan!");
+    toast.success(t("createProperty.priceStep.aiPredictSuccessToast"));
   };
 
   // ===== AI GENERATE DESCRIPTION =====
   const generateDescription = async () => {
     if (!formData.property_type && !formData.address) {
-      toast.warning("Isi tipe properti atau lokasi alamat terlebih dahulu.");
+      toast.warning(t("createProperty.priceStep.missingDataToast"));
       return;
     }
 
@@ -185,13 +188,13 @@ export function StepPriceDescription({
       const result = await response.json();
       if (result.success) {
         updateFormData({ description: result.data });
-        toast.success("Deskripsi berhasil dibuat dengan AI!");
+        toast.success(t("createProperty.priceStep.aiSuccessGenerateToast"));
       } else {
-        toast.error(result.error || "Gagal generate deskripsi");
+        toast.error(result.error || t("createProperty.priceStep.aiErrorToast"));
       }
     } catch (error) {
       console.error(error);
-      toast.error("Gagal terhubung ke AI service");
+      toast.error(t("createProperty.priceStep.aiErrorToast"));
     } finally {
       setAiLoading(false);
     }
@@ -200,7 +203,7 @@ export function StepPriceDescription({
   // ===== AI ENHANCE DESCRIPTION =====
   const enhanceDescription = async () => {
     if (!formData.description || formData.description.length < 20) {
-      toast.warning("Tulis deskripsi minimal 20 karakter terlebih dahulu.");
+      toast.warning(t("createProperty.priceStep.descLengthToast"));
       return;
     }
 
@@ -222,13 +225,13 @@ export function StepPriceDescription({
       const result = await response.json();
       if (result.success) {
         updateFormData({ description: result.data });
-        toast.success("Deskripsi berhasil disempurnakan dengan AI!");
+        toast.success(t("createProperty.priceStep.aiSuccessEnhanceToast"));
       } else {
-        toast.error(result.error || "Gagal mempercantik deskripsi");
+        toast.error(result.error || t("createProperty.priceStep.aiErrorToast"));
       }
     } catch (error) {
       console.error(error);
-      toast.error("Gagal terhubung ke AI service");
+      toast.error(t("createProperty.priceStep.aiErrorToast"));
     } finally {
       setAiLoadingEnhance(false);
     }
@@ -242,10 +245,10 @@ export function StepPriceDescription({
       <div>
         <h2 className="text-lg sm:text-xl lg:text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
           <Sparkles className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-600" />
-          Harga & Deskripsi Properti
+          {t("createProperty.priceStep.title")}
         </h2>
         <p className="text-[11px] sm:text-xs lg:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-          Tentukan skema harga, gunakan fitur estimasi AI, dan susun deskripsi menarik untuk pembeli.
+          {t("createProperty.priceStep.subtitle")}
         </p>
       </div>
 
@@ -255,7 +258,7 @@ export function StepPriceDescription({
           <div className="flex items-center gap-2">
             <Coins className="w-5 h-5 text-emerald-600" />
             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-              Informasi Penetapan Harga
+              {t("createProperty.priceStep.pricingTitle")}
             </h3>
           </div>
 
@@ -268,7 +271,7 @@ export function StepPriceDescription({
             className="h-8 text-xs gap-1.5 border-emerald-500/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/40"
           >
             <TrendingUp className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Estimasi Harga AI</span>
+            <span>{t("createProperty.priceStep.aiEstimateBtn")}</span>
           </Button>
         </div>
 
@@ -277,7 +280,7 @@ export function StepPriceDescription({
           <div className="space-y-1.5">
             <Label htmlFor="selling_price" className="text-xs font-semibold flex items-center gap-1.5">
               <Tag className="w-3.5 h-3.5 text-slate-500" />
-              Harga Jual {formData.listing_type === "jual" && <span className="text-rose-500">*</span>}
+              {t("createProperty.priceStep.sellingPrice")} {formData.listing_type === "jual" && <span className="text-rose-500">*</span>}
             </Label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-500">
@@ -294,7 +297,7 @@ export function StepPriceDescription({
             </div>
             {formData.selling_price && (
               <p className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 pl-1">
-                ≈ {formatTerbilangRupiah(formData.selling_price)}
+                ≈ {formatTerbilangRupiah(formData.selling_price, t)}
               </p>
             )}
           </div>
@@ -303,7 +306,7 @@ export function StepPriceDescription({
           <div className="space-y-1.5">
             <Label htmlFor="rental_price" className="text-xs font-semibold flex items-center gap-1.5">
               <Tag className="w-3.5 h-3.5 text-slate-500" />
-              Harga Sewa {formData.listing_type === "sewa" && <span className="text-rose-500">*</span>}
+              {t("createProperty.priceStep.rentalPrice")} {formData.listing_type === "sewa" && <span className="text-rose-500">*</span>}
             </Label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-500">
@@ -320,19 +323,19 @@ export function StepPriceDescription({
             </div>
             {formData.rental_price && (
               <p className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 pl-1">
-                ≈ {formatTerbilangRupiah(formData.rental_price)}
+                ≈ {formatTerbilangRupiah(formData.rental_price, t)}
               </p>
             )}
 
             {/* 🟢 OPSI PERIODE SEWA DI BAWAH HARGA SEWA (RAMAH MOBILE) */}
             {formData.listing_type === "sewa" && (
               <div className="pt-2 space-y-1.5">
-                <span className="text-[11px] text-muted-foreground font-semibold block">Periode Sewa:</span>
+                <span className="text-[11px] text-muted-foreground font-semibold block">{t("createProperty.priceStep.rentalPeriod")}</span>
                 <div className="grid grid-cols-3 gap-2">
                   {[
-                    { label: "Tahunan", value: "per_tahun" },
-                    { label: "Bulanan", value: "per_bulan" },
-                    { label: "Harian", value: "per_hari" },
+                    { label: t("createProperty.priceStep.periods.yearly"), value: "per_tahun" },
+                    { label: t("createProperty.priceStep.periods.monthly"), value: "per_bulan" },
+                    { label: t("createProperty.priceStep.periods.daily"), value: "per_hari" },
                   ].map((item) => {
                     const isActive = (formData.rental_period || "per_tahun") === item.value;
                     return (
@@ -358,7 +361,7 @@ export function StepPriceDescription({
           {/* SERVICE CHARGE */}
           <div className="space-y-1.5">
             <Label htmlFor="service_charge" className="text-xs font-semibold flex items-center gap-1.5">
-              <Calculator className="w-3.5 h-3.5 text-slate-500" /> Service Charge (Bulanan)
+              <Calculator className="w-3.5 h-3.5 text-slate-500" /> {t("createProperty.priceStep.serviceCharge")}
             </Label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-500">
@@ -378,7 +381,7 @@ export function StepPriceDescription({
           {/* MAINTENANCE FEE */}
           <div className="space-y-1.5">
             <Label htmlFor="maintenance_fee" className="text-xs font-semibold flex items-center gap-1.5">
-              <Calculator className="w-3.5 h-3.5 text-slate-500" /> IPL / Maintenance Fee
+              <Calculator className="w-3.5 h-3.5 text-slate-500" /> {t("createProperty.priceStep.maintenanceFee")}
             </Label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-500">
@@ -400,9 +403,9 @@ export function StepPriceDescription({
         <div className="flex items-center justify-between p-3.5 rounded-xl bg-background border border-slate-200 dark:border-slate-800 mt-4">
           <div className="space-y-0.5">
             <Label htmlFor="negotiable" className="text-xs font-bold cursor-pointer">
-              Harga Bisa Nego (Negotiable)
+              {t("createProperty.priceStep.negotiableLabel")}
             </Label>
-            <p className="text-[11px] text-muted-foreground">Tampilkan penanda bahwa harga masih fleksibel untuk didiskusikan</p>
+            <p className="text-[11px] text-muted-foreground">{t("createProperty.priceStep.negotiableDesc")}</p>
           </div>
           <Switch
             id="negotiable"
@@ -418,7 +421,7 @@ export function StepPriceDescription({
           <div className="flex items-center gap-2">
             <FileText className="w-5 h-5 text-emerald-600" />
             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-              Deskripsi Properti
+              {t("createProperty.priceStep.descriptionTitle")}
             </h3>
           </div>
 
@@ -437,7 +440,7 @@ export function StepPriceDescription({
               ) : (
                 <Wand2 className="w-3.5 h-3.5 text-purple-500" />
               )}
-              <span>Buat dengan AI</span>
+              <span>{t("createProperty.priceStep.generateAiBtn")}</span>
             </Button>
 
             <Button
@@ -453,7 +456,7 @@ export function StepPriceDescription({
               ) : (
                 <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
               )}
-              <span>Rapikan AI</span>
+              <span>{t("createProperty.priceStep.enhanceAiBtn")}</span>
             </Button>
           </div>
         </div>
@@ -462,15 +465,15 @@ export function StepPriceDescription({
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <Label htmlFor="description" className="text-xs font-semibold">
-              Deskripsi Lengkap <span className="text-rose-500">*</span>
+              {t("createProperty.priceStep.fullDescription")} <span className="text-rose-500">*</span>
             </Label>
             <div className="flex items-center gap-2">
               <span className="text-[11px] font-mono text-muted-foreground">
-                {charCount} karakter
+                {t("createProperty.priceStep.charCount").replace("{count}", charCount.toString())}
               </span>
               {charCount >= 50 && (
                 <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border-0">
-                  <CheckCircle2 className="w-3 h-3 mr-1" /> Panjang Ideal
+                  <CheckCircle2 className="w-3 h-3 mr-1" /> {t("createProperty.priceStep.idealLength")}
                 </Badge>
               )}
             </div>
@@ -478,7 +481,7 @@ export function StepPriceDescription({
 
           <Textarea
             id="description"
-            placeholder="Tuliskan deskripsi lengkap mengenai keunggulan, aksesbilitas, tata ruang, dan fasilitas sekitar properti ini..."
+            placeholder={t("createProperty.priceStep.descriptionPlaceholder")}
             value={formData.description || ""}
             onChange={(e) => handleChange("description", e.target.value)}
             rows={6}
@@ -487,7 +490,7 @@ export function StepPriceDescription({
 
           {charCount > 0 && charCount < 50 && (
             <p className="text-[11px] text-amber-600 dark:text-amber-400">
-              ⚠️ Minimal 50 karakter direkomendasikan agar iklan tampil maksimal di portal properti.
+              {t("createProperty.priceStep.lengthWarning")}
             </p>
           )}
         </div>
@@ -495,11 +498,11 @@ export function StepPriceDescription({
         {/* SELLING POINT */}
         <div className="space-y-1.5 pt-2">
           <Label htmlFor="selling_point" className="text-xs font-semibold flex items-center gap-1.5">
-            <Gem className="w-3.5 h-3.5 text-amber-500" /> Point Penjualan Utama (Selling Point)
+            <Gem className="w-3.5 h-3.5 text-amber-500" /> {t("createProperty.priceStep.sellingPoint")}
           </Label>
           <Textarea
             id="selling_point"
-            placeholder="Contoh: 5 Menit ke Pintu Tol BSD, Bebas Banjir, Dekat Sekolah Internasional, SHM On Hand..."
+            placeholder={t("createProperty.priceStep.sellingPointPlaceholder")}
             value={formData.selling_point || ""}
             onChange={(e) => handleChange("selling_point", e.target.value)}
             rows={2}
@@ -514,36 +517,36 @@ export function StepPriceDescription({
           <DialogHeader className="pb-2 border-b">
             <DialogTitle className="text-sm font-bold flex items-center gap-2 text-emerald-600">
               <TrendingUp className="w-5 h-5" />
-              Estimasi Harga Pasar AI
+              {t("createProperty.priceStep.aiPredictModalTitle")}
             </DialogTitle>
           </DialogHeader>
 
           {predictingPrice ? (
             <div className="py-8 text-center space-y-3">
               <Loader2 className="w-8 h-8 animate-spin text-emerald-600 mx-auto" />
-              <p className="text-xs text-muted-foreground">Menganalisis pasar lokasi & fisik bangunan...</p>
+              <p className="text-xs text-muted-foreground">{t("createProperty.priceStep.analyzingMarket")}</p>
             </div>
           ) : predictionResult ? (
             <div className="space-y-4 py-2">
               <div className="p-4 bg-emerald-50 dark:bg-emerald-950/40 rounded-xl text-center border border-emerald-200 dark:border-emerald-800 space-y-1">
                 <span className="text-[11px] text-emerald-700 dark:text-emerald-300 font-semibold uppercase">
-                  Estimasi Rekomendasi
+                  {t("createProperty.priceStep.recommendedEstimate")}
                 </span>
                 <p className="text-xl font-black font-mono text-emerald-600">
                   Rp {new Intl.NumberFormat("id-ID").format(predictionResult.estimatedPrice)}
                 </p>
                 <p className="text-[11px] text-muted-foreground font-medium">
-                  {formatTerbilangRupiah(predictionResult.estimatedPrice.toString())}
+                  {formatTerbilangRupiah(predictionResult.estimatedPrice.toString(), t)}
                 </p>
               </div>
 
               <div className="space-y-1.5 text-xs text-slate-600 dark:text-slate-300">
                 <div className="flex justify-between border-b py-1">
-                  <span>Rentang Batas Bawah:</span>
+                  <span>{t("createProperty.priceStep.lowerBound")}</span>
                   <span className="font-mono font-semibold">Rp {new Intl.NumberFormat("id-ID").format(predictionResult.priceMin)}</span>
                 </div>
                 <div className="flex justify-between border-b py-1">
-                  <span>Rentang Batas Atas:</span>
+                  <span>{t("createProperty.priceStep.upperBound")}</span>
                   <span className="font-mono font-semibold">Rp {new Intl.NumberFormat("id-ID").format(predictionResult.priceMax)}</span>
                 </div>
               </div>
@@ -559,14 +562,14 @@ export function StepPriceDescription({
                   onClick={() => setShowPredictModal(false)}
                   className="flex-1 text-xs h-9"
                 >
-                  Tutup
+                  {t("createProperty.priceStep.closeBtn")}
                 </Button>
                 <Button
                   type="button"
                   onClick={() => applyPredictedPrice(predictionResult.estimatedPrice)}
                   className="flex-1 text-xs h-9 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
                 >
-                  Gunakan Harga Ini
+                  {t("createProperty.priceStep.usePriceBtn")}
                 </Button>
               </div>
             </div>

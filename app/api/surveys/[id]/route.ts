@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRole } from "@/lib/api-auth";
 import { validate, surveyUpdateSchema } from "@/lib/validations";
 import { notifyEvent } from "@/lib/notification-helper";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 /**
  * PATCH /api/surveys/[id]
@@ -40,7 +41,7 @@ export async function PATCH(
   // 3. Ambil jadwal yang akan diubah — sekaligus cek kepemilikan
   const { data: existing, error: fetchErr } = await supabase
     .from("surveys")
-    .select("id, agent_id, created_by, client_id, scheduled_at, status")
+    .select("id, agent_id, created_by, client_id, scheduled_at, status, lead_id")
     .eq("id", id)
     .single();
 
@@ -98,6 +99,38 @@ export async function PATCH(
       { error: "Gagal memperbarui jadwal survei." },
       { status: 500 }
     );
+  }
+
+  // 5.5 Catat aktivitas ke CRM jika terhubung dengan Lead
+  if (existing.lead_id) {
+    try {
+      const isCompleted = status === "completed" && existing.status !== "completed";
+      const isNowCancelled = status === "cancelled" && existing.status !== "cancelled";
+      const isRescheduled = scheduled_at !== undefined && scheduled_at !== existing.scheduled_at;
+
+      let actNotes: string | null = null;
+
+      if (isCompleted) {
+        actNotes = "Survei properti telah selesai dilaksanakan.";
+      } else if (isNowCancelled) {
+        actNotes = "Jadwal survei properti dibatalkan.";
+      } else if (isRescheduled) {
+        actNotes = `Jadwal survei properti diubah ke ${new Date(scheduled_at!).toLocaleDateString("id-ID", { dateStyle: "medium" })}.`;
+      }
+
+      if (actNotes) {
+        const supabaseAdmin = createAdminClient();
+        await supabaseAdmin.from("crm_activities").insert({
+          lead_id: existing.lead_id,
+          user_id: ctx.userId,
+          activity_type: "site_visit",
+          notes: actNotes,
+          created_at: new Date().toISOString(),
+        });
+      }
+    } catch (crmErr) {
+      console.error("[PATCH /api/surveys/[id]] Gagal mencatat crm_activity:", crmErr);
+    }
   }
 
   // 6. Beri tahu client bila yang berubah menyangkut kehadirannya.

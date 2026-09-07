@@ -28,6 +28,8 @@ import { toast } from "sonner";
 import { supabase } from "@/lib/supabase/client";
 import { composeFullAddress, hasRegion } from "@/lib/property-address";
 
+import { useTranslation } from "@/lib/i18n/hooks";
+
 interface RegionItem {
   id: number;
   province_name: string;
@@ -44,6 +46,7 @@ interface StepLocationProps {
 }
 
 export function StepLocation({ formData, updateFormData }: StepLocationProps) {
+  const { t } = useTranslation();
   const [manualEdit, setManualEdit] = useState(false);
   const [showManualFields, setShowManualFields] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
@@ -211,7 +214,7 @@ export function StepLocation({ formData, updateFormData }: StepLocationProps) {
         <div className="flex flex-wrap items-center gap-2">
           <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
             <MapPin className="w-5 h-5 text-emerald-600" />
-            <span>Lokasi Properti</span>
+            <span>{t("createProperty.locationStep.title")}</span>
           </h2>
           <Badge
             variant="secondary"
@@ -221,7 +224,7 @@ export function StepLocation({ formData, updateFormData }: StepLocationProps) {
           </Badge>
         </div>
         <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
-          Tentukan wilayah administratif resmi dari database, lalu lengkapi dengan nama jalan bila diperlukan.
+          {t("createProperty.locationStep.subtitle")}
         </p>
       </div>
 
@@ -231,10 +234,9 @@ export function StepLocation({ formData, updateFormData }: StepLocationProps) {
           <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
           <div className="text-xs space-y-0.5">
             <p className="font-bold text-amber-900 dark:text-amber-200">
-              Perhatian: Data Wilayah Perlu Dilengkapi
+              {t("createProperty.locationStep.legacyWarningTitle")}
             </p>
-            <p className="text-muted-foreground">
-              Properti ini memiliki teks alamat lama (<em>&quot;{formData.address}&quot;</em>), namun belum memiliki data wilayah terstruktur resmi. Silakan cari dan pilih wilayah terdaftar di bawah.
+            <p className="text-muted-foreground" dangerouslySetInnerHTML={{ __html: t("createProperty.locationStep.legacyWarningDesc").replace("{address}", formData.address) }}>
             </p>
           </div>
         </div>
@@ -249,7 +251,7 @@ export function StepLocation({ formData, updateFormData }: StepLocationProps) {
             </span>
             <div className="min-w-0">
               <p className="text-[10px] font-bold uppercase tracking-wider text-indigo-700 dark:text-indigo-300">
-                Lokasi Terdeteksi dari Deskripsi AI
+                {t("createProperty.locationStep.aiLocationTitle")}
               </p>
               <p className="text-xs sm:text-sm font-black text-foreground truncate">
                 &quot;{formData.location_candidate}&quot;
@@ -263,7 +265,7 @@ export function StepLocation({ formData, updateFormData }: StepLocationProps) {
             className="h-8 px-3 text-xs font-bold rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white shrink-0 cursor-pointer shadow-xs"
           >
             <Search className="w-3.5 h-3.5 mr-1.5" />
-            Cari Wilayah Ini
+            {t("createProperty.locationStep.searchThisRegionBtn")}
           </Button>
         </div>
       )}
@@ -275,9 +277,9 @@ export function StepLocation({ formData, updateFormData }: StepLocationProps) {
               <Building2 className="w-4 h-4" />
             </div>
             <div className="min-w-0">
-              <CardTitle className="text-sm sm:text-base font-bold">Wilayah & Alamat Properti</CardTitle>
+              <CardTitle className="text-sm sm:text-base font-bold">{t("createProperty.locationStep.cardTitle")}</CardTitle>
               <CardDescription className="text-[11px] sm:text-xs">
-                Wilayah wajib dipilih dari database terdaftar agar listing dapat dicari oleh pembeli
+                {t("createProperty.locationStep.cardDesc")}
               </CardDescription>
             </div>
           </div>
@@ -288,11 +290,11 @@ export function StepLocation({ formData, updateFormData }: StepLocationProps) {
           <div className="relative space-y-2" ref={dropdownRef}>
             <div className="flex items-center justify-between">
               <Label className="text-xs font-bold text-foreground flex items-center gap-1">
-                Wilayah Administratif <span className="text-rose-500">*</span>
+                {t("createProperty.locationStep.adminRegion")} <span className="text-rose-500">*</span>
               </Label>
               {regionSelected && (
                 <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
-                  <CheckCircle2 className="w-3 h-3" /> Terverifikasi Resmi
+                  <CheckCircle2 className="w-3 h-3" /> {t("createProperty.locationStep.verifiedRegion")}
                 </span>
               )}
             </div>
@@ -305,13 +307,13 @@ export function StepLocation({ formData, updateFormData }: StepLocationProps) {
                     <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400 mt-0.5 shrink-0" />
                     <div className="space-y-1 min-w-0">
                       <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-300">
-                        Wilayah Terdaftar Resmi
+                        {t("createProperty.locationStep.registeredRegionTitle")}
                       </span>
                       <h4 className="text-base sm:text-lg font-black text-foreground leading-tight break-words">
                         {formData.district_name || formData.city_name}
                       </h4>
                       <p className="text-xs text-muted-foreground">
-                        Kota/Kab: <span className="font-semibold text-foreground">{formData.city_name || "-"}</span> • Provinsi: <span className="font-semibold text-foreground">{formData.province_name || "-"}</span>
+                        {t("createProperty.locationStep.city")} <span className="font-semibold text-foreground">{formData.city_name || "-"}</span> • {t("createProperty.locationStep.province")} <span className="font-semibold text-foreground">{formData.province_name || "-"}</span>
                       </p>
                     </div>
                   </div>
@@ -323,7 +325,7 @@ export function StepLocation({ formData, updateFormData }: StepLocationProps) {
                     onClick={handleClearRegion}
                     className="h-8 px-3 text-xs font-semibold rounded-xl border-emerald-500/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/20 gap-1.5 shrink-0 cursor-pointer shadow-2xs"
                   >
-                    <Edit3 className="w-3.5 h-3.5" /> Ganti Wilayah
+                    <Edit3 className="w-3.5 h-3.5" /> {t("createProperty.locationStep.changeRegionBtn")}
                   </Button>
                 </div>
               </div>
@@ -339,7 +341,7 @@ export function StepLocation({ formData, updateFormData }: StepLocationProps) {
                     onFocus={() => {
                       if (suggestions.length > 0) setShowDropdown(true);
                     }}
-                    placeholder="Cari wilayah: Cipondoh, Gunung Sindur, BSD, Menteng, Kebayoran..."
+                    placeholder={t("createProperty.locationStep.searchPlaceholder")}
                     className={cn(inputClass, "pl-9")}
                   />
                   {isSearching && (
@@ -351,8 +353,7 @@ export function StepLocation({ formData, updateFormData }: StepLocationProps) {
                 {searchQuery.trim().length >= 2 && !showDropdown && !isSearching && suggestions.length === 0 && searchPerformed && (
                   <div className="flex items-start gap-2 rounded-xl bg-amber-500/10 border border-amber-500/30 p-2.5">
                     <Info className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
-                    <p className="text-[11px] text-amber-900 dark:text-amber-200">
-                      Wilayah &quot;<strong>{searchQuery}</strong>&quot; tidak ditemukan. Coba ketik nama kecamatan atau kota terdekat (contoh: &quot;Tangerang&quot;, &quot;Bogor&quot;, &quot;Jakarta Selatan&quot;).
+                    <p className="text-[11px] text-amber-900 dark:text-amber-200" dangerouslySetInnerHTML={{ __html: t("createProperty.locationStep.searchNotFound").replace("{query}", searchQuery) }}>
                     </p>
                   </div>
                 )}
@@ -361,7 +362,7 @@ export function StepLocation({ formData, updateFormData }: StepLocationProps) {
                 {showDropdown && suggestions.length > 0 && (
                   <div className="absolute z-50 left-0 right-0 mt-1 bg-card border border-border rounded-2xl shadow-lg max-h-[50vh] overflow-y-auto divide-y divide-border/60">
                     <div className="px-3 py-1.5 bg-muted/40 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
-                      Klik salah satu wilayah di bawah untuk konfirmasi:
+                      {t("createProperty.locationStep.selectToConfirm")}
                     </div>
                     {suggestions.map((item) => (
                       <button
@@ -387,7 +388,7 @@ export function StepLocation({ formData, updateFormData }: StepLocationProps) {
                 <div className="flex items-start gap-2 rounded-xl bg-muted/50 border border-border/60 p-2.5 text-muted-foreground">
                   <AlertTriangle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-500 mt-0.5 shrink-0" />
                   <p className="text-[11px]">
-                    Wilayah wajib dipilih dari hasil pencarian di atas agar terdaftar resmi. Nama jalan di bawah bersifat opsional.
+                    {t("createProperty.locationStep.regionRequiredAlert")}
                   </p>
                 </div>
               </div>
@@ -398,19 +399,19 @@ export function StepLocation({ formData, updateFormData }: StepLocationProps) {
           <div className="space-y-1.5 pt-2 border-t border-border/60">
             <div className="flex items-center justify-between">
               <Label htmlFor="address" className="text-xs font-semibold text-foreground">
-                Nama Jalan, Nomor, Blok, atau Patokan
+                {t("createProperty.locationStep.streetNameLabel")}
               </Label>
-              <span className="text-[10px] text-muted-foreground font-medium">Opsional</span>
+              <span className="text-[10px] text-muted-foreground font-medium">{t("createProperty.locationStep.optional")}</span>
             </div>
             <Input
               id="address"
-              placeholder="Contoh: Jl. Utama Sektor 1.2 No. 88, Blok A3"
+              placeholder={t("createProperty.locationStep.streetPlaceholder")}
               value={formData.address || ""}
               onChange={(e) => updateFormData({ address: e.target.value })}
               className={inputClass}
             />
             <p className="text-[11px] text-muted-foreground">
-              Alamat jalan spesifik dapat dikosongkan jika pemilik tidak ingin menampilkan lokasi persis ke publik.
+              {t("createProperty.locationStep.streetNote")}
             </p>
           </div>
 
@@ -420,7 +421,7 @@ export function StepLocation({ formData, updateFormData }: StepLocationProps) {
               <MapPin className="w-4 h-4 text-rose-500 mt-0.5 shrink-0" />
               <div className="min-w-0">
                 <p className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground">
-                  Pratinjau Alamat Lengkap
+                  {t("createProperty.locationStep.previewAddress")}
                 </p>
                 <p className="text-xs sm:text-sm font-semibold text-foreground break-words mt-0.5">
                   {previewAddress}
@@ -438,7 +439,7 @@ export function StepLocation({ formData, updateFormData }: StepLocationProps) {
             >
               <span className="flex items-center gap-2 text-xs sm:text-sm font-semibold text-foreground">
                 <Building2 className="w-4 h-4 text-muted-foreground shrink-0" />
-                Rincian Struktur Administrasi
+                {t("createProperty.locationStep.adminDetails")}
               </span>
               <ChevronDown
                 className={cn(
@@ -458,11 +459,11 @@ export function StepLocation({ formData, updateFormData }: StepLocationProps) {
                   >
                     {manualEdit ? (
                       <>
-                        <Lock className="h-3.5 w-3.5 text-blue-500" /> Kunci (Auto-fill)
+                        <Lock className="h-3.5 w-3.5 text-blue-500" /> {t("createProperty.locationStep.lockAutofill")}
                       </>
                     ) : (
                       <>
-                        <Edit3 className="h-3.5 w-3.5 text-blue-500" /> Ubah / Isi Manual
+                        <Edit3 className="h-3.5 w-3.5 text-blue-500" /> {t("createProperty.locationStep.manualEdit")}
                       </>
                     )}
                   </button>
@@ -470,10 +471,10 @@ export function StepLocation({ formData, updateFormData }: StepLocationProps) {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {[
-                    { id: "province_name", label: "Provinsi", placeholder: "Otomatis dari pencarian" },
-                    { id: "city_name", label: "Kota / Kabupaten", placeholder: "Otomatis dari pencarian" },
-                    { id: "district_name", label: "Kecamatan / Area", placeholder: "Otomatis dari pencarian" },
-                    { id: "village_name", label: "Kelurahan / Desa", placeholder: "Opsional" },
+                    { id: "province_name", label: t("createProperty.locationStep.fields.province"), placeholder: t("createProperty.locationStep.placeholderAuto") },
+                    { id: "city_name", label: t("createProperty.locationStep.fields.city"), placeholder: t("createProperty.locationStep.placeholderAuto") },
+                    { id: "district_name", label: t("createProperty.locationStep.fields.district"), placeholder: t("createProperty.locationStep.placeholderAuto") },
+                    { id: "village_name", label: t("createProperty.locationStep.fields.village"), placeholder: t("createProperty.locationStep.placeholderOptional") },
                   ].map((field) => (
                     <div key={field.id} className="space-y-1.5">
                       <Label htmlFor={field.id} className="text-xs font-medium text-muted-foreground">
@@ -502,7 +503,7 @@ export function StepLocation({ formData, updateFormData }: StepLocationProps) {
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2 text-xs font-semibold text-foreground">
                 <Compass className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                <span>Kode Pos & Koordinat Peta</span>
+                <span>{t("createProperty.locationStep.mapCoordinates")}</span>
               </div>
               <Button
                 type="button"
@@ -514,11 +515,11 @@ export function StepLocation({ formData, updateFormData }: StepLocationProps) {
               >
                 {isLocating ? (
                   <>
-                    <Loader2 className="w-3 h-3 animate-spin" /> Mengambil GPS...
+                    <Loader2 className="w-3 h-3 animate-spin" /> {t("createProperty.locationStep.gettingGpsBtn")}
                   </>
                 ) : (
                   <>
-                    <Navigation className="w-3 h-3" /> Ambil Posisi GPS
+                    <Navigation className="w-3 h-3" /> {t("createProperty.locationStep.getGpsBtn")}
                   </>
                 )}
               </Button>
@@ -527,7 +528,7 @@ export function StepLocation({ formData, updateFormData }: StepLocationProps) {
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
               <div className="space-y-1.5 col-span-2 sm:col-span-1">
                 <Label htmlFor="postal_code" className="text-xs font-medium text-muted-foreground">
-                  Kode Pos
+                  {t("createProperty.locationStep.postalCode")}
                 </Label>
                 <Input
                   id="postal_code"

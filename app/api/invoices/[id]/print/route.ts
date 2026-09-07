@@ -9,7 +9,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateInvoiceHTML } from "@/lib/templates/invoice-template";
 import { getInvoiceIssuer } from "@/lib/invoice-config";
-import { requireAuth } from "@/lib/api-auth";
+import { requireRole } from "@/lib/api-auth";
 import { resolveInvoiceAmount } from "@/types/invoice.types";
 
 // Tidak ada pembacaan logo di sini. Desain invoice acuan tidak memuat logo:
@@ -34,9 +34,8 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
-    // Invoice memuat nama klien & nominal transaksi. Tanpa penjagaan ini,
-    // siapa pun bisa menebak ID dan mengunduh invoice milik orang lain.
-    const auth = await requireAuth();
+    // Invoice memuat nama klien & nominal transaksi. Hanya Admin & Super Admin yang berwenang.
+    const auth = await requireRole(["super_admin", "admin"]);
     if (!auth.ok) return auth.response;
 
     const { supabase } = auth.ctx;

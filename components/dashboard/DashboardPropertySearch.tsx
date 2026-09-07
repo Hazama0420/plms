@@ -35,6 +35,7 @@ import {
   RegionMultiSelect,
   type SelectedRegion,
 } from "@/components/dashboard/RegionMultiSelect";
+import { useTranslation } from "@/lib/i18n/useTranslation";
 
 function readRegionsFromParams(
   params: URLSearchParams
@@ -72,71 +73,72 @@ function readRegionsFromParams(
   return result;
 }
 
-const PROPERTY_CATEGORIES = [
-  { label: "Semua", value: "all" },
-  { label: "Rumah", value: "rumah" },
-  { label: "Apartemen", value: "apartemen" },
-  { label: "Tanah", value: "tanah" },
-  { label: "Ruko", value: "ruko" },
-  { label: "Kost", value: "kost" },
-  { label: "Villa", value: "villa" },
-  { label: "Hotel", value: "hotel" },
-  { label: "Pabrik", value: "pabrik" },
-  { label: "Gudang", value: "gudang" },
-  { label: "Perkantoran", value: "kantor" },
-  {
-    label: "Ruang Usaha",
-    value: "ruang_usaha",
-  },
-] as const;
-
-const QUICK_CATEGORIES = [
-  {
-    label: "Rumah",
-    value: "rumah",
-    icon: Home,
-  },
-  {
-    label: "Tanah",
-    value: "tanah",
-    icon: Trees,
-  },
-  {
-    label: "Ruko",
-    value: "ruko",
-    icon: Landmark,
-  },
-  {
-    label: "Gudang",
-    value: "gudang",
-    icon: Warehouse,
-  },
-] as const;
-
-const BEDROOM_OPTIONS = [
-  { label: "Bebas", value: "all" },
-  { label: "1+", value: "1" },
-  { label: "2+", value: "2" },
-  { label: "3+", value: "3" },
-  { label: "4+", value: "4" },
-  { label: "5+", value: "5" },
-] as const;
-
-const SORT_OPTIONS = [
-  { label: "Terbaru", value: "all" },
-  {
-    label: "Harga Terendah",
-    value: "price_asc",
-  },
-  {
-    label: "Harga Tertinggi",
-    value: "price_desc",
-  },
-] as const;
-
 export function DashboardPropertySearch() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { t } = useTranslation();
+
+  const PROPERTY_CATEGORIES = [
+    { label: t("dashboard.search.all"), value: "all" },
+    { label: t("dashboard.search.house"), value: "rumah" },
+    { label: t("dashboard.search.apartment"), value: "apartemen" },
+    { label: t("dashboard.search.land"), value: "tanah" },
+    { label: t("dashboard.search.shop"), value: "ruko" },
+    { label: t("dashboard.search.boardingHouse"), value: "kost" },
+    { label: t("dashboard.search.villa"), value: "villa" },
+    { label: t("dashboard.search.hotel"), value: "hotel" },
+    { label: t("dashboard.search.factory"), value: "pabrik" },
+    { label: t("dashboard.search.warehouse"), value: "gudang" },
+    { label: t("dashboard.search.office"), value: "kantor" },
+    {
+      label: t("dashboard.search.commercialSpace"),
+      value: "ruang_usaha",
+    },
+  ] as const;
+  
+  const QUICK_CATEGORIES = [
+    {
+      label: t("dashboard.search.house"),
+      value: "rumah",
+      icon: Home,
+    },
+    {
+      label: t("dashboard.search.land"),
+      value: "tanah",
+      icon: Trees,
+    },
+    {
+      label: t("dashboard.search.shop"),
+      value: "ruko",
+      icon: Landmark,
+    },
+    {
+      label: t("dashboard.search.warehouse"),
+      value: "gudang",
+      icon: Warehouse,
+    },
+  ] as const;
+  
+  const BEDROOM_OPTIONS = [
+    { label: t("dashboard.search.free"), value: "all" },
+    { label: "1+", value: "1" },
+    { label: "2+", value: "2" },
+    { label: "3+", value: "3" },
+    { label: "4+", value: "4" },
+    { label: "5+", value: "5" },
+  ] as const;
+  
+  const SORT_OPTIONS = [
+    { label: t("dashboard.search.newest"), value: "all" },
+    {
+      label: t("dashboard.search.lowestPrice"),
+      value: "price_asc",
+    },
+    {
+      label: t("dashboard.search.highestPrice"),
+      value: "price_desc",
+    },
+  ] as const;
 
   const [filterOpen, setFilterOpen] =
     useState(false);
@@ -251,7 +253,7 @@ export function DashboardPropertySearch() {
       ? regions[0].area_name ||
         regions[0].city_name
       : regions.length > 1
-        ? `${regions.length} lokasi`
+        ? t("dashboard.search.locations").replace("{count}", regions.length.toString())
         : null;
 
   const buildSearchUrl = () => {
@@ -409,14 +411,14 @@ export function DashboardPropertySearch() {
 
           <div className="min-w-0 flex-1 px-1">
             <p className="hidden sm:block mb-0.5 mt-1 text-[9px] font-bold uppercase tracking-[0.18em] text-emerald-100/70">
-              Cari Properti
+              {t("dashboard.search.searchProperty")}
             </p>
 
             <input
               type="text"
               value={keyword}
               onChange={(event) => setKeyword(event.target.value)}
-              placeholder="Lokasi, nama, atau kode..."
+              placeholder={t("dashboard.search.placeholder")}
               className="w-full h-full bg-transparent text-[13px] sm:text-[15px] font-semibold text-white outline-none placeholder:text-emerald-100/50"
             />
           </div>
@@ -440,7 +442,7 @@ export function DashboardPropertySearch() {
             {searching ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
-              "Cari"
+              t("dashboard.search.searchBtn")
             )}
           </Button>
         </div>
@@ -464,7 +466,7 @@ export function DashboardPropertySearch() {
               )}
             >
               <SlidersHorizontal className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-              <span>Filter Lanjut</span>
+              <span>{t("dashboard.search.advancedFilter")}</span>
               {activeFilterCount > 0 && (
                 <span className="flex h-4 min-w-4 sm:h-5 sm:min-w-5 items-center justify-center rounded-full bg-emerald-950 px-1 text-[9px] sm:text-[10px] font-black text-emerald-100">
                   {activeFilterCount}
@@ -540,7 +542,7 @@ export function DashboardPropertySearch() {
         {(selectedCategoryLabel || selectedRegionLabel || listingType !== "all") && (
           <div className="mt-3 flex flex-wrap items-center justify-center gap-1.5 w-full">
             <span className="text-[10px] font-medium text-emerald-100/70">
-              Aktif:
+              {t("dashboard.search.active")}
             </span>
 
             {propertyType !== "all" && selectedCategoryLabel && (
@@ -558,7 +560,7 @@ export function DashboardPropertySearch() {
 
             {listingType !== "all" && (
               <span className="rounded-full border border-white/20 bg-white/10 backdrop-blur-md px-2.5 py-1 text-[10px] font-semibold text-white shadow-sm">
-                {listingType === "jual" ? "Dijual" : "Disewakan"}
+                {listingType === "jual" ? t("dashboard.search.forSale") : t("dashboard.search.forRent")}
               </span>
             )}
 
@@ -567,7 +569,7 @@ export function DashboardPropertySearch() {
               onClick={handleReset}
               className="ml-1 text-[10px] font-bold text-rose-400 hover:text-rose-300"
             >
-              Reset
+              {t("dashboard.search.reset")}
             </button>
           </div>
         )}
@@ -670,17 +672,58 @@ function FilterPanel({
   sortBy,
   setSortBy,
 }: FilterPanelProps) {
+  const { t } = useTranslation();
+
+  const PROPERTY_CATEGORIES = [
+    { label: t("dashboard.search.all"), value: "all" },
+    { label: t("dashboard.search.house"), value: "rumah" },
+    { label: t("dashboard.search.apartment"), value: "apartemen" },
+    { label: t("dashboard.search.land"), value: "tanah" },
+    { label: t("dashboard.search.shop"), value: "ruko" },
+    { label: t("dashboard.search.boardingHouse"), value: "kost" },
+    { label: t("dashboard.search.villa"), value: "villa" },
+    { label: t("dashboard.search.hotel"), value: "hotel" },
+    { label: t("dashboard.search.factory"), value: "pabrik" },
+    { label: t("dashboard.search.warehouse"), value: "gudang" },
+    { label: t("dashboard.search.office"), value: "kantor" },
+    {
+      label: t("dashboard.search.commercialSpace"),
+      value: "ruang_usaha",
+    },
+  ] as const;
+
+  const BEDROOM_OPTIONS = [
+    { label: t("dashboard.search.free"), value: "all" },
+    { label: "1+", value: "1" },
+    { label: "2+", value: "2" },
+    { label: "3+", value: "3" },
+    { label: "4+", value: "4" },
+    { label: "5+", value: "5" },
+  ] as const;
+
+  const SORT_OPTIONS = [
+    { label: t("dashboard.search.newest"), value: "all" },
+    {
+      label: t("dashboard.search.lowestPrice"),
+      value: "price_asc",
+    },
+    {
+      label: t("dashboard.search.highestPrice"),
+      value: "price_desc",
+    },
+  ] as const;
+
   return (
     <div className="flex max-h-[min(760px,calc(100vh-32px))] flex-col">
       {/* HEADER */}
       <div className="flex shrink-0 items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-700 px-5 py-4 sm:px-6">
         <div>
           <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-emerald-600">
-            Filter Properti
+            {t("dashboard.search.filterProperty")}
           </p>
 
           <h3 className="mt-1 text-base font-bold text-slate-900 dark:text-slate-100">
-            Temukan yang sesuai kebutuhan
+            {t("dashboard.search.findNeeds")}
           </h3>
         </div>
 
@@ -693,7 +736,7 @@ function FilterPanel({
             className="h-8 rounded-lg px-2.5 text-[11px] font-semibold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30"
           >
             <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
-            Reset
+            {t("dashboard.search.reset")}
           </Button>
 
           <button

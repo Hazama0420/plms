@@ -403,6 +403,7 @@ export const surveyCreateSchema = z
     property_id: uuidSchema,
     request_id: emptyToUndefined(uuidSchema),
     client_id: emptyToUndefined(uuidSchema),
+    lead_id: emptyToUndefined(uuidSchema),
     client_name: z
       .string({ error: "Nama klien wajib diisi." })
       .trim()

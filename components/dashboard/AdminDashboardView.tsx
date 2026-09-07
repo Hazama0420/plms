@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { DashboardHeader } from "./DashboardHeader";
 import { AdminBusinessKpiGrid } from "./AdminBusinessKpiGrid";
 import { AdminAttentionRequired } from "./AdminAttentionRequired";
-import { DashboardActivityWidgets } from "./DashboardActivityWidgets";
+import { DashboardActivityWidgets, type DashboardFollowupSummary } from "./DashboardActivityWidgets";
 import { AdminTeamSummary } from "./AdminTeamSummary";
 import { AdminInventorySummary } from "./AdminInventorySummary";
 import { DashboardPropertySection, type PropertyCategoryFilter } from "./DashboardPropertySection";
@@ -27,6 +27,7 @@ interface AdminDashboardViewProps {
   setFeaturedFilter: (f: PropertyCategoryFilter) => void;
   recentLeads: DashboardLeadItem[];
   upcomingSurveys: Survey[];
+  followups?: DashboardFollowupSummary[];
   agents: any[];
   onPropertyClick: (id: string) => void;
   onOpenAiSummary?: () => void;
@@ -44,6 +45,7 @@ export function AdminDashboardView({
   setFeaturedFilter,
   recentLeads,
   upcomingSurveys,
+  followups = [],
   agents,
   onPropertyClick,
   onOpenAiSummary,
@@ -95,6 +97,7 @@ export function AdminDashboardView({
       <DashboardActivityWidgets
         leads={recentLeads}
         surveys={upcomingSurveys}
+        followups={followups}
         totalLeadsCount={totalLeads}
         scheduledFollowupsCount={stats?.scheduledFollowupsCount || 0}
         overdueFollowupsCount={overdueFollowups}

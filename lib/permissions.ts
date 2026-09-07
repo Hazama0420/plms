@@ -141,9 +141,14 @@ export function canAccessRoute(userRole: UserRole | null | undefined, route: str
     return hasAnyPermission(userRole, ["manage_own_crm", "manage_all_crm", "view_all_crm", "view_own_crm"]);
   }
 
-  // Invoice & Proyek — data keuangan/operasional internal
-  if (matchesSection(route, "invoices") || matchesSection(route, "projects")) {
-    return hasAnyPermission(userRole, ["manage_all_properties", "manage_own_properties", "view_all_properties"]);
+  // Invoices — data keuangan internal (khusus Admin & Super Admin)
+  if (matchesSection(route, "invoices")) {
+    return userRole === "admin";
+  }
+
+  // Proyek — operasional internal
+  if (matchesSection(route, "projects")) {
+    return hasAnyPermission(userRole, ["manage_all_properties", "manage_own_properties"]);
   }
 
   // Halaman personal & utilitas — semua user yang sudah login boleh

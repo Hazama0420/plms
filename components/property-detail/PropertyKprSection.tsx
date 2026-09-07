@@ -12,6 +12,7 @@ import {
   formatKprCurrency,
   KPR_TENURE_OPTIONS,
 } from "@/lib/kpr";
+import { useTranslation } from "@/lib/i18n/hooks";
 
 interface PropertyKprSectionProps {
   propertyPrice: number;
@@ -23,6 +24,7 @@ export function PropertyKprSection({
   propertyPrice,
   onConsultWhatsApp,
 }: PropertyKprSectionProps) {
+  const { t } = useTranslation();
   const [isExpanded, setIsExpanded] = useState<boolean>(false);
   const [dpPercentage, setDpPercentage] = useState<number>(20);
   const [tenureYears, setTenureYears] = useState<number>(15);
@@ -52,14 +54,14 @@ export function PropertyKprSection({
           <div className="min-w-0">
             <div className="flex items-center gap-1.5 mb-1 text-muted-foreground">
                <Calculator className="w-3.5 h-3.5" />
-               <span className="text-[10px] font-bold tracking-wider uppercase">Simulasi KPR</span>
+               <span className="text-[10px] font-bold tracking-wider uppercase">{t("propertyDetail.kprSection.title")}</span>
             </div>
             <div className="text-lg font-black text-emerald-600 dark:text-emerald-400 tabular-nums truncate leading-none">
                {formatKprCurrency(simulation.installmentFixed)}
-               <span className="text-[11px] font-medium text-muted-foreground ml-1">/ bln</span>
+               <span className="text-[11px] font-medium text-muted-foreground ml-1">{t("propertyDetail.kprSection.perMonth")}</span>
             </div>
             <div className="text-[11px] text-muted-foreground mt-1 truncate font-medium">
-               DP {dpPercentage}% · {tenureYears} Tahun
+               {t("propertyDetail.kprSection.dpLabel").replace("{pct}", dpPercentage.toString()).replace("{years}", tenureYears.toString())}
             </div>
           </div>
           <Button 
@@ -68,7 +70,7 @@ export function PropertyKprSection({
             onClick={() => setIsExpanded(true)} 
             className="h-9 px-3.5 rounded-xl text-xs font-bold shrink-0 border-border/60 hover:bg-muted"
           >
-            Atur KPR
+            {t("propertyDetail.kprSection.setupKpr")}
           </Button>
         </div>
       </div>
@@ -80,7 +82,7 @@ export function PropertyKprSection({
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1.5 text-muted-foreground">
            <Calculator className="w-3.5 h-3.5" />
-           <span className="text-[10px] font-bold tracking-wider uppercase">Simulasi KPR</span>
+           <span className="text-[10px] font-bold tracking-wider uppercase">{t("propertyDetail.kprSection.title")}</span>
         </div>
         <Button 
           type="button"
@@ -88,23 +90,23 @@ export function PropertyKprSection({
           onClick={() => setIsExpanded(false)} 
           className="h-6 px-2 -mr-2 rounded-lg text-xs font-semibold text-muted-foreground hover:text-foreground"
         >
-          Tutup
+          {t("propertyDetail.kprSection.close")}
         </Button>
       </div>
 
       <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-center">
-         <span className="text-[10px] font-bold text-emerald-800 dark:text-emerald-400 uppercase tracking-wider">Angsuran / bulan</span>
+         <span className="text-[10px] font-bold text-emerald-800 dark:text-emerald-400 uppercase tracking-wider">{t("propertyDetail.kprSection.monthlyInstallment")}</span>
          <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400 tabular-nums mt-0.5">
             {formatKprCurrency(simulation.installmentFixed)}
          </div>
          <p className="text-[10px] text-muted-foreground mt-1.5 font-medium">
-            Penghasilan disarankan: {formatKprCurrency(simulation.requiredIncomeFixed)}
+            {t("propertyDetail.kprSection.suggestedIncome").replace("{income}", formatKprCurrency(simulation.requiredIncomeFixed))}
          </p>
       </div>
 
       <div className="grid grid-cols-2 gap-3 pt-1">
          <div className="space-y-1.5">
-           <Label className="text-[11px] font-semibold text-muted-foreground">Uang Muka (DP)</Label>
+           <Label className="text-[11px] font-semibold text-muted-foreground">{t("propertyDetail.kprSection.downPayment")}</Label>
            <Select value={String(dpPercentage)} onValueChange={v => setDpPercentage(Number(v))}>
              <SelectTrigger className="h-9 text-xs rounded-lg font-semibold bg-background">
                <SelectValue />
@@ -118,7 +120,7 @@ export function PropertyKprSection({
          </div>
 
          <div className="space-y-1.5">
-           <Label className="text-[11px] font-semibold text-muted-foreground">Tenor</Label>
+           <Label className="text-[11px] font-semibold text-muted-foreground">{t("propertyDetail.kprSection.tenure")}</Label>
            <Select value={String(tenureYears)} onValueChange={v => setTenureYears(Number(v))}>
              <SelectTrigger className="h-9 text-xs rounded-lg font-semibold bg-background">
                <SelectValue />
@@ -133,7 +135,7 @@ export function PropertyKprSection({
       </div>
 
       <div className="space-y-1.5">
-        <Label className="text-[11px] font-semibold text-muted-foreground">Suku Bunga Promo</Label>
+        <Label className="text-[11px] font-semibold text-muted-foreground">{t("propertyDetail.kprSection.promoRate")}</Label>
         <div className="flex gap-2">
            <div className="bg-muted px-3 rounded-lg text-xs font-bold border border-border/40 shrink-0 flex items-center tabular-nums">
              {fixedRate}% p.a.
@@ -143,11 +145,11 @@ export function PropertyKprSection({
                <SelectValue />
              </SelectTrigger>
              <SelectContent>
-               <SelectItem value="1" className="text-xs">Fixed 1 Tahun</SelectItem>
-               <SelectItem value="2" className="text-xs">Fixed 2 Tahun</SelectItem>
-               <SelectItem value="3" className="text-xs">Fixed 3 Tahun</SelectItem>
-               <SelectItem value="5" className="text-xs">Fixed 5 Tahun</SelectItem>
-               <SelectItem value="10" className="text-xs">Fixed 10 Tahun</SelectItem>
+               <SelectItem value="1" className="text-xs">{t("propertyDetail.kprSection.fixedYear").replace("{years}", "1")}</SelectItem>
+               <SelectItem value="2" className="text-xs">{t("propertyDetail.kprSection.fixedYear").replace("{years}", "2")}</SelectItem>
+               <SelectItem value="3" className="text-xs">{t("propertyDetail.kprSection.fixedYear").replace("{years}", "3")}</SelectItem>
+               <SelectItem value="5" className="text-xs">{t("propertyDetail.kprSection.fixedYear").replace("{years}", "5")}</SelectItem>
+               <SelectItem value="10" className="text-xs">{t("propertyDetail.kprSection.fixedYear").replace("{years}", "10")}</SelectItem>
              </SelectContent>
            </Select>
         </div>
@@ -159,17 +161,17 @@ export function PropertyKprSection({
              type="button"
              className="w-full h-10 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer flex items-center justify-center gap-2"
              onClick={onConsultWhatsApp}
-           >
-             <MessageCircle className="w-4 h-4 fill-current" />
-             <span>Tanya KPR</span>
-           </Button>
-         )}
-      </div>
+             >
+               <MessageCircle className="w-4 h-4 fill-current" />
+               <span>{t("propertyDetail.kprSection.askKpr")}</span>
+             </Button>
+           )}
+        </div>
 
-      <p className="text-[10px] text-muted-foreground leading-relaxed flex items-start gap-1.5 pt-3 border-t border-border/40">
-        <ShieldAlert className="w-3 h-3 shrink-0 mt-0.5" />
-        <span>Estimasi awal. Suku bunga dan biaya mengikuti kebijakan bank.</span>
-      </p>
-    </div>
+        <p className="text-[10px] text-muted-foreground leading-relaxed flex items-start gap-1.5 pt-3 border-t border-border/40">
+          <ShieldAlert className="w-3 h-3 shrink-0 mt-0.5" />
+          <span>{t("propertyDetail.kprSection.disclaimer")}</span>
+        </p>
+      </div>
   );
 }

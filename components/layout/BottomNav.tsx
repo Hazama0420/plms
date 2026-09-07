@@ -26,7 +26,7 @@ export function BottomNav() {
 
   const isGuest = !user;
   const isAgentOrAdmin = userRole && ["super_admin", "admin", "agent", "marketing"].includes(userRole);
-  const isViewer = !!user && !isAgentOrAdmin;
+  const isAdminOrSuperAdmin = userRole && ["super_admin", "admin"].includes(userRole);
 
   // Daftar item navigasi dinamis berdasarkan status login / role
   const NAV_ITEMS = [
@@ -41,14 +41,15 @@ export function BottomNav() {
       label: t("navigation.properties"),
       href: "/properties",
     },
-    // Jika agen/admin tampilkan CRM Leads, jika guest/viewer tampilkan Kalkulator KPR
+    // Jika agen/admin/marketing tampilkan CRM Leads, jika guest/viewer tampilkan Kalkulator KPR
     isAgentOrAdmin
       ? { icon: Users, label: t("crm.leads"), href: "/crm/leads" }
       : { icon: Calculator, label: t("navigation.kpr"), href: "/kpr-calculator" },
-    // Invoice hanya untuk agen/admin; viewer dan guest melihat Survei
-    (isGuest || isViewer)
-      ? { icon: CalendarDays, label: t("navigation.surveys"), href: "/surveys" }
-      : { icon: FileText, label: "Invoice", href: "/invoices" },
+    // Invoice HANYA untuk Admin & Super Admin (konsisten dengan ERPSidebar & route guard)
+    // Agen, marketing, viewer, dan guest melihat menu Survei
+    isAdminOrSuperAdmin
+      ? { icon: FileText, label: t("navigation.invoices"), href: "/invoices" }
+      : { icon: CalendarDays, label: t("navigation.surveys"), href: "/surveys" },
     // Jika belum login tampilkan "Login", jika sudah tampilkan "Pengaturan"
     isGuest
       ? { icon: LogIn, label: t("navigation.login"), href: "/login" }

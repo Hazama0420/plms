@@ -167,13 +167,20 @@ function formatTimeInZone(date: Date, timeZone: string) {
   }
 }
 
-const ESSENTIAL_LOCALSTORAGE_KEYS = ["theme", "compact_mode", "accent_color", "font_size", "default_catalog_view"];
+const ESSENTIAL_LOCALSTORAGE_KEYS = [
+  "theme",
+  "compact_mode",
+  "accent_color",
+  "font_size",
+  "default_catalog_view",
+  "inland-language-store",
+];
 const ADMIN_WHATSAPP_NUMBER = "6281234567890";
 
 export default function SettingsPage() {
   const router = useRouter();
   const { theme, setTheme } = useTheme();
-  const { t } = useTranslation();
+  const { t, language, setLanguage } = useTranslation();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [mounted, setMounted] = useState(false);
@@ -1069,6 +1076,8 @@ export default function SettingsPage() {
           <AppearanceTab
             theme={theme}
             handleThemeSelect={handleThemeSelect}
+            language={language}
+            handleLanguageSelect={setLanguage}
             compactView={preferences.compact_view}
             handleCompactToggle={handleCompactToggle}
             defaultCatalogView={preferences.default_catalog_view}
@@ -1093,6 +1102,8 @@ export default function SettingsPage() {
           <SystemTab
             preferences={preferences}
             persistPreferences={persistPreferences}
+            language={language}
+            handleLanguageSelect={setLanguage}
             now={now}
             formatTimeInZone={formatTimeInZone}
             handleExportData={handleExportData}

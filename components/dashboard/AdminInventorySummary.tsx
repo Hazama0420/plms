@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Building2, Plus, ArrowUpRight, ChevronRight } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { useTranslation } from "@/lib/i18n/useTranslation";
 
 interface AdminInventorySummaryProps {
   totalProperties: number;
@@ -17,6 +18,7 @@ export function AdminInventorySummary({
   publishedProperties = 0,
   draftProperties = 0,
 }: AdminInventorySummaryProps) {
+  const { t } = useTranslation();
   const publishedPercent = totalProperties > 0 ? Math.round((publishedProperties / totalProperties) * 100) : 0;
   const draftPercent = totalProperties > 0 ? Math.round((draftProperties / totalProperties) * 100) : 0;
 
@@ -25,14 +27,14 @@ export function AdminInventorySummary({
       <CardHeader className="p-3.5 sm:p-4 border-b border-border/60 flex flex-row items-center justify-between">
         <CardTitle className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
           <Building2 className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-          Status Inventaris Properti
+          {t("dashboard.stats.inventoryStatus")}
         </CardTitle>
 
         <Link
           href="/properties"
           className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 hover:underline flex items-center"
         >
-          <span>Semua Listing</span>
+          <span>{t("dashboard.stats.allListings")}</span>
           <ChevronRight className="w-3 h-3 ml-0.5" />
         </Link>
       </CardHeader>
@@ -41,31 +43,31 @@ export function AdminInventorySummary({
         {/* Progress Bar Distribution */}
         <div className="space-y-1.5">
           <div className="flex items-center justify-between text-xs">
-            <span className="font-semibold text-foreground">Total Inventaris: {totalProperties} Unit</span>
-            <span className="text-muted-foreground font-mono">{publishedPercent}% Tayang</span>
+            <span className="font-semibold text-foreground">{t("dashboard.stats.totalInventoryUnits").replace("{total}", totalProperties.toString())}</span>
+            <span className="text-muted-foreground font-mono">{publishedPercent}% {t("dashboard.stats.published")}</span>
           </div>
 
           <div className="h-2 w-full rounded-full bg-muted overflow-hidden flex">
             <div
               style={{ width: `${publishedPercent}%` }}
               className="bg-emerald-500 h-full transition-all"
-              title={`${publishedProperties} Tayang Aktif`}
+              title={t("dashboard.stats.activePublishedTooltip").replace("{count}", publishedProperties.toString())}
             />
             <div
               style={{ width: `${draftPercent}%` }}
               className="bg-amber-500 h-full transition-all"
-              title={`${draftProperties} Draf / Review`}
+              title={t("dashboard.stats.draftReviewTooltip").replace("{count}", draftProperties.toString())}
             />
           </div>
 
           <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-0.5">
             <span className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-emerald-500" />
-              {publishedProperties} Tayang Publik
+              {publishedProperties} {t("dashboard.stats.publishedPublic")}
             </span>
             <span className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-amber-500" />
-              {draftProperties} Draf / Review
+              {draftProperties} {t("dashboard.stats.draftReview")}
             </span>
           </div>
         </div>
@@ -77,7 +79,7 @@ export function AdminInventorySummary({
             className="w-full h-8.5 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer flex items-center justify-center gap-1.5 shadow-xs"
           >
             <Plus className="w-3.5 h-3.5" />
-            <span>Tambah Listing Baru</span>
+            <span>{t("dashboard.stats.addNewListing")}</span>
           </Button>
         </Link>
       </CardContent>

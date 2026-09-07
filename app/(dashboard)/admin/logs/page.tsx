@@ -43,6 +43,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AdminAuditTrail } from "@/components/admin/AdminAuditTrail";
+import { AdminDataHealth } from "@/components/admin/AdminDataHealth";
 import { groupByDate } from "@/lib/activity-display";
 import { format } from "date-fns";
 import { id } from "date-fns/locale";
@@ -210,6 +211,10 @@ export default function AdminActivityLogsPage() {
     const pageNum = pageParam ? parseInt(pageParam, 10) : 1;
     if (pageNum > 0) {
       setPage(pageNum);
+    }
+    const tabParam = searchParams.get("tab");
+    if (tabParam === "health" || tabParam === "admin" || tabParam === "crm") {
+      setActiveTab(tabParam);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -521,16 +526,19 @@ export default function AdminActivityLogsPage() {
           memakai requireRole(['super_admin']), jadi menampilkannya kepada Admin
           hanya akan berujung 403. */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        {isSuperAdmin && (
-          <TabsList className="bg-muted/50 border border-border h-auto p-1">
-            <TabsTrigger value="crm" className="text-xs px-3 py-1.5 cursor-pointer gap-1.5">
-              <FileText className="w-3.5 h-3.5" /> Aktivitas CRM
-            </TabsTrigger>
+        <TabsList className="bg-muted/50 border border-border h-auto p-1">
+          <TabsTrigger value="crm" className="text-xs px-3 py-1.5 cursor-pointer gap-1.5">
+            <FileText className="w-3.5 h-3.5" /> Aktivitas CRM
+          </TabsTrigger>
+          <TabsTrigger value="health" className="text-xs px-3 py-1.5 cursor-pointer gap-1.5">
+            <ShieldAlert className="w-3.5 h-3.5" /> Kesehatan Data
+          </TabsTrigger>
+          {isSuperAdmin && (
             <TabsTrigger value="admin" className="text-xs px-3 py-1.5 cursor-pointer gap-1.5">
               <Lock className="w-3.5 h-3.5" /> Aksi Admin
             </TabsTrigger>
-          </TabsList>
-        )}
+          )}
+        </TabsList>
 
         <TabsContent value="crm" className="space-y-4 mt-0">
       {/* FILTER & PENCARIAN */}
@@ -789,6 +797,10 @@ export default function AdminActivityLogsPage() {
           </div>
         )}
       </Card>
+        </TabsContent>
+
+        <TabsContent value="health" className="mt-0">
+          <AdminDataHealth />
         </TabsContent>
 
         {isSuperAdmin && (

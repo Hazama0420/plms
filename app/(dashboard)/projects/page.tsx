@@ -9,8 +9,9 @@
 // projectService dan tabel yang sungguh ada (006_projects_construction.sql).
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import Link from "next/link";
+import { useTranslation } from "@/hooks/use-translation";
 import {
   Plus,
   Search,
@@ -44,16 +45,6 @@ import {
   type ProjectFilter,
   type ProjectStatus,
 } from "@/types/project.types";
-
-/** Urutan chip status. "all" selalu pertama. */
-const STATUS_TABS: Array<{ value: ProjectStatus | "all"; label: string }> = [
-  { value: "all", label: "Semua" },
-  { value: "active", label: PROJECT_STATUS_CONFIG.active.label },
-  { value: "planning", label: PROJECT_STATUS_CONFIG.planning.label },
-  { value: "paused", label: PROJECT_STATUS_CONFIG.paused.label },
-  { value: "completed", label: PROJECT_STATUS_CONFIG.completed.label },
-  { value: "cancelled", label: PROJECT_STATUS_CONFIG.cancelled.label },
-];
 
 function KpiCard({
   icon: Icon,
@@ -101,6 +92,7 @@ function KpiCard({
 }
 
 export default function ProjectsPage() {
+  const { t } = useTranslation();
   const {
     data,
     summary,
@@ -121,6 +113,18 @@ export default function ProjectsPage() {
 
   const [refreshing, setRefreshing] = useState(false);
 
+  const statusTabs: Array<{ value: ProjectStatus | "all"; label: string }> = useMemo(
+    () => [
+      { value: "all", label: t("projects.status.all") },
+      { value: "active", label: t("projects.status.active") },
+      { value: "planning", label: t("projects.status.planning") },
+      { value: "paused", label: t("projects.status.paused") },
+      { value: "completed", label: t("projects.status.completed") },
+      { value: "cancelled", label: t("projects.status.cancelled") },
+    ],
+    [t]
+  );
+
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
@@ -139,20 +143,13 @@ export default function ProjectsPage() {
         <div className="min-w-0 space-y-1">
           <h1 className="flex items-center gap-2 text-xl font-black tracking-tight sm:text-2xl">
             <HardHat className="h-5 w-5 text-emerald-600" />
-            Proyek Konstruksi
+            {t("projects.title")}
           </h1>
           <p className="text-xs text-muted-foreground">
-            Pantau progres fisik, serapan anggaran, dan tenggat seluruh lokasi
-            pembangunan.
+            {t("projects.subtitle")}
           </p>
         </div>
 
-        {/* Di ponsel baris ini melebar penuh sehingga tombol utama tetap besar
-            dan mudah disentuh.
-            Sengaja BUKAN bilah melayang di dasar layar: BottomNav sudah
-            menempati posisi itu dengan z-50, dan widget obrolan AI memakai
-            sudut kanan bawah — tombol melayang di sini akan tertimbun keduanya.
-            (Tabrakan yang sama sudah ada di properties/[id]/page.tsx.) */}
         <div className="flex w-full items-center gap-2 sm:w-auto">
           <Button
             variant="outline"
@@ -160,57 +157,50 @@ export default function ProjectsPage() {
             onClick={handleRefresh}
             disabled={refreshing || loading}
             className="h-10 w-10 shrink-0 rounded-xl sm:h-9 sm:w-9"
-            aria-label="Muat ulang data proyek"
+            aria-label={t("projects.refresh_aria")}
           >
             <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} />
           </Button>
 
-          {/* `render` + `nativeButton={false}`, bukan `asChild`: Button di
-              repositori ini dibangun di atas @base-ui/react yang memakai pola
-              render prop. Hasilnya <a> sungguhan, jadi bisa dibuka di tab baru
-              dan terbaca sebagai tautan oleh pembaca layar. */}
           <Button
             render={<Link href="/projects/create" />}
             nativeButton={false}
             className="h-10 flex-1 gap-1.5 rounded-xl bg-emerald-600 px-4 text-xs font-bold text-white shadow-sm shadow-emerald-600/20 hover:bg-emerald-700 sm:h-9 sm:flex-none"
           >
             <Plus className="h-4 w-4" />
-            Tambah Proyek
+            {t("projects.add_project_btn")}
           </Button>
         </div>
       </div>
 
       {/* ============================================================
           2. STRIP KPI
-          ============================================================
-          Angkanya berasal dari getSummary() yang menghitung SELURUH tabel.
-          Versi lama menjumlahkan array halaman yang sedang tampil, jadi "total
-          anggaran" sebenarnya hanya total 12 proyek pertama. */}
+          ============================================================ */}
       <div className="grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-4">
         <KpiCard
           icon={HardHat}
-          label="Total Proyek"
+          label={t("projects.kpi.total")}
           value={String(summary.total)}
-          hint={`${summary.active} sedang berjalan`}
+          hint={`${summary.active} ${t("projects.kpi.running")}`}
         />
         <KpiCard
           icon={Activity}
-          label="Berjalan"
+          label={t("projects.kpi.active")}
           value={String(summary.active)}
-          hint="Status aktif"
+          hint={t("projects.kpi.active_status")}
           tone="success"
         />
         <KpiCard
           icon={Wallet}
-          label="Nilai Kontrak"
+          label={t("projects.kpi.contract_value")}
           value={formatCompactRupiah(summary.totalBudget)}
-          hint={`Terpakai ${formatCompactRupiah(summary.totalSpent)}`}
+          hint={`${t("projects.kpi.spent_label")} ${formatCompactRupiah(summary.totalSpent)}`}
         />
         <KpiCard
           icon={TriangleAlert}
-          label="Lewat Tenggat"
+          label={t("projects.kpi.overdue")}
           value={String(summary.overdue)}
-          hint={summary.overdue > 0 ? "Perlu ditindak" : "Semua sesuai jadwal"}
+          hint={summary.overdue > 0 ? t("projects.kpi.action_needed") : t("projects.kpi.on_schedule")}
           tone={summary.overdue > 0 ? "danger" : "default"}
         />
       </div>
@@ -222,13 +212,10 @@ export default function ProjectsPage() {
         <div className="flex flex-col gap-2.5 sm:flex-row">
           <div className="relative flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            {/* Tanpa onKeyDown Enter: pencarian berjalan sendiri lewat debounce
-                350 ms di useProjects. Versi lama mengirim satu kueri per
-                ketukan tombol. */}
             <Input
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="Cari nama proyek, lokasi, atau kode…"
+              placeholder={t("projects.search_placeholder")}
               className="h-9 rounded-xl pl-9 pr-9 text-xs"
             />
             {searchInput && (
@@ -236,7 +223,7 @@ export default function ProjectsPage() {
                 type="button"
                 onClick={() => setSearchInput("")}
                 className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-md p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-                aria-label="Bersihkan pencarian"
+                aria-label={t("common.clear") || "Bersihkan pencarian"}
               >
                 <X className="h-3.5 w-3.5" />
               </button>
@@ -245,9 +232,6 @@ export default function ProjectsPage() {
 
           <Select
             value={`${filters.sort_by}:${filters.sort_order}`}
-            // Select di repositori ini memancarkan `string | null` — null saat
-            // pilihan dibatalkan. Diabaikan saja: urutan yang sedang berlaku
-            // tetap dipakai, bukan diganti nilai kosong.
             onValueChange={(v) => {
               if (!v) return;
               const [sortBy, sortOrder] = v.split(":");
@@ -262,29 +246,26 @@ export default function ProjectsPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="created_at:desc" className="text-xs">
-                Terbaru dibuat
+                {t("projects.sort.newest")}
               </SelectItem>
               <SelectItem value="end_date:asc" className="text-xs">
-                Tenggat terdekat
+                {t("projects.sort.deadline")}
               </SelectItem>
               <SelectItem value="progress:asc" className="text-xs">
-                Progres terendah
+                {t("projects.sort.progress")}
               </SelectItem>
               <SelectItem value="budget:desc" className="text-xs">
-                Anggaran terbesar
+                {t("projects.sort.budget")}
               </SelectItem>
               <SelectItem value="title:asc" className="text-xs">
-                Nama A–Z
+                {t("projects.sort.name")}
               </SelectItem>
             </SelectContent>
           </Select>
         </div>
 
-        {/* Chip status yang bisa digeser mendatar. Pola yang sama dipakai
-            CrmKanbanBoard: di layar 390 px, enam tab berjejer akan saling
-            menghimpit sampai labelnya tidak terbaca. */}
         <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {STATUS_TABS.map((tab) => {
+          {statusTabs.map((tab) => {
             const aktif = (filters.status ?? "all") === tab.value;
             return (
               <button
@@ -311,9 +292,9 @@ export default function ProjectsPage() {
       {!loading && !error && data.length > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-2 px-0.5">
           <p className="text-xs text-muted-foreground">
-            Menampilkan{" "}
-            <span className="font-bold text-foreground">{data.length}</span> dari{" "}
-            <span className="font-bold text-foreground">{totalItems}</span> proyek
+            {t("projects.showing")}{" "}
+            <span className="font-bold text-foreground">{data.length}</span> {t("projects.of")}{" "}
+            <span className="font-bold text-foreground">{totalItems}</span> {t("projects.projects")}
           </p>
           {hasActiveFilters && (
             <Button
@@ -322,7 +303,7 @@ export default function ProjectsPage() {
               onClick={resetFilters}
               className="h-7 rounded-lg px-2.5 text-xs font-semibold text-muted-foreground hover:text-foreground"
             >
-              Hapus filter
+              {t("projects.clear_filter")}
             </Button>
           )}
         </div>
@@ -332,14 +313,12 @@ export default function ProjectsPage() {
           5. DAFTAR
           ============================================================ */}
       {error ? (
-        // Galat DITAMPILKAN, tidak ditelan diam-diam. Kebiasaan menelan galat
-        // itulah yang membuat versi lama tampak berfungsi padahal tidak.
         <Card className="rounded-2xl border-rose-200 bg-rose-50/60 dark:border-rose-900 dark:bg-rose-950/30">
           <CardContent className="flex flex-col items-center gap-3 p-8 text-center">
             <TriangleAlert className="h-8 w-8 text-rose-600" />
             <div className="space-y-1">
               <p className="text-sm font-bold text-rose-700 dark:text-rose-300">
-                Gagal memuat proyek
+                {t("projects.error_title")}
               </p>
               <p className="text-xs text-rose-600/80 dark:text-rose-400/80">
                 {error}
@@ -351,7 +330,7 @@ export default function ProjectsPage() {
               onClick={handleRefresh}
               className="h-8 rounded-lg text-xs"
             >
-              Coba lagi
+              {t("projects.retry_btn")}
             </Button>
           </CardContent>
         </Card>
@@ -368,13 +347,13 @@ export default function ProjectsPage() {
             <div className="space-y-1">
               <p className="text-sm font-bold">
                 {hasActiveFilters
-                  ? "Tidak ada proyek yang cocok"
-                  : "Belum ada proyek konstruksi"}
+                  ? t("projects.empty_filter_title")
+                  : t("projects.empty_title")}
               </p>
               <p className="text-xs text-muted-foreground">
                 {hasActiveFilters
-                  ? "Coba ubah kata kunci atau pilih status lain."
-                  : "Mulai dengan mendaftarkan lokasi pembangunan pertama Anda."}
+                  ? t("projects.empty_filter_desc")
+                  : t("projects.empty_desc")}
               </p>
             </div>
             {hasActiveFilters ? (
@@ -384,7 +363,7 @@ export default function ProjectsPage() {
                 onClick={resetFilters}
                 className="h-8 rounded-lg text-xs"
               >
-                Hapus filter
+                {t("projects.clear_filter")}
               </Button>
             ) : (
               <Button
@@ -394,7 +373,7 @@ export default function ProjectsPage() {
                 className="h-8 gap-1.5 rounded-lg bg-emerald-600 text-xs text-white hover:bg-emerald-700"
               >
                 <Plus className="h-3.5 w-3.5" />
-                Tambah Proyek
+                {t("projects.add_project_btn")}
               </Button>
             )}
           </CardContent>
@@ -419,7 +398,7 @@ export default function ProjectsPage() {
             onClick={() => goToPage(page - 1)}
             className="h-8 rounded-lg text-xs"
           >
-            Sebelumnya
+            {t("projects.prev_btn")}
           </Button>
           <span className="px-2 text-xs font-semibold tabular-nums text-muted-foreground">
             {page} / {totalPages}
@@ -431,7 +410,7 @@ export default function ProjectsPage() {
             onClick={() => goToPage(page + 1)}
             className="h-8 rounded-lg text-xs"
           >
-            Berikutnya
+            {t("projects.next_btn")}
           </Button>
         </div>
       )}

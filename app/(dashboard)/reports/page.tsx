@@ -4,6 +4,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { useTranslation } from "@/hooks/use-translation";
 import {
   ArrowLeft,
   TrendingUp,
@@ -72,6 +73,7 @@ function formatNumber(value: number | undefined | null) {
 }
 
 function TrendBadge({ change }: { change: number | null }) {
+  const { t } = useTranslation();
   if (change === null || !isFinite(change)) return null;
   const isUp = change >= 0;
   const Icon = isUp ? TrendingUp : TrendingDown;
@@ -83,13 +85,14 @@ function TrendBadge({ change }: { change: number | null }) {
       )}
     >
       <Icon size={12} />
-      {Math.abs(change).toFixed(1)}% dari bulan lalu
+      {Math.abs(change).toFixed(1)}% {t("reports.trend.from_last_month")}
     </span>
   );
 }
 
 export default function ReportsPage() {
   const router = useRouter();
+  const { t } = useTranslation();
 
   const [initialLoading, setInitialLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -139,7 +142,7 @@ export default function ReportsPage() {
         await Promise.all([fetchStaticData(), fetchMonthlyData(selectedYear)]);
       } catch (error: any) {
         console.error("Error fetching reports:", error);
-        toast.error("Gagal memuat laporan: " + error.message);
+        toast.error(t("reports.load_failed") + error.message);
       } finally {
         if (isMounted.current) setInitialLoading(false);
       }
@@ -152,7 +155,7 @@ export default function ReportsPage() {
     fetchMonthlyData(selectedYear)
       .catch((error: any) => {
         console.error("Error fetching monthly stats:", error);
-        toast.error("Gagal memuat data bulanan: " + error.message);
+        toast.error(t("reports.monthly_load_failed") + error.message);
       })
       .finally(() => {
         if (isMounted.current) setMonthlyLoading(false);
@@ -163,10 +166,10 @@ export default function ReportsPage() {
     setRefreshing(true);
     try {
       await Promise.all([fetchStaticData(), fetchMonthlyData(selectedYear)]);
-      toast.success("Data laporan diperbarui");
+      toast.success(t("reports.refresh_success"));
     } catch (error: any) {
       console.error("Error refreshing reports:", error);
-      toast.error("Gagal memperbarui laporan: " + error.message);
+      toast.error(t("reports.refresh_failed") + error.message);
     } finally {
       if (isMounted.current) setRefreshing(false);
     }
@@ -213,7 +216,7 @@ export default function ReportsPage() {
     a.download = `laporan-kinerja-inland-${new Date().toISOString().split("T")[0]}.csv`;
     a.click();
     window.URL.revokeObjectURL(url);
-    toast.success("Laporan berhasil diekspor!");
+    toast.success(t("reports.export_success"));
   };
 
   if (initialLoading) {
@@ -251,13 +254,13 @@ export default function ReportsPage() {
             </Button>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-xl sm:text-2xl font-bold tracking-tight">📊 Analitik & Laporan Performa</h1>
+                <h1 className="text-xl sm:text-2xl font-bold tracking-tight">📊 {t("reports.title")}</h1>
                 <Badge className="bg-emerald-500/30 text-white border-0 text-[10px] font-semibold">
-                  Real-Time
+                  {t("reports.real_time_badge")}
                 </Badge>
               </div>
               <p className="text-xs text-emerald-100/80 mt-0.5">
-                Ringkasan performa penjualan, persebaran lokasi, dan efektivitas agen
+                {t("reports.subtitle")}
               </p>
             </div>
           </div>
@@ -268,12 +271,12 @@ export default function ReportsPage() {
               onValueChange={(val) => setSelectedYear(parseInt(val || "0"))}
             >
               <SelectTrigger className="w-[110px] bg-white/15 text-white border-white/20 h-9 text-xs rounded-xl focus:ring-0">
-                <SelectValue placeholder="Tahun" />
+                <SelectValue placeholder={t("reports.year_label")} />
               </SelectTrigger>
               <SelectContent className="rounded-xl">
                 {YEAR_OPTIONS.map((year) => (
                   <SelectItem key={year} value={year.toString()} className="text-xs font-semibold">
-                    Tahun {year}
+                    {t("reports.year_label")} {year}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -286,7 +289,7 @@ export default function ReportsPage() {
               className="bg-white/15 text-white hover:bg-white/25 h-9 text-xs font-semibold rounded-xl border border-white/20 gap-1.5 cursor-pointer"
             >
               <Download size={14} />
-              Ekspor CSV
+              {t("reports.export_csv")}
             </Button>
 
             <Button
@@ -297,7 +300,7 @@ export default function ReportsPage() {
               className="bg-white/15 text-white hover:bg-white/25 h-9 text-xs font-semibold rounded-xl border border-white/20 gap-1.5 cursor-pointer"
             >
               <RefreshCw size={14} className={cn(refreshing && "animate-spin")} />
-              {refreshing ? "Memuat..." : "Segarkan"}
+              {refreshing ? t("reports.refreshing") : t("reports.refresh")}
             </Button>
           </div>
         </div>
@@ -310,12 +313,12 @@ export default function ReportsPage() {
         <Card className="border bg-card shadow-2xs rounded-2xl">
           <CardContent className="p-4 space-y-1">
             <div className="flex items-center justify-between text-muted-foreground">
-              <span className="text-xs font-semibold">Total Portofolio</span>
+              <span className="text-xs font-semibold">{t("reports.kpi.total_portfolio")}</span>
               <div className="p-2 bg-emerald-50 dark:bg-emerald-950/30 rounded-xl text-emerald-600">
                 <Home size={16} />
               </div>
             </div>
-            <p className="text-xl sm:text-2xl font-bold text-foreground">{formatNumber(stats?.totalProperties)} Unit</p>
+            <p className="text-xl sm:text-2xl font-bold text-foreground">{formatNumber(stats?.totalProperties)} {t("reports.kpi.unit")}</p>
             <TrendBadge change={createdTrend} />
           </CardContent>
         </Card>
@@ -323,26 +326,26 @@ export default function ReportsPage() {
         <Card className="border bg-card shadow-2xs rounded-2xl">
           <CardContent className="p-4 space-y-1">
             <div className="flex items-center justify-between text-muted-foreground">
-              <span className="text-xs font-semibold">Listing Aktif</span>
+              <span className="text-xs font-semibold">{t("reports.kpi.active_listing")}</span>
               <div className="p-2 bg-blue-50 dark:bg-blue-950/30 rounded-xl text-blue-600">
                 <Building2 size={16} />
               </div>
             </div>
-            <p className="text-xl sm:text-2xl font-bold text-blue-600">{formatNumber(stats?.totalActive)} Unit</p>
-            <p className="text-[10px] text-muted-foreground font-medium pt-1">Siap dipasarkan</p>
+            <p className="text-xl sm:text-2xl font-bold text-blue-600">{formatNumber(stats?.totalActive)} {t("reports.kpi.unit")}</p>
+            <p className="text-[10px] text-muted-foreground font-medium pt-1">{t("reports.kpi.ready_to_market")}</p>
           </CardContent>
         </Card>
 
         <Card className="border bg-card shadow-2xs rounded-2xl">
           <CardContent className="p-4 space-y-1">
             <div className="flex items-center justify-between text-muted-foreground">
-              <span className="text-xs font-semibold">Terjual & Disewa</span>
+              <span className="text-xs font-semibold">{t("reports.kpi.sold_rented")}</span>
               <div className="p-2 bg-amber-50 dark:bg-amber-950/30 rounded-xl text-amber-600">
                 <CheckCircle2 size={16} />
               </div>
             </div>
             <p className="text-xl sm:text-2xl font-bold text-amber-600">
-              {formatNumber((stats?.totalSold || 0) + (stats?.totalRented || 0))} Unit
+              {formatNumber((stats?.totalSold || 0) + (stats?.totalRented || 0))} {t("reports.kpi.unit")}
             </p>
             <TrendBadge change={soldTrend} />
           </CardContent>
@@ -351,7 +354,7 @@ export default function ReportsPage() {
         <Card className="border bg-card shadow-2xs rounded-2xl">
           <CardContent className="p-4 space-y-1">
             <div className="flex items-center justify-between text-muted-foreground">
-              <span className="text-xs font-semibold">Gross Sales Revenue</span>
+              <span className="text-xs font-semibold">{t("reports.kpi.gross_revenue")}</span>
               <div className="p-2 bg-purple-50 dark:bg-purple-950/30 rounded-xl text-purple-600">
                 <DollarSign size={16} />
               </div>
@@ -360,7 +363,7 @@ export default function ReportsPage() {
               {formatCurrency(stats?.totalRevenue)}
             </p>
             <p className="text-[10px] text-emerald-600 font-bold">
-              Est. Komisi (2.5%): {formatCurrency((stats?.totalRevenue || 0) * 0.025)}
+              {t("reports.kpi.est_commission")} {formatCurrency((stats?.totalRevenue || 0) * 0.025)}
             </p>
           </CardContent>
         </Card>
@@ -371,10 +374,10 @@ export default function ReportsPage() {
         <CardHeader className="p-4 border-b bg-muted/50 flex flex-row items-center justify-between">
           <CardTitle className="text-xs font-bold uppercase tracking-wider text-foreground flex items-center gap-2">
             <BarChart3 size={16} className="text-emerald-600" />
-            Tren Aktivitas Penjualan vs Listing Baru ({selectedYear})
+            {t("reports.chart.monthly_title")} ({selectedYear})
           </CardTitle>
           <Badge variant="outline" className="text-[10px] bg-card border-border text-muted-foreground">
-            Bulanan
+            {t("reports.chart.monthly_badge")}
           </Badge>
         </CardHeader>
         <CardContent className="p-4 sm:p-6">
@@ -410,10 +413,10 @@ export default function ReportsPage() {
               </div>
               <div className="flex items-center justify-center gap-6 text-xs text-muted-foreground font-medium pt-2">
                 <span className="flex items-center gap-1.5">
-                  <span className="w-3 h-3 rounded-xs bg-blue-500 inline-block" /> Listing Baru Ditambahkan
+                  <span className="w-3 h-3 rounded-xs bg-blue-500 inline-block" /> {t("reports.chart.new_listings")}
                 </span>
                 <span className="flex items-center gap-1.5">
-                  <span className="w-3 h-3 rounded-full bg-emerald-500 inline-block" /> Unit Closing (Terjual/Sewa)
+                  <span className="w-3 h-3 rounded-full bg-emerald-500 inline-block" /> {t("reports.chart.closing")}
                 </span>
               </div>
             </div>
@@ -430,15 +433,15 @@ export default function ReportsPage() {
             <CardHeader className="p-4 border-b bg-muted/50 flex flex-row items-center justify-between">
               <CardTitle className="text-xs font-bold uppercase tracking-wider text-foreground flex items-center gap-2">
                 <MapPin size={16} className="text-emerald-600" />
-                Lokasi Teratas (Hotspot Wilayah)
+                {t("reports.location.title")}
               </CardTitle>
               <Badge variant="outline" className="text-[9px] bg-emerald-50 text-emerald-700 border-emerald-200">
-                Pusat Inventory
+                {t("reports.location.badge")}
               </Badge>
             </CardHeader>
             <CardContent className="p-4 sm:p-5 space-y-3.5">
               {locationData.length === 0 ? (
-                <p className="text-center text-muted-foreground py-10 text-xs">Belum ada data lokasi terdaftar.</p>
+                <p className="text-center text-muted-foreground py-10 text-xs">{t("reports.location.no_data")}</p>
               ) : (
                 locationData.map((loc, index) => {
                   const percentage = totalLocationProperties > 0 
@@ -450,10 +453,10 @@ export default function ReportsPage() {
                       <div className="flex items-center justify-between text-xs font-medium">
                         <span className="text-foreground font-bold flex items-center gap-1.5">
                           <span className="w-4 text-muted-foreground text-[10px]">#{index + 1}</span>
-                          {loc.name || "Lokasi Lainnya"}
+                          {loc.name || t("reports.location.other")}
                         </span>
                         <div className="flex items-center gap-2 text-muted-foreground text-[11px]">
-                          <span className="font-bold text-emerald-600">{loc.count} Unit</span>
+                          <span className="font-bold text-emerald-600">{loc.count} {t("reports.location.unit")}</span>
                           <span className="text-muted-foreground text-[10px]">({percentage}%)</span>
                         </div>
                       </div>
@@ -473,7 +476,7 @@ export default function ReportsPage() {
           </div>
           <div className="p-3.5 bg-muted/60 border-t rounded-b-2xl">
             <p className="text-[10px] text-muted-foreground font-medium text-center">
-              💡 Wilayah dengan persentase tertinggi merupakan prioritas pemasaran dan kampanye iklan.
+              {t("reports.location.tip")}
             </p>
           </div>
         </Card>
@@ -484,12 +487,12 @@ export default function ReportsPage() {
             <CardHeader className="p-4 border-b bg-muted/50 flex flex-row items-center justify-between">
               <CardTitle className="text-xs font-bold uppercase tracking-wider text-foreground flex items-center gap-2">
                 <PieIcon size={16} className="text-emerald-600" />
-                Komposisi Tipe Properti
+                {t("reports.type_dist.title")}
               </CardTitle>
             </CardHeader>
             <CardContent className="p-4 sm:p-5">
               {typeData.length === 0 ? (
-                <p className="text-center text-muted-foreground py-10 text-xs">Belum ada data tipe properti.</p>
+                <p className="text-center text-muted-foreground py-10 text-xs">{t("reports.type_dist.no_data")}</p>
               ) : (
                 <div className="h-[240px]">
                   <ResponsiveContainer width="100%" height="100%">
@@ -528,27 +531,27 @@ export default function ReportsPage() {
         <CardHeader className="p-4 border-b bg-muted/50 flex flex-row items-center justify-between">
           <CardTitle className="text-xs font-bold uppercase tracking-wider text-foreground flex items-center gap-2">
             <Trophy size={16} className="text-amber-500" />
-            Papan Peringkat & Performa Agen Aktif
+            {t("reports.agent.title")}
           </CardTitle>
           <Badge className="bg-amber-500 text-white border-0 text-[9px] font-bold gap-1">
-            <Award size={12} /> Top Achievers
+            <Award size={12} /> {t("reports.agent.badge")}
           </Badge>
         </CardHeader>
         <CardContent className="p-0">
           {agentData.length === 0 ? (
-            <p className="text-center text-muted-foreground py-12 text-xs">Belum ada data pencapaian agen.</p>
+            <p className="text-center text-muted-foreground py-12 text-xs">{t("reports.agent.no_data")}</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-xs text-left border-collapse">
                 <thead className="bg-muted border-b text-muted-foreground font-bold uppercase text-[10px]">
                   <tr>
-                    <th className="p-3 text-center w-12">Rank</th>
-                    <th className="p-3">Nama Agen</th>
-                    <th className="p-3 text-center">Total Listing</th>
-                    <th className="p-3 text-center">Terjual / Sewa</th>
-                    <th className="p-3 text-center">Closing Rate</th>
-                    <th className="p-3 text-right">Gross Revenue</th>
-                    <th className="p-3 text-right">Est. Komisi (2.5%)</th>
+                    <th className="p-3 text-center w-12">{t("reports.agent.rank")}</th>
+                    <th className="p-3">{t("reports.agent.name")}</th>
+                    <th className="p-3 text-center">{t("reports.agent.total_listing")}</th>
+                    <th className="p-3 text-center">{t("reports.agent.sold_rented")}</th>
+                    <th className="p-3 text-center">{t("reports.agent.closing_rate")}</th>
+                    <th className="p-3 text-right">{t("reports.agent.gross_revenue")}</th>
+                    <th className="p-3 text-right">{t("reports.agent.commission")}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#F4EFE6] dark:divide-border">
@@ -581,11 +584,11 @@ export default function ReportsPage() {
                             <div className="w-6 h-6 rounded-full bg-emerald-100 dark:bg-emerald-900/50 text-emerald-800 dark:text-emerald-300 flex items-center justify-center font-bold text-[10px]">
                               {agent.agent_name?.slice(0, 2)?.toUpperCase() || "AG"}
                             </div>
-                            <span>{agent.agent_name || "Agen Inland"}</span>
+                            <span>{agent.agent_name || t("reports.agent.inland_agent")}</span>
                           </div>
                         </td>
-                        <td className="p-3 text-center font-semibold text-foreground">{totalProp} Unit</td>
-                        <td className="p-3 text-center font-extrabold text-emerald-600">{totalSold} Unit</td>
+                        <td className="p-3 text-center font-semibold text-foreground">{totalProp} {t("reports.kpi.unit")}</td>
+                        <td className="p-3 text-center font-extrabold text-emerald-600">{totalSold} {t("reports.kpi.unit")}</td>
                         <td className="p-3 text-center">
                           <Badge variant="outline" className="text-[10px] font-bold bg-muted text-foreground">
                             {closingRate}%

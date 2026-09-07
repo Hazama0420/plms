@@ -12,6 +12,7 @@ import {
   X,
   ImageIcon,
 } from "lucide-react";
+import { useTranslation } from "@/lib/i18n/hooks";
 
 interface PropertyGalleryProps {
   images: string[];
@@ -24,6 +25,7 @@ export function PropertyGallery({
   title,
   defaultFallbackImage = "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=1600&q=80",
 }: PropertyGalleryProps) {
+  const { t } = useTranslation();
   const imageList = images.length > 0 ? images : [defaultFallbackImage];
   const [activeIdx, setActiveIdx] = useState<number>(0);
   const [isLightboxOpen, setIsLightboxOpen] = useState<boolean>(false);
@@ -49,7 +51,7 @@ export function PropertyGallery({
         {/* Action Overlay */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end justify-between p-4 pointer-events-none">
           <span className="text-xs text-white/90 font-medium">
-            Foto {activeIdx + 1} dari {imageList.length}
+            {t("propertyDetail.gallery.photo")} {activeIdx + 1} {t("propertyDetail.gallery.from")} {imageList.length}
           </span>
 
           <Button
@@ -60,7 +62,7 @@ export function PropertyGallery({
             onClick={() => setIsLightboxOpen(true)}
           >
             <Maximize2 className="w-3.5 h-3.5 mr-1.5" />
-            Perbesar
+            {t("propertyDetail.gallery.enlarge")}
           </Button>
         </div>
 
@@ -71,7 +73,7 @@ export function PropertyGallery({
               type="button"
               onClick={handlePrev}
               className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/40 hover:bg-black/70 text-white flex items-center justify-center backdrop-blur-sm transition-all opacity-80 hover:opacity-100 shadow-md"
-              aria-label="Foto Sebelumnya"
+              aria-label={t("propertyDetail.gallery.prevPhoto")}
             >
               <ChevronLeft className="w-5 h-5" />
             </button>
@@ -79,7 +81,7 @@ export function PropertyGallery({
               type="button"
               onClick={handleNext}
               className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/40 hover:bg-black/70 text-white flex items-center justify-center backdrop-blur-sm transition-all opacity-80 hover:opacity-100 shadow-md"
-              aria-label="Foto Berikutnya"
+              aria-label={t("propertyDetail.gallery.nextPhoto")}
             >
               <ChevronRight className="w-5 h-5" />
             </button>

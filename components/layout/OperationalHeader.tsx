@@ -40,15 +40,15 @@ const ROUTE_LABELS: Record<string, string> = {
   leads: "crm.leads",
   followups: "crm.followUp",
   surveys: "crm.surveys",
-  invoices: "Invoice & Keuangan",
+  invoices: "navigation.invoices",
   projects: "navigation.projects",
-  reports: "Laporan & Analytics",
+  reports: "navigation.reports",
   admin: "Admin",
   users: "User Management",
-  support: "Inbox Support",
+  support: "navigation.support",
   logs: "System Logs",
   ai: "AI Management",
-  notifications: "Notifikasi",
+  notifications: "navigation.notifications",
   settings: "navigation.settings",
 };
 
@@ -68,7 +68,7 @@ export function OperationalHeader({
   const pathname = usePathname();
   const { user } = useUser();
   const { userRole } = usePermissions();
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
 
   const [userName, setUserName] = useState<string>("Staf");
   const [userAvatar, setUserAvatar] = useState<string>("");
@@ -77,12 +77,13 @@ export function OperationalHeader({
   useEffect(() => {
     const updateTime = () => {
       const now = new Date();
-      const date = now.toLocaleDateString("id-ID", {
+      const locale = language === "en" ? "en-US" : "id-ID";
+      const date = now.toLocaleDateString(locale, {
         weekday: "short",
         day: "numeric",
         month: "short",
       });
-      const time = now.toLocaleTimeString("id-ID", {
+      const time = now.toLocaleTimeString(locale, {
         hour: "2-digit",
         minute: "2-digit",
       });
@@ -91,7 +92,7 @@ export function OperationalHeader({
     updateTime();
     const interval = setInterval(updateTime, 60000);
     return () => clearInterval(interval);
-  }, []);
+  }, [language]);
 
   useEffect(() => {
     async function loadUserData() {
@@ -142,7 +143,7 @@ export function OperationalHeader({
     });
 
     return crumbs;
-  }, [pathname]);
+  }, [pathname, t]);
 
   const roleMeta = ROLE_DISPLAY[userRole] || { label: "Staf", color: "bg-slate-500/10 text-slate-700 border-slate-400/20" };
 

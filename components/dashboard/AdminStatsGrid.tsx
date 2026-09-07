@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { formatKprShort } from "@/lib/kpr";
+import { useTranslation } from "@/lib/i18n/useTranslation";
 
 interface AdminStatsGridProps {
   totalProperties: number;
@@ -33,38 +34,40 @@ export function AdminStatsGrid({
   pipelineValue,
   activeAgentsCount,
 }: AdminStatsGridProps) {
+  const { t } = useTranslation();
+  
   const stats = [
     {
-      title: "Total Inventaris Properti",
+      title: t("dashboard.stats.totalInventory"),
       value: totalProperties,
-      subValue: `${publishedProperties} Tayang • ${draftProperties} Draf`,
+      subValue: `${publishedProperties} ${t("dashboard.stats.published")} • ${draftProperties} ${t("dashboard.stats.draft")}`,
       icon: Building2,
       color: "text-blue-600 dark:text-blue-400",
       bg: "bg-blue-500/10",
       border: "border-blue-500/20",
     },
     {
-      title: "Total Prospek CRM",
+      title: t("dashboard.stats.totalCrm"),
       value: totalLeads,
-      subValue: `${activeLeads} Sedang Berjalan`,
+      subValue: `${activeLeads} ${t("dashboard.stats.activeLeads")}`,
       icon: Users,
       color: "text-amber-600 dark:text-amber-400",
       bg: "bg-amber-500/10",
       border: "border-amber-500/20",
     },
     {
-      title: "Estimasi Nilai Pipeline",
+      title: t("dashboard.stats.pipelineValue"),
       value: formatKprShort(pipelineValue),
-      subValue: "Potensi Transaksi Aktif",
+      subValue: t("dashboard.stats.activeTransaction"),
       icon: TrendingUp,
       color: "text-emerald-600 dark:text-emerald-400",
       bg: "bg-emerald-500/10",
       border: "border-emerald-500/20",
     },
     {
-      title: "Closing & Kesepakatan",
+      title: t("dashboard.stats.closingDeals"),
       value: closedDealsCount,
-      subValue: `${activeAgentsCount} Agen Staf Aktif`,
+      subValue: `${activeAgentsCount} ${t("dashboard.stats.activeStaff")}`,
       icon: CheckCircle2,
       color: "text-purple-600 dark:text-purple-400",
       bg: "bg-purple-500/10",

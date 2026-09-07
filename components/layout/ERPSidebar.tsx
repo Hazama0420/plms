@@ -118,7 +118,7 @@ export function ERPSidebar({
 
   const NAV_GROUPS = useMemo<NavGroup[]>(() => [
     {
-      groupTitle: "Operasional",
+      groupTitle: t("navigation.operational"),
       items: [
         {
           label: t("navigation.dashboard"),
@@ -164,10 +164,10 @@ export function ERPSidebar({
       ],
     },
     {
-      groupTitle: "Manajemen",
+      groupTitle: t("navigation.management"),
       items: [
         {
-          label: "Invoice & Keuangan",
+          label: t("navigation.invoices"),
           shortLabel: "Invoice",
           icon: Receipt,
           href: "/invoices",
@@ -183,7 +183,7 @@ export function ERPSidebar({
           roles: ["super_admin", "admin", "agent", "marketing"],
         },
         {
-          label: "Laporan & Analytics",
+          label: t("navigation.reports"),
           shortLabel: "Laporan",
           icon: BarChart3,
           href: "/reports",
@@ -199,17 +199,17 @@ export function ERPSidebar({
       ],
     },
     {
-      groupTitle: "Pengaturan & Bantuan",
+      groupTitle: t("navigation.settingsHelp"),
       items: [
         {
-          label: "Inbox Support",
+          label: t("navigation.support"),
           shortLabel: "Support",
           icon: ActivitySquare,
           href: "/admin/support",
           roles: ["super_admin", "admin", "agent", "marketing", "viewer"],
         },
         {
-          label: "Notifikasi",
+          label: t("navigation.notifications"),
           shortLabel: "Notif",
           icon: BellRing,
           href: "/notifications",

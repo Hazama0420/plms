@@ -23,6 +23,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { useTranslation } from "@/lib/i18n/hooks";
 
 export interface CanonicalPropertyItem {
   id: string;
@@ -75,6 +76,7 @@ export function PropertyCard({
   onEdit,
   className,
 }: PropertyCardProps) {
+  const { t } = useTranslation();
   // Normalize item from either prop or property prop
   const item = (propInput || propertyInput || {}) as CanonicalPropertyItem;
 
@@ -84,12 +86,12 @@ export function PropertyCard({
     item.listing_type === "rent";
 
   const categoryName = item.property_type || item.category || "Properti";
-  const agentName = item.uploader_name || item.agent_name || "Inland Agent";
+  const agentName = item.uploader_name || item.agent_name || t("properties.card.agentFallback");
   const agentAvatar = item.uploader_avatar || item.agent_avatar || null;
   const isCardFeatured = featured || item.is_featured || false;
 
   const formatCurrency = (val?: number | null) => {
-    if (val == null || val === 0) return "Hubungi Agen";
+    if (val == null || val === 0) return t("properties.card.contactAgent");
     return new Intl.NumberFormat("id-ID", {
       style: "currency",
       currency: "IDR",
@@ -98,19 +100,27 @@ export function PropertyCard({
   };
 
   const specs = [
-    item.bedrooms != null && item.bedrooms > 0
-      ? { key: "bed", icon: Bed, label: `${item.bedrooms} KT` }
-      : null,
-    item.bathrooms != null && item.bathrooms > 0
-      ? { key: "bath", icon: Bath, label: `${item.bathrooms} KM` }
-      : null,
-    item.building_area != null && item.building_area > 0
-      ? { key: "bld", icon: Building2, label: `LB ${item.building_area}m²` }
-      : null,
-    item.land_area != null && item.land_area > 0
-      ? { key: "lnd", icon: Maximize2, label: `LT ${item.land_area}m²` }
-      : null,
-  ].filter(Boolean) as { key: string; icon: any; label: string }[];
+    {
+      key: "bed",
+      icon: Bed,
+      label: `${Number(item.bedrooms ?? 0)}`,
+    },
+    {
+      key: "bath",
+      icon: Bath,
+      label: `${Number(item.bathrooms ?? 0)}`,
+    },
+    {
+      key: "bld",
+      icon: Building2,
+      label: `${Number(item.building_area ?? 0)} m²`,
+    },
+    {
+      key: "lnd",
+      icon: Maximize2,
+      label: `${Number(item.land_area ?? 0)} m²`,
+    },
+  ];
 
   const showManagementMenu =
     (variant === "manage" || (!isGuestOrViewer && onEdit && onDelete)) &&
@@ -146,7 +156,7 @@ export function PropertyCard({
                 isRent ? "bg-amber-600" : "bg-emerald-600"
               )}
             >
-              {isRent ? "SEWA" : "JUAL"}
+              {isRent ? t("properties.card.rent") : t("properties.card.sell")}
             </span>
           </div>
         </div>
@@ -229,7 +239,7 @@ export function PropertyCard({
               isRent ? "bg-amber-600/95" : "bg-emerald-600/95"
             )}
           >
-            {isRent ? "DISEWAKAN" : "DIJUAL"}
+            {isRent ? t("properties.card.forRent") : t("properties.card.forSale")}
           </span>
 
           {categoryName && (
@@ -282,13 +292,13 @@ export function PropertyCard({
                       onClick={() => onEdit && onEdit(item.id)}
                       className="cursor-pointer"
                     >
-                      <Edit className="w-3.5 h-3.5 mr-2" /> Edit Properti
+                      <Edit className="w-3.5 h-3.5 mr-2" /> {t("properties.card.editProperty")}
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       className="text-rose-600 cursor-pointer"
                       onClick={(e) => onDelete && onDelete(item.id, e)}
                     >
-                      <Trash2 className="w-3.5 h-3.5 mr-2" /> Hapus Properti
+                      <Trash2 className="w-3.5 h-3.5 mr-2" /> {t("properties.card.deleteProperty")}
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -304,7 +314,7 @@ export function PropertyCard({
           {/* Location */}
           <div className="flex items-center gap-1 text-[11px] text-muted-foreground font-medium mb-2 truncate">
             <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
-            <span className="truncate">{item.location || "Lokasi Belum Ditentukan"}</span>
+            <span className="truncate">{item.location || t("properties.card.noLocation")}</span>
           </div>
 
           {/* Price */}

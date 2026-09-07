@@ -20,6 +20,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Loader2, ShieldAlert, Users, Trash2 } from "lucide-react";
+import { useTranslation } from "@/lib/i18n/hooks";
 
 interface StatusConfigItem {
   label: string;
@@ -79,6 +80,7 @@ export function PropertyModals({
   onConfirmAssign,
   assigningAgent,
 }: PropertyModalsProps) {
+  const { t } = useTranslation();
   const [selectedStatus, setSelectedStatus] = useState<string>(currentStatus);
   const [selectedAgentId, setSelectedAgentId] = useState<string>(currentAssignedId || "unassigned");
 
@@ -91,9 +93,8 @@ export function PropertyModals({
             <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-500/10 text-rose-600 mb-2">
               <Trash2 className="h-6 w-6" />
             </div>
-            <DialogTitle className="text-center text-lg font-bold">Hapus Properti Ini?</DialogTitle>
-            <DialogDescription className="text-center text-xs text-muted-foreground">
-              Tindakan ini permanen. Seluruh data spesifikasi, harga, dan relasi foto properti <b>"{propertyTitle}"</b> akan dihapus.
+            <DialogTitle className="text-center text-lg font-bold">{t("propertyDetail.modals.delete.title")}</DialogTitle>
+            <DialogDescription className="text-center text-xs text-muted-foreground" dangerouslySetInnerHTML={{ __html: t("propertyDetail.modals.delete.desc").replace("{title}", propertyTitle) }}>
             </DialogDescription>
           </DialogHeader>
 
@@ -105,7 +106,7 @@ export function PropertyModals({
               disabled={deleting}
               className="w-full sm:w-auto text-xs rounded-xl"
             >
-              Batal
+              {t("propertyDetail.modals.delete.cancel")}
             </Button>
             <Button
               type="button"
@@ -115,7 +116,7 @@ export function PropertyModals({
               className="w-full sm:w-auto text-xs rounded-xl font-bold flex items-center justify-center gap-1.5"
             >
               {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-              <span>{deleting ? "Menghapus..." : "Ya, Hapus Permanen"}</span>
+              <span>{deleting ? t("propertyDetail.modals.delete.confirming") : t("propertyDetail.modals.delete.confirm")}</span>
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -125,18 +126,18 @@ export function PropertyModals({
       <Dialog open={showStatusDialog} onOpenChange={onCloseStatusDialog}>
         <DialogContent className="sm:max-w-md rounded-2xl">
           <DialogHeader>
-            <DialogTitle className="text-base font-bold">Ubah Status Publikasi</DialogTitle>
+            <DialogTitle className="text-base font-bold">{t("propertyDetail.modals.status.title")}</DialogTitle>
             <DialogDescription className="text-xs text-muted-foreground">
-              Pilih status baru untuk visibilitas listing properti ini.
+              {t("propertyDetail.modals.status.desc")}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-2">
             <div className="space-y-1.5">
-              <Label className="text-xs font-semibold">Status Properti</Label>
+              <Label className="text-xs font-semibold">{t("propertyDetail.modals.status.label")}</Label>
               <Select value={selectedStatus} onValueChange={(val) => setSelectedStatus(val || "")}>
                 <SelectTrigger className="h-10 text-xs rounded-xl">
-                  <SelectValue placeholder="Pilih status" />
+                  <SelectValue placeholder={t("propertyDetail.modals.status.placeholder")} />
                 </SelectTrigger>
                 <SelectContent className="rounded-xl">
                   {Object.entries(statusConfig).map(([key, cfg]) => (
@@ -150,8 +151,7 @@ export function PropertyModals({
             </div>
 
             {selectedStatus === "published" && (
-              <p className="text-[11px] text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 p-3 rounded-xl border border-emerald-500/20 leading-relaxed">
-                Status <b>Dipublikasikan</b> akan menampilkan properti ke katalog publik dan siap dipasarkan.
+              <p className="text-[11px] text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 p-3 rounded-xl border border-emerald-500/20 leading-relaxed" dangerouslySetInnerHTML={{ __html: t("propertyDetail.modals.status.publishedHint") }}>
               </p>
             )}
           </div>
@@ -164,7 +164,7 @@ export function PropertyModals({
               disabled={updatingStatus}
               className="text-xs rounded-xl"
             >
-              Batal
+              {t("propertyDetail.modals.status.cancel")}
             </Button>
             <Button
               type="button"
@@ -173,7 +173,7 @@ export function PropertyModals({
               className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl"
             >
               {updatingStatus ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
-              <span>{updatingStatus ? "Menyimpan..." : "Simpan Perubahan"}</span>
+              <span>{updatingStatus ? t("propertyDetail.modals.status.confirming") : t("propertyDetail.modals.status.confirm")}</span>
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -188,9 +188,9 @@ export function PropertyModals({
                 <Users className="w-4 h-4" />
               </div>
               <div>
-                <DialogTitle className="text-base font-bold">Atur Agen Penanggung Jawab</DialogTitle>
+                <DialogTitle className="text-base font-bold">{t("propertyDetail.modals.assign.title")}</DialogTitle>
                 <DialogDescription className="text-xs text-muted-foreground">
-                  Tugaskan agen untuk melayani calon pembeli listing ini.
+                  {t("propertyDetail.modals.assign.desc")}
                 </DialogDescription>
               </div>
             </div>
@@ -198,14 +198,14 @@ export function PropertyModals({
 
           <div className="space-y-4 py-2">
             <div className="space-y-1.5">
-              <Label className="text-xs font-semibold">Pilih Agen</Label>
+              <Label className="text-xs font-semibold">{t("propertyDetail.modals.assign.label")}</Label>
               <Select value={selectedAgentId} onValueChange={(val) => setSelectedAgentId(val || "unassigned")}>
                 <SelectTrigger className="h-10 text-xs rounded-xl">
-                  <SelectValue placeholder="Pilih agen staf" />
+                  <SelectValue placeholder={t("propertyDetail.modals.assign.placeholder")} />
                 </SelectTrigger>
                 <SelectContent className="rounded-xl">
                   <SelectItem value="unassigned" className="text-xs text-muted-foreground">
-                    (Lepas Penugasan Agen)
+                    {t("propertyDetail.modals.assign.unassign")}
                   </SelectItem>
                   {agents.map((agent) => (
                     <SelectItem key={agent.id} value={agent.id} className="text-xs">
@@ -225,7 +225,7 @@ export function PropertyModals({
               disabled={assigningAgent}
               className="text-xs rounded-xl"
             >
-              Batal
+              {t("propertyDetail.modals.assign.cancel")}
             </Button>
             <Button
               type="button"
@@ -234,7 +234,7 @@ export function PropertyModals({
               className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl"
             >
               {assigningAgent ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
-              <span>{assigningAgent ? "Menugaskan..." : "Simpan Penugasan"}</span>
+              <span>{assigningAgent ? t("propertyDetail.modals.assign.confirming") : t("propertyDetail.modals.assign.confirm")}</span>
             </Button>
           </DialogFooter>
         </DialogContent>

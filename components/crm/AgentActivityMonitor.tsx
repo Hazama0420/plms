@@ -18,44 +18,46 @@ import {
   ShieldAlert,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
-import { id } from "date-fns/locale";
+import { id as idLocale, enUS } from "date-fns/locale";
 import { cn } from "@/lib/utils";
-
-// Mapping Ikon & Warna berdasarkan Jenis Aktivitas
-const activityTypeConfig: Record<
-  string,
-  { label: string; color: string; icon: React.ReactNode }
-> = {
-  "WhatsApp Chat": {
-    label: "Chat WA",
-    color: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
-    icon: <MessageCircle className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />,
-  },
-  "Status Update": {
-    label: "Update Status",
-    color: "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20",
-    icon: <Activity className="w-3 h-3 text-blue-600 dark:text-blue-400" />,
-  },
-  "Edit Follow-up": {
-    label: "Edit Agenda",
-    color: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20",
-    icon: <Edit className="w-3 h-3 text-amber-600 dark:text-amber-400" />,
-  },
-  "Delete Follow-up": {
-    label: "Hapus Agenda",
-    color: "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20",
-    icon: <Trash2 className="w-3 h-3 text-rose-600 dark:text-rose-400" />,
-  },
-  "AI Writer": {
-    label: "AI Writer",
-    color: "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20",
-    icon: <Sparkles className="w-3 h-3 text-purple-600 dark:text-purple-400" />,
-  },
-};
+import { useTranslation } from "@/hooks/use-translation";
 
 export default function AgentActivityMonitor() {
+  const { t, language } = useTranslation();
   const [activities, setActivities] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Mapping Ikon & Warna berdasarkan Jenis Aktivitas
+  const activityTypeConfig: Record<
+    string,
+    { label: string; color: string; icon: React.ReactNode }
+  > = useMemo(() => ({
+    "WhatsApp Chat": {
+      label: t("crm.monitor.types.chatWa"),
+      color: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
+      icon: <MessageCircle className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />,
+    },
+    "Status Update": {
+      label: t("crm.monitor.types.statusUpdate"),
+      color: "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20",
+      icon: <Activity className="w-3 h-3 text-blue-600 dark:text-blue-400" />,
+    },
+    "Edit Follow-up": {
+      label: t("crm.monitor.types.editFollowup"),
+      color: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20",
+      icon: <Edit className="w-3 h-3 text-amber-600 dark:text-amber-400" />,
+    },
+    "Delete Follow-up": {
+      label: t("crm.monitor.types.deleteFollowup"),
+      color: "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20",
+      icon: <Trash2 className="w-3 h-3 text-rose-600 dark:text-rose-400" />,
+    },
+    "AI Writer": {
+      label: t("crm.monitor.types.aiWriter"),
+      color: "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20",
+      icon: <Sparkles className="w-3 h-3 text-purple-600 dark:text-purple-400" />,
+    },
+  }), [t]);
 
   // User State
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -193,14 +195,14 @@ export default function AgentActivityMonitor() {
           <Activity className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
           <div>
             <CardTitle className="text-xs sm:text-sm font-bold text-foreground">
-              Pantauan Aktivitas Agen CRM
+              {t("crm.monitor.title")}
             </CardTitle>
             <p className="text-[10px] text-muted-foreground leading-none mt-0.5">
               {isSuperAdmin
-                ? "Memantau seluruh log aktivitas tim (Agent, Admin & Super Admin)"
+                ? t("crm.monitor.subtitleSuperAdmin")
                 : isAdmin
-                ? "Memantau log aktivitas khusus Agent"
-                : "Log riwayat aktivitas CRM milik Anda"}
+                ? t("crm.monitor.subtitleAdmin")
+                : t("crm.monitor.subtitleAgent")}
             </p>
           </div>
         </div>
@@ -210,7 +212,7 @@ export default function AgentActivityMonitor() {
             type="button"
             onClick={fetchActivities}
             className="p-1 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition cursor-pointer"
-            title="Refresh Data"
+            title={t("crm.monitor.refreshTitle")}
           >
             <RefreshCw className={cn("w-3.5 h-3.5", loading && "animate-spin")} />
           </button>
@@ -218,7 +220,7 @@ export default function AgentActivityMonitor() {
             variant="outline"
             className="text-[10px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 flex items-center gap-1"
           >
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Real-time
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> {t("crm.monitor.realtime")}
           </Badge>
         </div>
       </CardHeader>
@@ -227,16 +229,16 @@ export default function AgentActivityMonitor() {
         {loading ? (
           <div className="text-center py-6 space-y-2">
             <RefreshCw className="w-6 h-6 text-emerald-600 dark:text-emerald-400 animate-spin mx-auto opacity-70" />
-            <p className="text-xs text-muted-foreground">Memuat log aktivitas terbarukan...</p>
+            <p className="text-xs text-muted-foreground">{t("crm.monitor.loading")}</p>
           </div>
         ) : activities.length === 0 ? (
           <div className="text-center py-8 space-y-1">
             <ShieldAlert className="w-8 h-8 text-muted-foreground/40 mx-auto" />
-            <p className="text-xs font-semibold text-foreground">Belum Ada Catatan Aktivitas</p>
+            <p className="text-xs font-semibold text-foreground">{t("crm.monitor.emptyTitle")}</p>
             <p className="text-[11px] text-muted-foreground max-w-xs mx-auto">
               {isAdmin
-                ? "Belum ada aktivitas baru dari agen yang tercatat."
-                : "Belum ada aktivitas CRM yang dicatat."}
+                ? t("crm.monitor.emptyAdmin")
+                : t("crm.monitor.emptyAgent")}
             </p>
           </div>
         ) : (
@@ -246,14 +248,14 @@ export default function AgentActivityMonitor() {
               const leadObj = act.crm_leads || {};
               const contactObj = leadObj.crm_contacts || {};
 
-              const userName = userObj.full_name || userObj.email || "Pengguna";
+              const userName = userObj.full_name || userObj.email || t("crm.monitor.userFallback");
               const userRole = (userObj.role || "agent").toLowerCase();
-              const leadName = contactObj.full_name || "Klien Prospek";
+              const leadName = contactObj.full_name || t("crm.monitor.leadFallback");
               const leadPhone = contactObj.phone || "";
 
               const typeConfig =
                 activityTypeConfig[act.activity_type] || {
-                  label: act.activity_type || "Aktivitas",
+                  label: act.activity_type || t("crm.monitor.activityFallback"),
                   color: "bg-slate-500/10 text-slate-600 border-slate-500/20",
                   icon: <Activity className="w-3 h-3" />,
                 };
@@ -301,7 +303,7 @@ export default function AgentActivityMonitor() {
                       {act.created_at
                         ? formatDistanceToNow(new Date(act.created_at), {
                             addSuffix: true,
-                            locale: id,
+                            locale: language === "en" ? enUS : idLocale,
                           })
                         : "-"}
                     </span>

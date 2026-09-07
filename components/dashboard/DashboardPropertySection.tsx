@@ -8,6 +8,7 @@ import {
   type DashboardPropertyItem,
 } from "./DashboardPropertyCard";
 import { PropertyCard } from "@/components/properties/PropertyCard";
+import { useTranslation } from "@/lib/i18n/useTranslation";
 
 export type PropertyCategoryFilter = "semua" | "rumah" | "tanah" | "gudang" | "apartemen" | "ruko";
 
@@ -22,15 +23,6 @@ interface DashboardPropertySectionProps {
   onPropertyClick: (propertyId: string) => void;
 }
 
-const CATEGORY_TABS: { key: PropertyCategoryFilter; label: string }[] = [
-  { key: "semua", label: "Semua" },
-  { key: "rumah", label: "Rumah" },
-  { key: "tanah", label: "Tanah" },
-  { key: "gudang", label: "Gudang" },
-  { key: "apartemen", label: "Apartemen" },
-  { key: "ruko", label: "Ruko" },
-];
-
 export function DashboardPropertySection({
   title,
   subtitle,
@@ -41,6 +33,17 @@ export function DashboardPropertySection({
   onSeeAll,
   onPropertyClick,
 }: DashboardPropertySectionProps) {
+  const { t } = useTranslation();
+
+  const CATEGORY_TABS: { key: PropertyCategoryFilter; label: string }[] = [
+    { key: "semua", label: t("dashboard.propertySection.all") },
+    { key: "rumah", label: t("dashboard.propertySection.house") },
+    { key: "tanah", label: t("dashboard.propertySection.land") },
+    { key: "gudang", label: t("dashboard.propertySection.warehouse") },
+    { key: "apartemen", label: t("dashboard.propertySection.apartment") },
+    { key: "ruko", label: t("dashboard.propertySection.shop") },
+  ];
+
   return (
     <div className="space-y-4">
       {/* Header and Filter Row */}
@@ -84,7 +87,7 @@ export function DashboardPropertySection({
               onClick={onSeeAll}
               className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 h-8 px-2.5 rounded-lg cursor-pointer shrink-0"
             >
-              <span>Lihat Semua</span>
+              <span>{t("dashboard.propertySection.seeAll")}</span>
               <ChevronRight className="w-3.5 h-3.5 ml-1" />
             </Button>
           )}
@@ -102,7 +105,7 @@ export function DashboardPropertySection({
         <div className="p-8 text-center rounded-2xl bg-card border border-border/60 space-y-2">
           <Building2 className="w-8 h-8 text-muted-foreground/40 mx-auto" />
           <p className="text-xs font-medium text-muted-foreground">
-            Tidak ada properti untuk kategori ini saat ini.
+            {t("dashboard.propertySection.noProperties")}
           </p>
         </div>
       ) : (

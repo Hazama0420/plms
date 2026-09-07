@@ -4,9 +4,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import propertyService, { type PropertyFilter } from "@/services/property.service";
 import { supabase } from "@/lib/supabase/client";
-import type { AdvancedFilter } from "@/types/property.types";
-
-type Property = any;
+import type { AdvancedFilter, Property } from "@/types/property.types";
 
 const DEFAULT_FILTERS: PropertyFilter = {
   page: 1,
@@ -42,9 +40,9 @@ export function useProperties(initialFilters: PropertyFilter = {}) {
   useEffect(() => {
     if (lastIncoming.current === incoming) return;
     lastIncoming.current = incoming;
-    // Kembali ke halaman 1: hasil filter yang baru hampir pasti punya jumlah
-    // halaman berbeda, dan bertahan di halaman 5 akan tampak kosong.
-    setFilters({ ...DEFAULT_FILTERS, ...(JSON.parse(incoming) as PropertyFilter), page: 1 });
+    
+    const nextFilters = JSON.parse(incoming) as PropertyFilter;
+    setFilters({ ...DEFAULT_FILTERS, ...nextFilters, page: nextFilters.page || 1 });
   }, [incoming]);
 
   // 🔹 DETEKSI ROLE USER SECARA OTOMATIS UNTUK KEAMANAN DATA VIEWER

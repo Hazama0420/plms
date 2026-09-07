@@ -28,7 +28,7 @@
 // siapa pun. WA tetap tersedia lewat aksi manual di halaman lead
 // (/api/notifications/whatsapp) yang terjaga role.
 import { NextResponse } from "next/server";
-import { notifyEvent } from "@/lib/notification-helper";
+import { getAdminRecipientIds, notifyEvent } from "@/lib/notification-helper";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createServerClientInstance } from "@/lib/supabase/server";
 import { getClientIp, rateLimit } from "@/lib/rate-limit";
@@ -427,9 +427,45 @@ export async function POST(req: Request) {
     //   menampilkan nama dan nomor client itu sendiri, bukan agennya.
     // - Jalur form  → id agen penanggung jawab, karena pengirimnya tamu yang
     //   tidak punya baris di tabel users (kolomnya berelasi ke sana).
+    // - Tanpa agen  → NULL (M-18). Lihat catatan di bawah.
     const contactLabel = cleanPhone ? `${name} (${cleanPhone})` : name;
 
-    const activityRow = viaAccount
+    // M-18 — LEAD TANPA AGEN TIDAK LAGI TERSIMPAN DIAM-DIAM
+    //
+    // Sebelumnya cabang terakhir bernilai `null` dan tidak ada baris aktivitas
+    // yang ditulis sama sekali. Digabung dengan penjaga notifikasi di §9 dan
+    // penjaga `IF target_agent IS NOT NULL` di trigger
+    // handle_new_lead_notification(), sebuah prospek yang propertinya tidak
+    // menghasilkan agen mana pun masuk ke basis data tanpa satu pun jejak yang
+    // bisa dilihat manusia. DEFAULT_AGENT_UUID tidak menyelamatkannya: nilainya
+    // kosong di lingkungan ini.
+    //
+    // `user_id` NULL disengaja dan sah: kolomnya nullable (baseline §1), dan
+    // memang tidak ada pelaku untuk dicatat — mengarang satu (mis. memakai id
+    // admin pertama) akan membuat riwayat berbohong tentang siapa yang bertindak.
+    // Seluruh pembaca kolom ini sudah tahan-NULL: Admin → Logs memakai
+    // `log.users?.full_name || ... || "Sistem Administrator"`, AgentActivityMonitor
+    // memakai `act.users || {}` → "Pengguna", dasbor tidak membacanya, dan tab
+    // Aktivitas di detail lead tidak menampilkan pelakunya sama sekali.
+    //
+    // `activity_type` sengaja dibedakan dari label bertugas supaya keadaan ini
+    // dapat disaring dan terbaca di halaman log, bukan menyamar sebagai lead
+    // yang sudah tertangani. Kolomnya varchar(50) dan bertipe string bebas —
+    // tidak ada CHECK maupun enum — dan setiap pembacanya sudah punya nilai
+    // cadangan untuk label yang tidak dikenalinya.
+    //
+    // Anotasi tipenya ditulis eksplisit karena klien ini tidak bertipe skema
+    // (createAdminClient memanggil createClient tanpa generic `Database`).
+    // Tanpa anotasi, supabase-js menyimpulkan bentuk baris insert dari cabang
+    // ternary yang pertama — `user_id: string` — lalu menolak cabang NULL.
+    // Menulisnya di sini menyatakan bentuk yang benar sekali saja; `as any`
+    // akan mematikan pemeriksaan untuk ketiga cabang sekaligus.
+    const activityRow: {
+      lead_id: string;
+      user_id: string | null;
+      activity_type: string;
+      notes: string;
+    } = viaAccount
       ? {
           lead_id: leadId,
           user_id: account!.id,
@@ -444,17 +480,22 @@ export async function POST(req: Request) {
             activity_type: isNewLead ? "Lead Masuk (Website)" : "Inquiry Ulang (Website)",
             notes: `Prospek ${contactLabel} berminat pada properti "${propertyTitle}"`,
           }
-        : null;
+        : {
+            lead_id: leadId,
+            user_id: null,
+            activity_type: isNewLead ? "Lead Tanpa Agen" : "Inquiry Ulang Tanpa Agen",
+            notes:
+              `Prospek ${contactLabel} berminat pada properti "${propertyTitle}", ` +
+              "tetapi tidak ada agen penanggung jawab. Perlu ditugaskan.",
+          };
 
-    if (activityRow) {
-      const { error: actErr } = await supabase.from("crm_activities").insert(activityRow);
-      if (actErr) {
-        console.error("⚠️ Gagal simpan crm_activities:", actErr.message);
-      }
+    const { error: actErr } = await supabase.from("crm_activities").insert(activityRow);
+    if (actErr) {
+      console.error("⚠️ Gagal simpan crm_activities:", actErr.message);
     }
 
     // ========================================================================
-    // 9. Notifikasi ke agen penanggung jawab
+    // 9. Notifikasi
     // ========================================================================
     //
     // Kegagalan notifikasi tidak boleh menggagalkan penyimpanan lead: bagi
@@ -469,6 +510,39 @@ export async function POST(req: Request) {
           : `${name} tertarik dengan listing "${propertyTitle}". Segera hubungi!`,
         link: `/crm/leads/${leadId}`,
       }).catch((err) => console.error("Gagal kirim notifikasi lead:", err));
+    } else {
+      // M-18 — TIDAK ADA AGEN, JADI ADMIN YANG DIBERI TAHU
+      //
+      // Cabang ini menyala TEPAT ketika cabang di atas tidak: ownerAgentId
+      // NULL. Pada keadaan itu trigger basis data juga diam (penjaganya
+      // `IF target_agent IS NOT NULL`), jadi tidak ada satu pun notifikasi yang
+      // dikirim dua kali oleh tambahan ini — M-17 tidak diperburuk.
+      //
+      // Penerimanya seluruh admin: merekalah yang bisa menugaskan lead, dan
+      // daftar agen tidak dipakai karena mengirim ke semua agen mengubah ini
+      // menjadi rebutan alih-alih penugasan.
+      //
+      // getAdminRecipientIds mengembalikan [] bila kuerinya gagal, dan
+      // notifyEvent memperlakukan penerima kosong sebagai sukses tanpa kirim.
+      // Keduanya benar untuk alur ini — lead tetap tersimpan — tetapi berarti
+      // "tidak ada admin" lewat tanpa suara, jadi dicatat ke log server.
+      const adminIds = await getAdminRecipientIds(supabase);
+
+      if (adminIds.length === 0) {
+        console.error(
+          `⚠️ Lead ${leadId} tersimpan tanpa agen dan tanpa admin penerima notifikasi.`
+        );
+      } else {
+        await notifyEvent({
+          event: "lead.unassigned",
+          userIds: adminIds,
+          title: "📥 Lead Baru Tanpa Agen",
+          message: `${name} tertarik pada "${propertyTitle}" tetapi belum ada agen penanggung jawab. Segera tugaskan.`,
+          link: `/crm/leads/${leadId}`,
+        }).catch((err) =>
+          console.error("Gagal kirim notifikasi lead tanpa agen:", err)
+        );
+      }
     }
 
     // ========================================================================
@@ -486,9 +560,16 @@ export async function POST(req: Request) {
       success: true,
       mode: viaAccount ? "account" : "form",
       isNewLead,
+      // "Agen telah diberi tahu" hanya benar bila ada agen yang diberi tahu.
+      // Tanpa agen, yang menerima notifikasi adalah admin — dan itu urusan
+      // internal, bukan kabar yang perlu disampaikan ke pengunjung. Jadi
+      // kalimatnya diganti menjadi janji yang tetap benar, tanpa membocorkan
+      // bahwa listing itu sedang tidak dipegang siapa pun.
       message: viaAccount
         ? "Aktivitas Anda tercatat. Membuka WhatsApp agen..."
-        : "Lead & minat properti berhasil tersimpan. Agen telah diberi tahu.",
+        : ownerAgentId
+          ? "Lead & minat properti berhasil tersimpan. Agen telah diberi tahu."
+          : "Lead & minat properti berhasil tersimpan. Tim kami akan segera menghubungi Anda.",
       data: leadRow,
       agent,
       // Dipantulkan kembali supaya pemanggil bisa menyusun pesan WhatsApp

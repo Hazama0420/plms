@@ -12,11 +12,55 @@
 // lihat berkas itu untuk alasannya.
 
 import { createAdminClient } from "@/lib/supabase/admin";
-import { sendPushToUsers } from "@/lib/onesignal";
+import { sendPushToUsers, type PushOutcome } from "@/lib/onesignal";
 import {
   EVENT_SPECS,
   type NotificationEventName,
 } from "@/lib/notification-events";
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+/**
+ * Ejaan role admin sebagaimana TERSIMPAN di kolom `users.role`.
+ *
+ * Bukan hasil normalizeRole(): penyeragaman itu memetakan nilai yang KELUAR
+ * dari database menjadi satu bentuk aplikasi, sedangkan daftar ini dipakai
+ * sebagai filter `.in()` yang masuk KE database — nilainya harus persis seperti
+ * yang tersimpan. Data produksi memuat kedua ejaan Super Admin, dan kueri yang
+ * hanya mencocokkan "super_admin" diam-diam melewatkan sebagian admin.
+ */
+const ADMIN_ROLE_SPELLINGS = ["super_admin", "superadmin", "admin"];
+
+/**
+ * Bentuk siap-pakai untuk kueri lain yang perlu menyertakan admin di dalam
+ * kelompok peran yang lebih luas — mis. ROLE_GROUPS.internal pada endpoint
+ * pengumuman. Dibagikan agar ejaan Super Admin diperbaiki di satu tempat saja.
+ */
+export const ADMIN_ROLES_FOR_QUERY: readonly string[] = ADMIN_ROLE_SPELLINGS;
+
+/**
+ * Daftar id seluruh admin — penerima untuk kejadian yang menuntut tindakan
+ * administratif (permintaan bantuan, pendaftaran agen baru, pengumuman).
+ *
+ * Mengembalikan array kosong bila kueri gagal; pemanggil yang menganggap
+ * "tidak ada admin" sebagai kondisi galat harus memeriksanya sendiri — helper
+ * ini sengaja tidak melempar agar satu kegagalan notifikasi tidak menjatuhkan
+ * alur utama yang memanggilnya.
+ */
+export async function getAdminRecipientIds(
+  client: SupabaseClient
+): Promise<string[]> {
+  const { data, error } = await client
+    .from("users")
+    .select("id")
+    .in("role", ADMIN_ROLE_SPELLINGS);
+
+  if (error) {
+    console.error("[notifikasi] Gagal mengambil daftar admin:", error.message);
+    return [];
+  }
+
+  return (data ?? []).map((row) => row.id as string).filter(Boolean);
+}
 
 export interface NotifyEventParams {
   event: NotificationEventName;
@@ -43,6 +87,19 @@ export interface NotifyEventResult {
   delivered: number;
   /** Jumlah penerima yang dilewati karena preferensinya. */
   suppressed: number;
+  /**
+   * Nasib push-nya, dinyatakan tegas.
+   *
+   * "not_attempted" berarti OneSignal memang tidak pernah dipanggil — tidak ada
+   * penerima, preferensinya membungkam semuanya, atau barisnya gagal disimpan
+   * lebih dulu. Bedakan itu dari "no_recipient", yang berarti push dikirim tetapi
+   * tidak ada perangkat yang tertaut.
+   */
+  pushOutcome: PushOutcome | "not_attempted";
+  /** Jumlah perangkat yang benar-benar menerima push. */
+  pushRecipients: number;
+  /** Alasan push tidak sampai — bukan kegagalan sistem. */
+  pushSkipped?: string;
   /** Kegagalan push tidak menggagalkan keseluruhan — dilaporkan terpisah. */
   pushError?: string;
   error?: string;
@@ -74,7 +131,13 @@ export async function notifyEvent({
   const recipients = [...new Set(userIds.filter((id): id is string => Boolean(id)))];
 
   if (recipients.length === 0) {
-    return { success: true, delivered: 0, suppressed: 0 };
+    return {
+      success: true,
+      delivered: 0,
+      suppressed: 0,
+      pushOutcome: "not_attempted",
+      pushRecipients: 0,
+    };
   }
 
   const spec = EVENT_SPECS[event];
@@ -88,7 +151,14 @@ export async function notifyEvent({
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     console.error("[notifikasi] Klien admin Supabase tidak tersedia:", detail);
-    return { success: false, delivered: 0, suppressed: 0, error: detail };
+    return {
+      success: false,
+      delivered: 0,
+      suppressed: 0,
+      pushOutcome: "not_attempted",
+      pushRecipients: 0,
+      error: detail,
+    };
   }
 
   try {
@@ -100,7 +170,14 @@ export async function notifyEvent({
 
     if (prefError) {
       console.error("[notifikasi] Gagal membaca preferensi:", prefError.message);
-      return { success: false, delivered: 0, suppressed: 0, error: prefError.message };
+      return {
+        success: false,
+        delivered: 0,
+        suppressed: 0,
+        pushOutcome: "not_attempted",
+        pushRecipients: 0,
+        error: prefError.message,
+      };
     }
 
     const prefsById = new Map<string, Record<string, unknown>>(
@@ -121,7 +198,13 @@ export async function notifyEvent({
     const suppressed = recipients.length - allowed.length;
 
     if (allowed.length === 0) {
-      return { success: true, delivered: 0, suppressed };
+      return {
+        success: true,
+        delivered: 0,
+        suppressed,
+        pushOutcome: "not_attempted",
+        pushRecipients: 0,
+      };
     }
 
     // 3. Simpan baris lonceng web (satu insert untuk semua penerima).
@@ -145,7 +228,14 @@ export async function notifyEvent({
 
     if (dbError) {
       console.error("[notifikasi] Gagal menyimpan baris lonceng:", dbError.message);
-      return { success: false, delivered: 0, suppressed, error: dbError.message };
+      return {
+        success: false,
+        delivered: 0,
+        suppressed,
+        pushOutcome: "not_attempted",
+        pushRecipients: 0,
+        error: dbError.message,
+      };
     }
 
     // 4. Push hanya ke penerima yang tidak mematikan sakelar push.
@@ -157,7 +247,14 @@ export async function notifyEvent({
     );
 
     if (pushTargets.length === 0) {
-      return { success: true, delivered: allowed.length, suppressed };
+      return {
+        success: true,
+        delivered: allowed.length,
+        suppressed,
+        pushOutcome: "not_attempted",
+        pushRecipients: 0,
+        pushSkipped: "Seluruh penerima mematikan sakelar push.",
+      };
     }
 
     const push = await sendPushToUsers(pushTargets, {
@@ -167,23 +264,43 @@ export async function notifyEvent({
       data: { type: spec.uiType, event, link: link ?? null },
     });
 
-    if (!push.success) {
+    if (push.outcome === "failed") {
       // Bukan kegagalan fatal: barisnya sudah tersimpan dan tetap muncul di
       // lonceng web meski perangkat tidak menerima push.
       console.warn("[notifikasi] Push gagal dikirim:", push.error);
-      return {
-        success: true,
-        delivered: allowed.length,
-        suppressed,
-        pushError: push.error,
-      };
+    } else if (push.outcome === "no_recipient") {
+      // Keadaan ini dulu diam sepenuhnya. Inilah yang membuat push CRM mati
+      // sejak 2026-08-08 tanpa satu baris log pun: permintaannya sah dan
+      // OneSignal membalas 200, tetapi tidak ada perangkat yang tertaut ke
+      // External ID penerima — jadi `success` bernilai true dan tidak ada
+      // yang pernah diperiksa.
+      console.warn(
+        `[notifikasi] Push "${event}" tidak sampai ke perangkat mana pun ` +
+          `(${pushTargets.length} penerima dituju): ${push.skipped ?? "tanpa keterangan"}. ` +
+          "Kemungkinan External ID belum tertaut — periksa OneSignal.login() di perangkat penerima."
+      );
     }
 
-    return { success: true, delivered: allowed.length, suppressed };
+    return {
+      success: true,
+      delivered: allowed.length,
+      suppressed,
+      pushOutcome: push.outcome,
+      pushRecipients: push.recipients,
+      ...(push.skipped ? { pushSkipped: push.skipped } : {}),
+      ...(push.error ? { pushError: push.error } : {}),
+    };
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     console.error("[notifikasi] Kesalahan tak terduga:", detail);
-    return { success: false, delivered: 0, suppressed: 0, error: detail };
+    return {
+      success: false,
+      delivered: 0,
+      suppressed: 0,
+      pushOutcome: "not_attempted",
+      pushRecipients: 0,
+      error: detail,
+    };
   }
 }
 
@@ -205,6 +322,10 @@ export interface NotificationResult {
   success: boolean;
   /** true bila dibatalkan oleh preferensi penerima. */
   suppressed?: boolean;
+  /** Nasib push-nya — lihat NotifyEventResult.pushOutcome. */
+  pushOutcome?: PushOutcome | "not_attempted";
+  /** Jumlah perangkat yang benar-benar menerima push. */
+  pushRecipients?: number;
   pushError?: string;
   error?: string;
 }
@@ -227,6 +348,8 @@ export async function sendSystemNotification({
   return {
     success: result.success,
     suppressed: result.suppressed > 0,
+    pushOutcome: result.pushOutcome,
+    pushRecipients: result.pushRecipients,
     pushError: result.pushError,
     error: result.error,
   };

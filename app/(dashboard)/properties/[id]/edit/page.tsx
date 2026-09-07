@@ -55,11 +55,13 @@ export default function EditPropertyPage({ params }: EditPropertyPageProps) {
 
         // 3. Cek Hak Akses Edit
         const isAdmin = userRole === "super_admin" || userRole === "admin" || userRole === "superadmin";
-        const isOwner = userRole === "agent" && (data.created_by === user.id);
+        const isOwnerOrAssigned =
+          userRole === "agent" &&
+          (data.created_by === user.id || data.assigned_to === user.id);
 
-        if (userRole === "reviewer" || (!isAdmin && !isOwner)) {
+        if (userRole === "viewer" || userRole === "reviewer" || (!isAdmin && !isOwnerOrAssigned)) {
           toast.error("Anda tidak memiliki izin untuk mengedit listingan ini.");
-          router.push(`/properties/${propertyId}`);
+          router.push(`/properties/${data.slug || propertyId}`);
           return;
         }
 
@@ -231,6 +233,8 @@ export default function EditPropertyPage({ params }: EditPropertyPageProps) {
       district_id: distId,
       village_id: villId,
 
+      region_id: addr.region_id || null,
+      location_candidate: null,
       province_name: provName,
       city_name: cityName,
       district_name: distName,

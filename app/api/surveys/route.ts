@@ -44,6 +44,7 @@ export async function POST(request: NextRequest) {
     property_id,
     request_id,
     client_id,
+    lead_id,
     client_name,
     client_phone,
     scheduled_at,
@@ -114,16 +115,6 @@ export async function POST(request: NextRequest) {
   }
 
   // 4. Periksa bentrok jadwal agen.
-  //
-  // Jendela pengambilan sengaja dilebarkan 8 jam ke belakang (durasi maksimum
-  // satu survei) supaya jadwal panjang yang dimulai jauh sebelum waktu baru
-  // tetap ikut terambil. Irisan sebenarnya dihitung di JS, bukan di SQL:
-  // Postgres di sini tidak menyimpan kolom waktu selesai, jadi perbandingan
-  // rentangnya harus memakai scheduled_at + duration_min per baris.
-  //
-  // `.maybeSingle()` sengaja TIDAK dipakai: jendela ini bisa memuat lebih dari
-  // satu jadwal, dan maybeSingle() akan melempar galat begitu barisnya lebih
-  // dari satu — bentrokan justru lolos tanpa terdeteksi.
   const { data: candidates, error: overlapErr } = await supabase
     .from("surveys")
     .select("id, scheduled_at, duration_min")
@@ -133,8 +124,6 @@ export async function POST(request: NextRequest) {
     .gte("scheduled_at", new Date(scheduledDate.getTime() - 480 * 60_000).toISOString());
 
   if (overlapErr) {
-    // Gagal memeriksa bentrok bukan alasan untuk menerima jadwal diam-diam:
-    // agen bisa berakhir dengan dua janji di jam yang sama tanpa peringatan.
     console.error("[POST /api/surveys] Cek bentrok gagal:", overlapErr);
     return NextResponse.json(
       { error: "Gagal memeriksa bentrok jadwal. Silakan coba lagi." },
@@ -168,6 +157,7 @@ export async function POST(request: NextRequest) {
       property_id: finalPropertyId,
       request_id: request_id || null,
       client_id: finalClientId || null,
+      lead_id: lead_id || null,
       client_name: finalClientName,
       client_phone: finalClientPhone || null,
       agent_id: ctx.userId,
@@ -180,7 +170,7 @@ export async function POST(request: NextRequest) {
       notes: notes || null,
       created_by: ctx.userId,
     })
-    .select("id, scheduled_at, type, property_id, client_id")
+    .select("id, scheduled_at, type, property_id, client_id, lead_id")
     .single();
 
   if (insertErr || !newSurvey) {
@@ -189,6 +179,22 @@ export async function POST(request: NextRequest) {
       { error: "Gagal menyimpan jadwal survei. Silakan coba lagi." },
       { status: 500 }
     );
+  }
+
+  // 5.5 Catat aktivitas ke CRM jika terhubung dengan Lead
+  if (lead_id) {
+    try {
+      const supabaseAdmin = createAdminClient();
+      await supabaseAdmin.from("crm_activities").insert({
+        lead_id,
+        user_id: ctx.userId,
+        activity_type: "site_visit",
+        notes: `Survei properti (${type === "virtual" ? "Virtual" : "Lapangan"}) dijadwalkan pada ${scheduledDate.toLocaleDateString("id-ID", { dateStyle: "medium" })}`,
+        created_at: new Date().toISOString(),
+      });
+    } catch (crmActErr) {
+      console.error("[POST /api/surveys] Gagal mencatat crm_activity:", crmActErr);
+    }
   }
 
   // 6. Bila dibuat dari request, tandai request sebagai scheduled dan isi survey_id

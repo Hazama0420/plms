@@ -25,7 +25,9 @@ import {
   ChevronRight,
   Lock,
   Copy,
+  UserCheck,
 } from "lucide-react";
+import { claimCRMLeadAction } from "@/actions/crm-leads.action";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -64,22 +66,24 @@ import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "@/hooks/use-translation";
 
 // ============================================================
-// STATUS CONFIGURATION (ADAPTIF TEMA)
-// ============================================================
-const statusConfig: Record<string, { label: string; color: string; bg: string }> = {
-  new: { label: "New", color: "text-blue-600 dark:text-blue-400", bg: "bg-blue-500/10 border-blue-500/20" },
-  contacted: { label: "Contacted", color: "text-amber-600 dark:text-amber-400", bg: "bg-amber-500/10 border-amber-500/20" },
-  qualified: { label: "Qualified", color: "text-cyan-600 dark:text-cyan-400", bg: "bg-cyan-500/10 border-cyan-500/20" },
-  proposal: { label: "Proposal", color: "text-purple-600 dark:text-purple-400", bg: "bg-purple-500/10 border-purple-500/20" },
-  negotiation: { label: "Negotiation", color: "text-orange-600 dark:text-orange-400", bg: "bg-orange-500/10 border-orange-500/20" },
-  won: { label: "Won", color: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/20" },
-  lost: { label: "Lost", color: "text-rose-600 dark:text-rose-400", bg: "bg-rose-500/10 border-rose-500/20" },
-};
+// statusConfig moved inside component to react to language changes
 
 export default function LeadsPage() {
   const router = useRouter();
+  const { t } = useTranslation();
+
+  const statusConfig: Record<string, { label: string; color: string; bg: string }> = useMemo(() => ({
+    new: { label: t("crm.kanban.stages.new") || "New", color: "text-blue-600 dark:text-blue-400", bg: "bg-blue-500/10 border-blue-500/20" },
+    contacted: { label: t("crm.kanban.stages.contacted") || "Contacted", color: "text-amber-600 dark:text-amber-400", bg: "bg-amber-500/10 border-amber-500/20" },
+    qualified: { label: t("crm.kanban.stages.qualified") || "Qualified", color: "text-cyan-600 dark:text-cyan-400", bg: "bg-cyan-500/10 border-cyan-500/20" },
+    proposal: { label: t("crm.kanban.stages.proposal") || "Proposal", color: "text-purple-600 dark:text-purple-400", bg: "bg-purple-500/10 border-purple-500/20" },
+    negotiation: { label: t("crm.kanban.stages.negotiation") || "Negotiation", color: "text-orange-600 dark:text-orange-400", bg: "bg-orange-500/10 border-orange-500/20" },
+    won: { label: t("crm.kanban.stages.won") || "Won", color: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/20" },
+    lost: { label: t("crm.kanban.stages.lost") || "Lost", color: "text-rose-600 dark:text-rose-400", bg: "bg-rose-500/10 border-rose-500/20" },
+  }), [t]);
   const [loading, setLoading] = useState(true);
   const [loadingFollowUps, setLoadingFollowUps] = useState(true);
   const [searchInput, setSearchInput] = useState("");
@@ -201,6 +205,37 @@ export default function LeadsPage() {
     [isAdminOrSuperAdmin, currentUserId]
   );
 
+  const canClaimLead = useMemo(() => {
+    return (
+      currentUserRole === "agent" ||
+      currentUserRole === "marketing" ||
+      currentUserRole === "admin" ||
+      currentUserRole === "super_admin" ||
+      currentUserRole === "superadmin"
+    );
+  }, [currentUserRole]);
+
+  const handleClaimLead = async (leadId: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    try {
+      const res = await claimCRMLeadAction(leadId);
+      if (!res.success) {
+        toast.error("Gagal Mengambil Lead", { description: res.error });
+        return;
+      }
+      toast.success("Lead Berhasil Diambil!", {
+        description: "Anda sekarang ditugaskan untuk mengelola lead ini.",
+      });
+      fetchLeads();
+      fetchFollowUpsData(currentUserId, currentUserRole);
+      if (selectedLeadForSheet && selectedLeadForSheet.id === leadId) {
+        setSelectedLeadForSheet((prev: any) => prev ? { ...prev, assigned_to: currentUserId } : null);
+      }
+    } catch (err: any) {
+      toast.error("Gagal Mengambil Lead", { description: err.message });
+    }
+  };
+
   const fetchLeads = useCallback(async () => {
     setLoading(true);
     try {
@@ -239,8 +274,7 @@ export default function LeadsPage() {
     if (!confirm(`Yakin ingin menghapus lead "${leadName}"?`)) return;
 
     try {
-      const { error } = await supabase.from("crm_leads").delete().eq("id", lead.id);
-      if (error) throw error;
+      await crmService.deleteLead(lead.id);
 
       toast.success("Lead berhasil dihapus");
       fetchLeads();
@@ -362,17 +396,17 @@ export default function LeadsPage() {
       <div className="flex items-center justify-between pt-3 pb-3 border-b border-border gap-2">
         <div>
           <h1 className="text-base sm:text-xl font-bold tracking-tight text-foreground flex items-center gap-2">
-            👥 CRM & Pipeline Leads
+            👥 {t("crm.title")}
           </h1>
           <p className="text-[11px] text-muted-foreground">
-            Manajemen database prospek, agenda harian, dan generator AI WhatsApp.
+            {t("crm.subtitle")}
           </p>
         </div>
 
         <div className="flex items-center gap-2">
           {!isAdminOrSuperAdmin && (
             <span className="text-[10px] font-medium text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded-lg flex items-center gap-1 shrink-0">
-              <Lock className="w-3 h-3 text-amber-500" /> Mode Agen (Kontak Disensor)
+              <Lock className="w-3 h-3 text-amber-500" /> {t("crm.agentMode")}
             </span>
           )}
 
@@ -380,7 +414,7 @@ export default function LeadsPage() {
             onClick={() => router.push("/crm/leads/create")}
             className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-8 gap-1.5 shrink-0 cursor-pointer"
           >
-            <Plus className="h-4 w-4" /> Tambah Lead
+            <Plus className="h-4 w-4" /> {t("crm.addLead")}
           </Button>
         </div>
       </div>
@@ -418,6 +452,7 @@ export default function LeadsPage() {
               </p>
             ) : (
               followUps.map((fu) => {
+                const targetLeadId = fu.crm_leads?.id || fu.lead_id;
                 const clientName = fu.crm_leads?.crm_contacts?.full_name || "Tanpa Nama";
                 const clientPhone = fu.crm_leads?.crm_contacts?.phone || "";
                 const budgetVal = fu.crm_leads?.budget || 0;
@@ -425,14 +460,34 @@ export default function LeadsPage() {
                 const timeStr = fu.followup_date
                   ? new Date(fu.followup_date).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }) + " WIB"
                   : "Hari ini";
+                const isOverdue = fu.followup_date && new Date(fu.followup_date) < new Date() && fu.status !== "completed";
+                const isToday = fu.followup_date && new Date(fu.followup_date).toDateString() === new Date().toDateString();
 
                 return (
-                  <Card key={fu.id} className="border border-border bg-card rounded-xl p-3 space-y-2 text-card-foreground">
+                  <Card
+                    key={fu.id}
+                    onClick={() => {
+                      if (targetLeadId) {
+                        router.push(`/crm/leads/${targetLeadId}?tab=followups`);
+                      }
+                    }}
+                    className="border border-border bg-card rounded-xl p-3 space-y-2 text-card-foreground cursor-pointer hover:border-emerald-500/40 transition-colors"
+                  >
                     <div className="flex items-center justify-between pb-2 border-b border-border">
                       <div className="flex items-center gap-2 min-w-0">
-                        <Badge variant="outline" className="font-mono text-[9px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 shrink-0">
-                          <Clock className="w-2.5 h-2.5 mr-1" /> {timeStr}
-                        </Badge>
+                        {isOverdue ? (
+                          <Badge variant="outline" className="font-mono text-[9px] bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20 shrink-0">
+                            Terlambat
+                          </Badge>
+                        ) : isToday ? (
+                          <Badge variant="outline" className="font-mono text-[9px] bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20 shrink-0">
+                            Hari Ini
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="font-mono text-[9px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 shrink-0">
+                            <Clock className="w-2.5 h-2.5 mr-1" /> {timeStr}
+                          </Badge>
+                        )}
                         <span className="font-bold text-xs text-foreground truncate">{clientName}</span>
                       </div>
                       <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 font-mono shrink-0">
@@ -447,7 +502,7 @@ export default function LeadsPage() {
                       <p className="text-[11px] text-muted-foreground line-clamp-2 leading-snug">{fu.notes || "Tidak ada catatan."}</p>
                     </div>
 
-                    <div className="flex items-center justify-end gap-1.5 pt-2 border-t border-border">
+                    <div className="flex items-center justify-end gap-1.5 pt-2 border-t border-border" onClick={(e) => e.stopPropagation()}>
                       <Button
                         size="sm"
                         variant="outline"
@@ -458,7 +513,7 @@ export default function LeadsPage() {
                         )}
                       >
                         {isAdminOrSuperAdmin ? <Zap className="w-3 h-3 text-amber-500 fill-amber-500" /> : <Lock className="w-3 h-3 text-muted-foreground" />}
-                        AI Writer
+                        {t("crm.aiWriter")}
                       </Button>
 
                       <Button
@@ -472,7 +527,7 @@ export default function LeadsPage() {
                         )}
                       >
                         {isAdminOrSuperAdmin ? <MessageCircle className="w-3 h-3" /> : <Lock className="w-3 h-3 text-amber-500" />}
-                        WhatsApp
+                        {t("crm.whatsapp")}
                       </Button>
                     </div>
                   </Card>
@@ -486,7 +541,7 @@ export default function LeadsPage() {
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
               <Input
-                placeholder="Cari nama prospek..."
+                placeholder={t("crm.searchLead")}
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleSearchSubmit()}
@@ -508,6 +563,7 @@ export default function LeadsPage() {
               <div className="space-y-2">
                 {leadsData.data.map((lead: any) => {
                   const st = statusConfig[lead.status] || statusConfig.new;
+                  const isUnassigned = !lead.assigned_to;
                   return (
                     <Card
                       key={lead.id}
@@ -515,17 +571,33 @@ export default function LeadsPage() {
                       className="border border-border bg-card p-3 hover:bg-muted/50 cursor-pointer transition flex items-center justify-between rounded-xl"
                     >
                       <div className="space-y-1 min-w-0 pr-2">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5 flex-wrap">
                           <p className="font-bold text-xs text-foreground truncate">{lead.contact?.full_name || "Tanpa Nama"}</p>
                           <Badge variant="outline" className={cn("text-[9px] px-1.5 py-0 border shrink-0", st.bg, st.color)}>
                             {st.label}
                           </Badge>
+                          {isUnassigned && (
+                            <Badge variant="outline" className="text-[9px] px-1.5 py-0 border shrink-0 bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20">
+                              Unassigned
+                            </Badge>
+                          )}
                         </div>
                         <p className="text-[10px] text-muted-foreground font-mono flex items-center gap-1">
                           <Phone className="w-2.5 h-2.5 text-muted-foreground" /> {formatPhoneForUser(lead.contact?.phone)}
                         </p>
                       </div>
-                      <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+                      <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                        {isUnassigned && canClaimLead && (
+                          <Button
+                            size="sm"
+                            onClick={(e) => handleClaimLead(lead.id, e)}
+                            className="h-8 text-[11px] bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 rounded-lg min-h-[36px]"
+                          >
+                            <UserCheck className="w-3.5 h-3.5 mr-1" /> Ambil
+                          </Button>
+                        )}
+                        <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                      </div>
                     </Card>
                   );
                 })}
@@ -545,14 +617,14 @@ export default function LeadsPage() {
             <CardHeader className="p-4 pb-3 border-b border-border">
               <CardTitle className="text-sm font-bold flex items-center justify-between text-foreground">
                 <span className="flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-emerald-600 dark:text-emerald-400" /> Agenda Follow-up
+                  <Clock className="w-4 h-4 text-emerald-600 dark:text-emerald-400" /> {t("crm.followupSchedule")}
                 </span>
                 <Badge variant="outline" className="text-[10px] font-mono bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20">
-                  Aktif ({followUps.length})
+                  {t("crm.activeTasks")} ({followUps.length})
                 </Badge>
               </CardTitle>
               <CardDescription className="text-xs text-muted-foreground">
-                Daftar tugas agen untuk dikontak berdasarkan catatan follow-up.
+                {t("crm.followupDesc")}
               </CardDescription>
             </CardHeader>
             <CardContent className="p-3 space-y-3 text-xs max-h-[550px] overflow-y-auto">
@@ -564,22 +636,48 @@ export default function LeadsPage() {
                 </div>
               ) : followUps.length === 0 ? (
                 <p className="text-center py-8 text-xs text-muted-foreground">
-                  Belum ada catatan follow-up tersimpan.
+                  {t("crm.noFollowup")}
                 </p>
               ) : (
                 followUps.map((fu) => {
+                  const targetLeadId = fu.crm_leads?.id || fu.lead_id;
                   const clientName = fu.crm_leads?.crm_contacts?.full_name || "Tanpa Nama";
                   const clientPhone = fu.crm_leads?.crm_contacts?.phone || "";
                   const budgetVal = fu.crm_leads?.budget || 0;
                   const timeStr = fu.followup_date
                     ? new Date(fu.followup_date).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }) + " WIB"
                     : "Hari ini";
+                  const isOverdue = fu.followup_date && new Date(fu.followup_date) < new Date() && fu.status !== "completed";
+                  const isToday = fu.followup_date && new Date(fu.followup_date).toDateString() === new Date().toDateString();
 
                   return (
-                    <div key={fu.id} className="p-3 bg-background border border-border rounded-xl space-y-2">
+                    <div
+                      key={fu.id}
+                      onClick={() => {
+                        if (targetLeadId) {
+                          router.push(`/crm/leads/${targetLeadId}?tab=followups`);
+                        }
+                      }}
+                      className="p-3 bg-background border border-border rounded-xl space-y-2 cursor-pointer hover:border-emerald-500/40 hover:bg-muted/20 transition-all"
+                    >
                       <div className="flex items-center justify-between">
-                        <span className="font-bold text-foreground">{clientName}</span>
-                        <span className="font-mono text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded border border-border">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="font-bold text-foreground truncate">{clientName}</span>
+                          {isOverdue ? (
+                            <Badge variant="outline" className="text-[9px] bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20 shrink-0">
+                              Terlambat
+                            </Badge>
+                          ) : isToday ? (
+                            <Badge variant="outline" className="text-[9px] bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20 shrink-0">
+                              Hari Ini
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-[9px] bg-muted text-muted-foreground border-border shrink-0">
+                              Terjadwal
+                            </Badge>
+                          )}
+                        </div>
+                        <span className="font-mono text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded border border-border shrink-0">
                           {timeStr}
                         </span>
                       </div>
@@ -588,7 +686,7 @@ export default function LeadsPage() {
                         {fu.notes || "Tidak ada catatan khusus."}
                       </p>
 
-                      <div className="flex items-center justify-between pt-1 border-t border-border">
+                      <div className="flex items-center justify-between pt-1 border-t border-border" onClick={(e) => e.stopPropagation()}>
                         <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
                           {formatCurrency(budgetVal)}
                         </span>
@@ -598,7 +696,7 @@ export default function LeadsPage() {
                             variant="ghost"
                             onClick={() => handleGenerateAiMessage(fu)}
                             className="h-7 w-7 p-0 cursor-pointer hover:bg-muted"
-                            title={isAdminOrSuperAdmin ? "AI Writer" : "Khusus Admin"}
+                            title={isAdminOrSuperAdmin ? t("crm.aiWriter") : "Khusus Admin"}
                           >
                             {isAdminOrSuperAdmin ? <Zap className="w-3.5 h-3.5 text-amber-500 fill-amber-500" /> : <Lock className="w-3.5 h-3.5 text-muted-foreground" />}
                           </Button>
@@ -630,10 +728,10 @@ export default function LeadsPage() {
             <CardHeader className="p-4 pb-3 border-b border-border flex flex-row items-center justify-between">
               <div>
                 <CardTitle className="text-sm font-bold flex items-center gap-2 text-foreground">
-                  <User className="w-4 h-4 text-emerald-600 dark:text-emerald-400" /> Direktori Database Leads
+                  <User className="w-4 h-4 text-emerald-600 dark:text-emerald-400" /> {t("crm.leadsDirectory")}
                 </CardTitle>
                 <CardDescription className="text-xs text-muted-foreground">
-                  Daftar seluruh calon pembeli dan status pipeline konversi.
+                  {t("crm.leadsDesc")}
                 </CardDescription>
               </div>
 
@@ -641,7 +739,7 @@ export default function LeadsPage() {
                 <div className="relative w-48">
                   <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                   <Input
-                    placeholder="Cari lead..."
+                    placeholder={t("crm.searchLead")}
                     value={searchInput}
                     onChange={(e) => setSearchInput(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && handleSearchSubmit()}
@@ -669,16 +767,17 @@ export default function LeadsPage() {
                 <Table>
                   <TableHeader className="bg-muted/50">
                     <TableRow className="border-b border-border">
-                      <TableHead className="text-xs font-semibold text-muted-foreground">Nama Kontak</TableHead>
-                      <TableHead className="text-xs font-semibold text-muted-foreground">Status Pipeline</TableHead>
-                      <TableHead className="text-xs font-semibold text-muted-foreground">Budget</TableHead>
-                      <TableHead className="text-xs font-semibold text-muted-foreground text-right">Aksi</TableHead>
+                      <TableHead className="text-xs font-semibold text-muted-foreground">{t("crm.tableName")}</TableHead>
+                      <TableHead className="text-xs font-semibold text-muted-foreground">{t("crm.tableStatus")}</TableHead>
+                      <TableHead className="text-xs font-semibold text-muted-foreground">{t("crm.tableBudget")}</TableHead>
+                      <TableHead className="text-xs font-semibold text-muted-foreground text-right">{t("crm.tableAction")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {leadsData.data.map((lead: any) => {
                       const st = statusConfig[lead.status] || statusConfig.new;
                       const hasAccess = canModifyLead(lead);
+                      const isUnassigned = !lead.assigned_to;
 
                       return (
                         <TableRow
@@ -691,15 +790,33 @@ export default function LeadsPage() {
                             <p className="text-[10px] text-muted-foreground font-mono">{formatPhoneForUser(lead.contact?.phone)}</p>
                           </TableCell>
                           <TableCell className="p-3">
-                            <Badge variant="outline" className={cn("text-[10px] font-semibold border px-2 py-0.5", st.bg, st.color)}>
-                              {st.label}
-                            </Badge>
+                            <div className="flex flex-col gap-1 items-start">
+                              <Badge variant="outline" className={cn("text-[10px] font-semibold border px-2 py-0.5", st.bg, st.color)}>
+                                {st.label}
+                              </Badge>
+                              {isUnassigned && (
+                                <Badge variant="outline" className="text-[9px] font-normal border px-1.5 py-0 bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20">
+                                  Belum Ditugaskan
+                                </Badge>
+                              )}
+                            </div>
                           </TableCell>
                           <TableCell className="p-3 font-mono font-semibold text-xs text-emerald-600 dark:text-emerald-400">
                             {lead.budget ? formatCurrency(lead.budget) : "-"}
                           </TableCell>
                           <TableCell className="p-3 text-right" onClick={(e) => e.stopPropagation()}>
                             <div className="flex items-center justify-end gap-1">
+                              {isUnassigned && canClaimLead && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 text-[10px] gap-1 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 cursor-pointer"
+                                  onClick={(e) => handleClaimLead(lead.id, e)}
+                                  title="Ambil Lead ini sebagai penanggung jawab"
+                                >
+                                  <UserCheck className="w-3 h-3" /> Ambil
+                                </Button>
+                              )}
                               <Button
                                 variant="ghost"
                                 size="icon"
@@ -718,18 +835,27 @@ export default function LeadsPage() {
                                 <Eye className="w-3.5 h-3.5" />
                               </Button>
 
-                              {hasAccess && (
+                              {(hasAccess || (isUnassigned && canClaimLead)) && (
                                 <DropdownMenu>
                                   <DropdownMenuTrigger className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer">
                                     <MoreHorizontal className="w-3.5 h-3.5" />
                                   </DropdownMenuTrigger>
                                   <DropdownMenuContent align="end" className="w-40 bg-card border-border text-card-foreground text-xs">
-                                    <DropdownMenuItem onClick={() => router.push(`/crm/leads/${lead.id}/edit`)}>
-                                      <Pencil className="w-3.5 h-3.5 mr-2" /> Edit Lead
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem onClick={() => handleDelete(lead)} className="text-rose-600 dark:text-rose-400">
-                                      <Trash2 className="w-3.5 h-3.5 mr-2" /> Hapus
-                                    </DropdownMenuItem>
+                                    {isUnassigned && canClaimLead && (
+                                      <DropdownMenuItem onClick={(e) => handleClaimLead(lead.id, e as any)} className="text-emerald-600 dark:text-emerald-400 font-semibold">
+                                        <UserCheck className="w-3.5 h-3.5 mr-2" /> Ambil Lead
+                                      </DropdownMenuItem>
+                                    )}
+                                    {hasAccess && (
+                                      <>
+                                        <DropdownMenuItem onClick={() => router.push(`/crm/leads/${lead.id}/edit`)}>
+                                          <Pencil className="w-3.5 h-3.5 mr-2" /> {t("crm.editLead.title")}
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem onClick={() => handleDelete(lead)} className="text-rose-600 dark:text-rose-400">
+                                          <Trash2 className="w-3.5 h-3.5 mr-2" /> {t("crm.deleteLead")}
+                                        </DropdownMenuItem>
+                                      </>
+                                    )}
                                   </DropdownMenuContent>
                                 </DropdownMenu>
                               )}
@@ -789,10 +915,19 @@ export default function LeadsPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-2 pt-2">
+            {!selectedLeadForSheet?.assigned_to && canClaimLead && (
+              <Button
+                onClick={() => handleClaimLead(selectedLeadForSheet.id)}
+                className="w-full text-xs h-10 gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer font-semibold shadow-sm min-h-[44px]"
+              >
+                <UserCheck className="w-4 h-4" /> Ambil Lead Ini
+              </Button>
+            )}
+
+            <div className="grid grid-cols-2 gap-2 pt-1">
               <Button
                 variant="outline"
-                className="w-full text-xs h-9 border-border bg-background text-foreground cursor-pointer"
+                className="w-full text-xs h-10 border-border bg-background text-foreground cursor-pointer min-h-[44px]"
                 onClick={() => {
                   if (selectedLeadForSheet) {
                     router.push(`/crm/leads/${selectedLeadForSheet.id}`);
@@ -804,14 +939,14 @@ export default function LeadsPage() {
               </Button>
               <Button
                 className={cn(
-                  "w-full text-xs h-9 gap-1 cursor-pointer",
+                  "w-full text-xs h-10 gap-1 cursor-pointer min-h-[44px]",
                   isAdminOrSuperAdmin
                     ? "bg-emerald-600 hover:bg-emerald-700 text-white"
                     : "bg-muted text-muted-foreground border border-border"
                 )}
                 onClick={() => handleOpenWhatsApp(selectedLeadForSheet?.contact?.phone, selectedLeadForSheet?.contact?.full_name, undefined, selectedLeadForSheet?.id)}
               >
-                {isAdminOrSuperAdmin ? <MessageCircle className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5 text-amber-500" />} WhatsApp
+                {isAdminOrSuperAdmin ? <MessageCircle className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5 text-amber-500" />} {t("crm.whatsapp")}
               </Button>
             </div>
           </div>
@@ -826,7 +961,7 @@ export default function LeadsPage() {
           <DialogHeader>
             <div className="flex items-center justify-between">
               <DialogTitle className="text-sm font-bold flex items-center gap-2 text-foreground">
-                <Sparkles className="w-4 h-4 text-amber-500 fill-amber-500" /> AI Follow-Up Writer
+                <Sparkles className="w-4 h-4 text-amber-500 fill-amber-500" /> {t("crm.aiWriter")}
               </DialogTitle>
               <Badge variant="outline" className={isAdminOrSuperAdmin ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 text-[10px]" : "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20 text-[10px]"}>
                 {isAdminOrSuperAdmin ? "Admin Access" : "Khusus Admin"}

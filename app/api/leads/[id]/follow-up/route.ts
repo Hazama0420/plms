@@ -1,49 +1,29 @@
 // app/api/leads/[id]/follow-up/route.ts
-import { createServerClient } from "@supabase/ssr";
-import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
+import { requireRole } from "@/lib/api-auth";
 import { notifyEvent } from "@/lib/notification-helper";
+import { normalizeRole } from "@/lib/permissions";
+import { recordAudit } from "@/lib/audit-log";
 
 export async function POST(
   req: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
+  // Otorisasi lewat requireRole(), bukan pemeriksaan buatan sendiri.
+  //
+  // Versi sebelumnya mencocokkan role mentah dengan daftar
+  // ["super_admin", "admin", "agent"] — tanpa ejaan 'superadmin'. Kolom
+  // users.role di produksi memuat kedua ejaan, sehingga Super Admin berejaan
+  // lama justru ditolak 403 di endpointnya sendiri. requireRole() memakai
+  // normalizeRole() lebih dulu, jadi kedua ejaan diperlakukan sama, dan akun
+  // berstatus pending/suspended ikut tersaring.
+  const auth = await requireRole(["super_admin", "admin", "agent"]);
+  if (!auth.ok) return auth.response;
+
+  const { supabase, userId } = auth.ctx;
+
   try {
-    const cookieStore = await cookies();
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          get(name: string) {
-            return cookieStore.get(name)?.value;
-          },
-          set(name: string, value: string, options: any) {
-            cookieStore.set({ name, value, ...options });
-          },
-          remove(name: string, options: any) {
-            cookieStore.set({ name, value: "", ...options });
-          },
-        },
-      }
-    );
-
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const { data: userData } = await supabase
-      .from("users")
-      .select("role")
-      .eq("id", user.id)
-      .maybeSingle();
-
-    if (!userData || !["super_admin", "admin", "agent"].includes(userData.role)) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
-    const { id: leadId } = await context.params; // ✅ Await params
+    const { id: leadId } = await context.params;
     const body = await req.json();
     const { followup_date, notes, assigned_to } = body;
 
@@ -57,12 +37,40 @@ export async function POST(
     // Tanpa penanggung jawab eksplisit, agenda menjadi milik pembuatnya.
     // Sebelumnya disimpan sebagai null, sehingga agendanya tidak muncul di
     // daftar siapa pun dan tidak ada yang bisa dinotifikasi.
-    const assignee: string = assigned_to || user.id;
+    const { data: lead } = await supabase
+      .from("crm_leads")
+      .select("id, assigned_to, created_by")
+      .eq("id", leadId)
+      .maybeSingle();
+    if (!lead) {
+      return NextResponse.json({ error: "Lead tidak ditemukan atau tidak berwenang." }, { status: 404 });
+    }
+
+    const { data: profile } = await supabase.from("users").select("role").eq("id", userId).single();
+    const role = normalizeRole(profile?.role);
+    const privileged = role === "admin" || role === "super_admin";
+    const authorizedLead = privileged || lead.assigned_to === userId || lead.created_by === userId;
+    if (!authorizedLead) {
+      return NextResponse.json({ error: "Anda tidak berwenang membuat Follow-Up untuk Lead ini." }, { status: 403 });
+    }
+
+    const assignee: string = privileged ? (assigned_to || userId) : userId;
+    if (privileged && assigned_to) {
+      const { data: assigneeProfile } = await supabase
+        .from("users")
+        .select("role")
+        .eq("id", assigned_to)
+        .maybeSingle();
+      if (!assigneeProfile || normalizeRole(assigneeProfile.role) !== "agent") {
+        return NextResponse.json({ error: "Follow-Up hanya dapat ditugaskan kepada Agent." }, { status: 400 });
+      }
+    }
 
     const { data, error } = await supabase
       .from("crm_followups")
       .insert({
         lead_id: leadId,
+        created_by: userId,
         assigned_to: assignee,
         followup_date: followup_date,
         notes: notes || null,
@@ -79,13 +87,20 @@ export async function POST(
       );
     }
 
+    await recordAudit({
+      actor: { userId, email: auth.ctx.email, role: auth.ctx.role },
+      action: "followup.created",
+      targetId: leadId,
+      detail: { followup_id: data.id, assigned_to: assignee, followup_date },
+    });
+
     // Beri tahu penanggung jawab agenda.
     //
     // Sengaja dilewati bila agenda dibuat untuk diri sendiri: penggunanya baru
     // saja mengisi formulirnya, jadi notifikasi itu hanya mengulang perbuatan
     // sendiri. Notifikasi tetap dikirim untuk penugasan ke orang lain, yang
     // memang tidak tahu apa-apa sampai diberi tahu.
-    if (assignee !== user.id) {
+    if (assignee !== userId) {
       const jadwal = new Date(followup_date).toLocaleString("id-ID", {
         dateStyle: "full",
         timeStyle: "short",
@@ -97,7 +112,7 @@ export async function POST(
         title: "Agenda follow-up baru untuk Anda",
         message: `Follow-up dijadwalkan pada ${jadwal}.`,
         link: `/crm/leads/${leadId}`,
-        senderId: user.id,
+        senderId: userId,
       }).catch((err) => console.error("Gagal kirim notifikasi follow-up:", err));
     }
 
@@ -105,11 +120,9 @@ export async function POST(
       success: true,
       data,
     });
-  } catch (error: any) {
-    console.error("Error in follow-up API:", error);
-    return NextResponse.json(
-      { error: error.message || "Internal server error" },
-      { status: 500 }
-    );
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    console.error("Error in follow-up API:", detail);
+    return NextResponse.json({ error: detail }, { status: 500 });
   }
 }

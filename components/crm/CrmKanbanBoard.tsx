@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase/client";
+import { updateCRMLeadStatusAction, claimCRMLeadAction } from "@/actions/crm-leads.action";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,8 +27,10 @@ import {
   GripVertical,
   ChevronRight,
   Lock,
+  UserPlus,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "@/hooks/use-translation";
 
 export type LeadStatus =
   | "new"
@@ -38,23 +41,6 @@ export type LeadStatus =
   | "won"
   | "lost";
 
-const STATUS_STAGES: { id: LeadStatus; label: string; color: string; dotColor: string }[] = [
-  { id: "new", label: "New Lead", color: "border-blue-500/30", dotColor: "bg-blue-500" },
-  { id: "contacted", label: "Contacted", color: "border-amber-500/30", dotColor: "bg-amber-500" },
-  { id: "qualified", label: "Qualified", color: "border-cyan-500/30", dotColor: "bg-cyan-500" },
-  { id: "proposal", label: "Proposal", color: "border-purple-500/30", dotColor: "bg-purple-500" },
-  { id: "negotiation", label: "Negotiation", color: "border-orange-500/30", dotColor: "bg-orange-500" },
-  { id: "won", label: "Won (Deal)", color: "border-emerald-500/30", dotColor: "bg-emerald-500" },
-  { id: "lost", label: "Lost", color: "border-rose-500/30", dotColor: "bg-rose-500" },
-];
-
-/**
- * Bentuk minimal lead — hanya field yang benar-benar dibaca board ini.
- *
- * Baris dari Supabase jauh lebih lebar dan masih mengalir sebagai `any` di
- * jalur pengambilan data; tipe ini dipakai pada pengelompokan dan penjumlahan
- * agar bagian yang dirender punya kontrak yang jelas.
- */
 interface KanbanLead {
   id: string;
   status: LeadStatus;
@@ -62,15 +48,11 @@ interface KanbanLead {
   client_phone?: string;
   interest_type?: string | null;
   budget?: number | null;
+  assigned_to?: string | null;
+  user_id?: string | null;
+  created_by?: string | null;
 }
 
-/**
- * Rupiah ringkas untuk ruang sempit: 2_400_000_000 -> "2,4 M", 400_000_000 -> "400 jt".
- *
- * Versi lama selalu membagi dengan satu miliar, sehingga budget 400 juta
- * tampil sebagai "0.4M". Mengikuti pola formatTerbilangRupiah di
- * components/create-property/steps/StepPriceDescription.tsx.
- */
 function formatCompactRupiah(num: number): string {
   if (num >= 1_000_000_000) return `${(num / 1_000_000_000).toFixed(1).replace(".", ",")} M`;
   if (num >= 1_000_000) return `${Math.round(num / 1_000_000)} jt`;
@@ -79,6 +61,18 @@ function formatCompactRupiah(num: number): string {
 
 export function CrmKanbanBoard() {
   const router = useRouter();
+  const { t } = useTranslation();
+
+  const STATUS_STAGES: { id: LeadStatus; label: string; color: string; dotColor: string }[] = useMemo(() => [
+    { id: "new", label: t("crm.kanban.stages.new") || "New Lead", color: "border-blue-500/30", dotColor: "bg-blue-500" },
+    { id: "contacted", label: t("crm.kanban.stages.contacted") || "Contacted", color: "border-amber-500/30", dotColor: "bg-amber-500" },
+    { id: "qualified", label: t("crm.kanban.stages.qualified") || "Qualified", color: "border-cyan-500/30", dotColor: "bg-cyan-500" },
+    { id: "proposal", label: t("crm.kanban.stages.proposal") || "Proposal", color: "border-purple-500/30", dotColor: "bg-purple-500" },
+    { id: "negotiation", label: t("crm.kanban.stages.negotiation") || "Negotiation", color: "border-orange-500/30", dotColor: "bg-orange-500" },
+    { id: "won", label: t("crm.kanban.stages.won") || "Won (Deal)", color: "border-emerald-500/30", dotColor: "bg-emerald-500" },
+    { id: "lost", label: t("crm.kanban.stages.lost") || "Lost", color: "border-rose-500/30", dotColor: "bg-rose-500" },
+  ], [t]);
+
   const [leads, setLeads] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>("");
@@ -89,7 +83,6 @@ export function CrmKanbanBoard() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [currentUserRole, setCurrentUserRole] = useState<string>("");
 
-  // Cek apakah user berkedudukan Admin/SuperAdmin
   const isAdminOrSuperAdmin = useMemo(() => {
     return (
       currentUserRole === "super_admin" ||
@@ -98,23 +91,36 @@ export function CrmKanbanBoard() {
     );
   }, [currentUserRole]);
 
-  // 🔒 HAK AKSES DRAG & DROP: BISA UNTUK SEMUA ROLE KECUALI 'viewer' / 'tamu' / 'guest'
   const canDragAndMove = useMemo(() => {
     const role = currentUserRole.toLowerCase().trim();
     return role !== "viewer" && role !== "tamu" && role !== "guest";
   }, [currentUserRole]);
 
-  // 🛡️ HELPER MASKING NOMOR TELEPON LENGKAP
-  const formatPhoneForUser = useCallback(
-    (phone?: string) => {
-      if (!phone) return "-";
-      if (isAdminOrSuperAdmin) return phone;
-      return "08xx-xxxx-xxxx";
+  const [claimingLeadId, setClaimingLeadId] = useState<string | null>(null);
+
+  const canClaim = useMemo(() => {
+    const role = currentUserRole.toLowerCase().trim();
+    return ["agent", "marketing", "admin", "super_admin", "superadmin"].includes(role);
+  }, [currentUserRole]);
+
+  const canAccessLeadContact = useCallback(
+    (lead?: any) => {
+      if (isAdminOrSuperAdmin) return true;
+      if (!currentUserId || !lead) return false;
+      return lead.assigned_to === currentUserId;
     },
-    [isAdminOrSuperAdmin]
+    [isAdminOrSuperAdmin, currentUserId]
   );
 
-  // Fetch Data Leads & Contacts dari Supabase
+  const formatPhoneForUser = useCallback(
+    (phone?: string, lead?: any) => {
+      if (!phone) return "-";
+      if (isAdminOrSuperAdmin || (lead && canAccessLeadContact(lead))) return phone;
+      return "08xx-xxxx-xxxx";
+    },
+    [isAdminOrSuperAdmin, canAccessLeadContact]
+  );
+
   const fetchKanbanLeads = useCallback(async () => {
     setLoading(true);
     try {
@@ -179,7 +185,7 @@ export function CrmKanbanBoard() {
     fetchKanbanLeads();
   }, [fetchKanbanLeads]);
 
-  // Update Status Prospek & Catat Aktivitas ke crm_activities
+  // 🔒 MEMINDAHKAN STATUS MENGGUNAKAN SERVER ACTION (MENCEGAH LOMPATAN ILEGAL)
   const handleMoveStatus = async (lead: any, nextStatus: LeadStatus) => {
     if (!canDragAndMove) {
       toast.error("Akses Ditolak!", {
@@ -190,7 +196,6 @@ export function CrmKanbanBoard() {
 
     const leadId = lead.id;
     const clientName = lead.client_name;
-    const prevStatus = lead.status;
 
     try {
       // Optimistic UI Update
@@ -198,35 +203,22 @@ export function CrmKanbanBoard() {
         prev.map((item) => (item.id === leadId ? { ...item, status: nextStatus } : item))
       );
 
-      const { error } = await supabase
-        .from("crm_leads")
-        .update({ status: nextStatus, updated_at: new Date().toISOString() })
-        .eq("id", leadId);
+      // 🔒 Panggil Next.js Server Action untuk validasi pipeline transition
+      const result = await updateCRMLeadStatusAction(leadId, nextStatus);
 
-      if (error) throw error;
-
-      // 🔴 RECORD AKTIVITAS KE TABLE crm_activities
-      if (currentUserId) {
-        await supabase.from("crm_activities").insert([
-          {
-            lead_id: leadId,
-            user_id: currentUserId,
-            activity_type: "Status Update",
-            notes: `Status prospek ${clientName} dipindahkan dari [${prevStatus.toUpperCase()}] ke [${nextStatus.toUpperCase()}]`,
-            created_at: new Date().toISOString(),
-          },
-        ]);
+      if (!result.success) {
+        throw new Error(result.error || "Gagal memperbarui status");
       }
 
       const targetLabel = STATUS_STAGES.find((s) => s.id === nextStatus)?.label;
       toast.success(`Status ${clientName} dipindahkan ke "${targetLabel}"`);
     } catch (err: any) {
-      toast.error("Gagal memperbarui status: " + err.message);
+      toast.error(err.message || "Gagal memperbarui status");
+      // Revert Optimistic UI jika ditolak server
       fetchKanbanLeads();
     }
   };
 
-  // Drag & Drop Handlers
   const handleDragStart = (e: React.DragEvent, lead: any) => {
     if (!canDragAndMove) {
       e.preventDefault();
@@ -258,12 +250,11 @@ export function CrmKanbanBoard() {
     setDraggedLead(null);
   };
 
-  // 🛡️ PENANGANAN WHATSAPP DIPROTEKSI UNTUK AGENT
-  const handleOpenWhatsApp = (phone?: string, name?: string) => {
-    if (!isAdminOrSuperAdmin) {
+  const handleOpenWhatsApp = (phone?: string, name?: string, lead?: any) => {
+    if (!canAccessLeadContact(lead)) {
       toast.error("Akses Kontak Terkunci!", {
         description:
-          "Nomor kontak disembunyikan demi keamanan data perusahaan. Gunakan sistem pesan terpusat atau hubungi Admin.",
+          "Nomor kontak disembunyikan demi keamanan data perusahaan. Klaim lead ini terlebih dahulu untuk mengakses kontak klien.",
       });
       return;
     }
@@ -279,6 +270,41 @@ export function CrmKanbanBoard() {
     window.open(`https://wa.me/${cleanPhone}?text=${text}`, "_blank");
   };
 
+  const handleClaimLead = async (leadId: string, clientName?: string) => {
+    if (!canClaim) {
+      toast.error("Akses Ditolak!", {
+        description: "Role Anda tidak memiliki izin untuk mengklaim prospek.",
+      });
+      return;
+    }
+
+    setClaimingLeadId(leadId);
+    try {
+      const res = await claimCRMLeadAction(leadId);
+      if (!res.success) {
+        toast.error(res.error || "Gagal mengklaim Lead");
+        fetchKanbanLeads();
+        return;
+      }
+
+      toast.success(`Berhasil mengklaim Lead "${clientName || "Prospek"}"!`, {
+        description: "Anda sekarang bertindak sebagai penanggung jawab lead ini.",
+      });
+
+      // Update lead state optimistically
+      setLeads((prev) =>
+        prev.map((item) =>
+          item.id === leadId ? { ...item, assigned_to: currentUserId } : item
+        )
+      );
+    } catch (err: any) {
+      toast.error("Gagal mengklaim Lead: " + err.message);
+      fetchKanbanLeads();
+    } finally {
+      setClaimingLeadId(null);
+    }
+  };
+
   const filteredLeads = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
     if (!q) return leads;
@@ -290,13 +316,6 @@ export function CrmKanbanBoard() {
     });
   }, [leads, searchQuery]);
 
-  /**
-   * Leads dikelompokkan per stage sekali saja.
-   *
-   * Bar distribusi, chip, baris meta, flow line, dan kolom board semuanya butuh
-   * angka yang sama. Tanpa ini tiap bagian memanggil .filter() sendiri —
-   * lima kali tujuh pemindaian pada setiap render.
-   */
   const stageBuckets = useMemo(() => {
     const buckets = new Map<LeadStatus, KanbanLead[]>(STATUS_STAGES.map((s) => [s.id, []]));
     for (const lead of filteredLeads) {
@@ -312,9 +331,8 @@ export function CrmKanbanBoard() {
 
   return (
     <div className="space-y-4 text-foreground">
-      {/* 🚀 BAR DISTRIBUSI PIPELINE + CHIP SELECTOR MOBILE */}
+      {/* BAR DISTRIBUSI PIPELINE MOBILE */}
       <div className="md:hidden space-y-3">
-        {/* Bar proporsi stage */}
         <div className="flex h-1.5 rounded-full bg-muted overflow-hidden">
           {STATUS_STAGES.map((stage) => {
             const count = stageBuckets.get(stage.id)?.length || 0;
@@ -329,7 +347,6 @@ export function CrmKanbanBoard() {
           })}
         </div>
 
-        {/* Baris chip selector */}
         <div className="-mx-3 px-3 flex gap-1.5 overflow-x-auto pb-1">
           {STATUS_STAGES.map((stage) => {
             const count = stageBuckets.get(stage.id)?.length || 0;
@@ -354,13 +371,12 @@ export function CrmKanbanBoard() {
           })}
         </div>
 
-        {/* Meta stage aktif — sekali, di luar loop kolom */}
         <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
           <span className="font-semibold text-foreground">
             {STATUS_STAGES.find((s) => s.id === activeStage)?.label}
           </span>
           <span>·</span>
-          <span>{stageBuckets.get(activeStage)?.length || 0} prospek</span>
+          <span>{stageBuckets.get(activeStage)?.length || 0} {t("crm.kanban.prospects")}</span>
           {sumBudget(stageBuckets.get(activeStage) || []) > 0 && (
             <>
               <span>·</span>
@@ -372,7 +388,7 @@ export function CrmKanbanBoard() {
         </div>
       </div>
 
-      {/* 🚀 INDIKATOR ALUR TALI TERHUBUNG (FLOW LINE) DESKTOP */}
+      {/* FLOW LINE DESKTOP */}
       <div className="hidden md:flex items-center justify-between bg-card border border-border p-2.5 rounded-xl overflow-x-auto">
         {STATUS_STAGES.map((stage, idx) => {
           const count = stageBuckets.get(stage.id)?.length || 0;
@@ -393,12 +409,12 @@ export function CrmKanbanBoard() {
         })}
       </div>
 
-      {/* TOOLBAR PENCARIAN & STATISTIK ROLE */}
+      {/* TOOLBAR */}
       <div className="flex flex-col sm:flex-row sm:items-center gap-2">
         <div className="relative w-full sm:max-w-xs">
           <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-muted-foreground" />
           <Input
-            placeholder="Cari nama prospek, minat..."
+            placeholder={t("crm.kanban.searchPlaceholder")}
             className="pl-8 h-8 text-xs rounded-lg bg-background border-border text-foreground placeholder:text-muted-foreground focus-visible:ring-emerald-500"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -406,11 +422,10 @@ export function CrmKanbanBoard() {
         </div>
 
         <div className="flex items-center gap-2 w-full sm:w-auto sm:ml-auto justify-end">
-          {/* BADGE KEAMANAN ROLE — teks panjang disembunyikan di ponsel */}
           {!isAdminOrSuperAdmin && (
             <span className="text-[10px] font-medium text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-1 rounded-lg flex items-center gap-1 shrink-0">
-              <Lock className="w-3 h-3 shrink-0" /> Mode Agen
-              <span className="hidden sm:inline">(Kontak Disensor)</span>
+              <Lock className="w-3 h-3 shrink-0" /> {t("crm.kanban.agentMode")}
+              <span className="hidden sm:inline"> {t("crm.kanban.contactsCensored")}</span>
             </span>
           )}
 
@@ -428,17 +443,13 @@ export function CrmKanbanBoard() {
             onClick={() => router.push("/crm/leads/create")}
             className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold gap-1.5 h-8 px-3 rounded-lg cursor-pointer shadow-xs"
           >
-            <Plus className="w-3.5 h-3.5" /> Lead Baru
+            <Plus className="w-3.5 h-3.5" /> {t("crm.kanban.newLead")}
           </Button>
         </div>
       </div>
 
-      {/* KANBAN BOARD
-          Mobile: hanya stage terpilih yang tampil, tanpa bingkai kolom.
-          Desktop (md+): kolom selebar 250px yang digeser horizontal. Grid 7 kolom
-          yang lama hanya menyisakan ~100px per kolom, dan itu sebabnya seluruh
-          teks dulu terpaksa turun ke 9px. */}
-      <div className="flex flex-col md:flex-row md:items-start md:gap-3 md:overflow-x-auto md:pb-3">
+      {/* KANBAN BOARD GRID */}
+      <div className="flex flex-col md:flex-row md:items-start md:gap-3 md:overflow-x-auto md:pb-3 scrollbar-thin">
         {STATUS_STAGES.map((stage) => {
           const stageLeads = stageBuckets.get(stage.id) || [];
           const totalBudget = sumBudget(stageLeads);
@@ -452,17 +463,13 @@ export function CrmKanbanBoard() {
               onDrop={(e) => handleDrop(e, stage.id)}
               className={cn(
                 "flex flex-col transition-all md:w-[250px] md:shrink-0",
-                // Bingkai, padding, dan tinggi minimum hanya untuk desktop.
                 "border-0 p-0 bg-transparent min-h-0",
                 "md:rounded-xl md:border md:p-2 md:bg-card/60 md:min-h-[440px]",
                 stage.color,
-                // Di ponsel hanya stage aktif yang dirender terlihat. Kolom lain
-                // tetap ada di DOM untuk desktop, jadi tidak ada JSX terduplikasi.
                 stage.id !== activeStage && "hidden md:flex",
                 isOver && "md:bg-emerald-500/10 md:border-emerald-500 md:border-dashed"
               )}
             >
-              {/* HEADER KOLOM — di ponsel perannya diambil chip + baris meta di atas */}
               <div className="hidden md:flex items-center justify-between pb-2 mb-2 border-b border-border">
                 <div className="flex items-center gap-1.5 min-w-0">
                   <span className={cn("w-2 h-2 rounded-full shrink-0", stage.dotColor)} />
@@ -478,15 +485,12 @@ export function CrmKanbanBoard() {
                 )}
               </div>
 
-              {/* LIST KARTU LEADS RINGKAS */}
               <div className="space-y-2 flex-1 md:overflow-y-auto">
                 {loading && stageLeads.length === 0 ? (
-                  // Tanpa ini, board yang sedang memuat tampil sebagai "belum ada
-                  // prospek" — pesan kosong yang salah.
                   <div className="h-14 rounded-lg bg-muted/60 animate-pulse md:h-16" />
                 ) : stageLeads.length === 0 ? (
                   <div className="flex items-center justify-center rounded-lg border border-dashed border-border py-3 md:h-16">
-                    <span className="text-[10px] text-muted-foreground">Belum ada prospek</span>
+                    <span className="text-[10px] text-muted-foreground">{t("crm.kanban.noProspects")}</span>
                   </div>
                 ) : (
                   stageLeads.map((lead) => (
@@ -500,15 +504,11 @@ export function CrmKanbanBoard() {
                         draggedLead?.id === lead.id && "opacity-30"
                       )}
                     >
-                      {/* BARIS 1: nama + WA + menu */}
                       <div className="flex items-center gap-1">
                         {canDragAndMove ? (
-                          // Seret memakai HTML5 drag events, yang tidak pernah
-                          // menyala di layar sentuh. Gagangnya hanya ditampilkan
-                          // di tempat yang benar-benar bisa menyeret.
                           <GripVertical className="hidden md:block w-3 h-3 text-muted-foreground shrink-0" />
                         ) : (
-                          <span title="Terkunci untuk Viewer/Tamu" className="inline-flex items-center shrink-0">
+                          <span title={t("crm.kanban.lockedViewer")} className="inline-flex items-center shrink-0">
                             <Lock className="w-2.5 h-2.5 text-amber-500" />
                           </span>
                         )}
@@ -522,20 +522,20 @@ export function CrmKanbanBoard() {
 
                         <button
                           type="button"
-                          onClick={() => handleOpenWhatsApp(lead.client_phone, lead.client_name)}
+                          onClick={() => handleOpenWhatsApp(lead.client_phone, lead.client_name, lead)}
                           className={cn(
                             "h-7 w-7 shrink-0 rounded flex items-center justify-center transition-colors cursor-pointer",
-                            isAdminOrSuperAdmin
+                            canAccessLeadContact(lead)
                               ? "text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10"
                               : "text-muted-foreground hover:text-amber-500"
                           )}
                           title={
-                            isAdminOrSuperAdmin
+                            canAccessLeadContact(lead)
                               ? "Chat WhatsApp Direct"
-                              : "Kontak Terkunci demi Keamanan"
+                              : "Kontak Terkunci demi Keamanan (Ambil Lead untuk Akses)"
                           }
                         >
-                          {isAdminOrSuperAdmin ? (
+                          {canAccessLeadContact(lead) ? (
                             <MessageCircle className="w-3.5 h-3.5" />
                           ) : (
                             <Lock className="w-3 h-3 text-amber-500" />
@@ -546,12 +546,21 @@ export function CrmKanbanBoard() {
                           <DropdownMenuTrigger className="h-7 w-7 shrink-0 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer">
                             <MoreVertical className="w-3.5 h-3.5" />
                           </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="bg-card border-border text-card-foreground text-xs w-36">
+                          <DropdownMenuContent align="end" className="bg-card border-border text-card-foreground text-xs w-40">
                             <DropdownMenuItem onClick={() => router.push(`/crm/leads/${lead.id}`)}>
-                              <Eye className="w-3 h-3 mr-1.5 text-emerald-600 dark:text-emerald-400" /> Detail Lead
+                              <Eye className="w-3 h-3 mr-1.5 text-emerald-600 dark:text-emerald-400" /> {t("crm.kanban.detailLead")}
                             </DropdownMenuItem>
 
-                            {/* Pilihan Move Stage */}
+                            {!lead.assigned_to && canClaim && (
+                              <DropdownMenuItem
+                                onClick={() => handleClaimLead(lead.id, lead.client_name)}
+                                disabled={claimingLeadId === lead.id}
+                                className="text-emerald-600 dark:text-emerald-400 font-bold cursor-pointer"
+                              >
+                                <UserPlus className="w-3 h-3 mr-1.5" /> {t("crm.kanban.claimLead") || "Ambil Lead"}
+                              </DropdownMenuItem>
+                            )}
+
                             {STATUS_STAGES.filter((s) => s.id !== lead.status).map((s) => (
                               <DropdownMenuItem
                                 key={s.id}
@@ -566,14 +575,12 @@ export function CrmKanbanBoard() {
                         </DropdownMenu>
                       </div>
 
-                      {/* BARIS 2: budget */}
                       {Boolean(lead.budget) && (
                         <div className="text-[11px] md:text-xs font-bold text-emerald-600 dark:text-emerald-400 font-mono">
                           Rp {(lead.budget || 0).toLocaleString("id-ID")}
                         </div>
                       )}
 
-                      {/* BARIS 3: minat + nomor telepon (disensor untuk non-admin) */}
                       <div className="flex items-center gap-1.5 text-[10px] md:text-[11px] text-muted-foreground">
                         {lead.interest_type && (
                           <span className="flex items-center gap-1 min-w-0">
@@ -584,9 +591,32 @@ export function CrmKanbanBoard() {
                         {lead.interest_type && <span className="shrink-0">·</span>}
                         <span className="flex items-center gap-1 shrink-0 font-mono">
                           <Phone className="w-2.5 h-2.5 shrink-0" />
-                          {formatPhoneForUser(lead.client_phone)}
+                          {formatPhoneForUser(lead.client_phone, lead)}
                         </span>
                       </div>
+
+                      {!lead.assigned_to && (
+                        <div className="pt-1.5 flex items-center justify-between border-t border-border/60 gap-1.5 mt-1">
+                          <span className="text-[10px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded">
+                            {t("crm.kanban.unassigned") || "Unassigned"}
+                          </span>
+                          {canClaim && (
+                            <Button
+                              size="sm"
+                              type="button"
+                              disabled={claimingLeadId === lead.id}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleClaimLead(lead.id, lead.client_name);
+                              }}
+                              className="h-7 min-h-[36px] sm:min-h-[28px] px-2.5 text-[11px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-md cursor-pointer gap-1 shadow-2xs shrink-0"
+                            >
+                              <UserPlus className="w-3 h-3" />
+                              <span>{t("crm.kanban.claimLead") || "Ambil Lead"}</span>
+                            </Button>
+                          )}
+                        </div>
+                      )}
                     </div>
                   ))
                 )}

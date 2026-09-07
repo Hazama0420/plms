@@ -23,6 +23,7 @@ import { Loader2, MapPin, Search, X } from "lucide-react";
 import { supabase } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
+import { useTranslation } from "@/lib/i18n/hooks";
 
 /**
  * Satu wilayah terpilih.
@@ -81,6 +82,7 @@ export function RegionMultiSelect({
   onChange,
   className,
 }: RegionMultiSelectProps) {
+  const { t } = useTranslation();
   const [searchQuery, setSearchQuery] = useState("");
   const [suggestions, setSuggestions] = useState<SelectedRegion[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -204,7 +206,7 @@ export function RegionMultiSelect({
               <button
                 type="button"
                 onClick={() => handleRemove(item)}
-                aria-label={`Hapus lokasi ${item.area_name || item.city_name}`}
+                aria-label={`${t("common.delete")} ${item.area_name || item.city_name}`}
                 className="rounded-full p-0.5 text-emerald-600 transition-colors hover:bg-emerald-200 hover:text-emerald-900"
               >
                 <X className="h-3 w-3" />
@@ -224,7 +226,7 @@ export function RegionMultiSelect({
           onFocus={() => {
             if (visibleSuggestions.length > 0) setShowDropdown(true);
           }}
-          placeholder="Cari kecamatan atau kota: BSD, Ciputat, Bogor..."
+          placeholder={t("dashboard.search.regionPlaceholder")}
           className="h-10 rounded-xl border-slate-200 bg-slate-50 pl-9 text-xs text-slate-900"
         />
         {isSearching && (
@@ -233,8 +235,7 @@ export function RegionMultiSelect({
       </div>
 
       <p className="text-[11px] text-slate-400">
-        Bisa memilih beberapa lokasi sekaligus — hasil pencarian akan mencakup
-        semuanya.
+        {t("dashboard.search.multiSelectHelp")}
       </p>
 
       {showDropdown && visibleSuggestions.length > 0 && (
@@ -262,7 +263,7 @@ export function RegionMultiSelect({
         !isSearching &&
         searchQuery.trim().length >= 2 && (
           <p className="text-[11px] font-medium text-amber-600">
-            Wilayah tidak ditemukan. Coba nama kecamatan atau kota lain.
+            {t("dashboard.search.regionNotFound")}
           </p>
         )}
     </div>

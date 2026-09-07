@@ -27,12 +27,35 @@ export interface PushContent {
   data?: Record<string, unknown>;
 }
 
+/**
+ * Hasil sebuah percobaan push, dinyatakan tegas.
+ *
+ * Dibuat karena `success` saja pernah menyembunyikan kerusakan berhari-hari:
+ * nol penerima dilaporkan sebagai sukses, sehingga push CRM yang tidak pernah
+ * mendarat di perangkat mana pun tampak persis seperti push yang berhasil.
+ * Yang membedakannya sekarang adalah field ini, bukan `success`.
+ */
+export type PushOutcome =
+  /** Setidaknya satu perangkat menerima. */
+  | "delivered"
+  /** Permintaannya sah, tetapi tidak ada perangkat yang cocok. BUKAN sukses. */
+  | "no_recipient"
+  /** Kredensial, jaringan, atau tolakan API. */
+  | "failed";
+
 export interface PushResult {
-  /** false hanya untuk kegagalan sistem (kredensial, jaringan, tolakan API). */
+  /**
+   * @deprecated Baca `outcome`. Dipertahankan agar pemanggil lama tetap jalan.
+   *
+   * Artinya "tidak ada kegagalan sistem" — bernilai true juga ketika tidak ada
+   * satu pun perangkat yang menerima.
+   */
   success: boolean;
+  /** Sumber kebenaran. `no_recipient` bukan keberhasilan. */
+  outcome: PushOutcome;
   /** Jumlah perangkat yang benar-benar menerima. */
   recipients: number;
-  /** Terisi bila push memang tidak perlu dikirim — bukan kegagalan. */
+  /** Terisi bila push memang tidak perlu/tidak bisa dikirim — bukan galat. */
   skipped?: string;
   error?: string;
 }
@@ -97,6 +120,7 @@ async function post(
   } catch (err) {
     return {
       success: false,
+      outcome: "failed",
       recipients: 0,
       error: err instanceof Error ? err.message : String(err),
     };
@@ -109,19 +133,29 @@ async function post(
   // saja tidak cukup untuk menyimpulkan berhasil.
   if (!response.ok || detail) {
     if (detail && isNoRecipient(detail)) {
-      return { success: true, recipients: 0, skipped: detail };
+      return { success: true, outcome: "no_recipient", recipients: 0, skipped: detail };
     }
     return {
       success: false,
+      outcome: "failed",
       recipients: 0,
       error: detail || `OneSignal membalas HTTP ${response.status}`,
     };
   }
 
-  return {
-    success: true,
-    recipients: Number((body as Record<string, unknown>)?.recipients) || 0,
-  };
+  const recipients = Number((body as Record<string, unknown>)?.recipients) || 0;
+
+  // Balasan sehat dengan nol penerima: permintaannya diterima, tetapi tidak ada
+  // perangkat yang cocok. OneSignal tidak selalu menyertakan `errors` untuk
+  // keadaan ini, jadi tanpa cabang ini ia lolos sebagai "delivered".
+  return recipients > 0
+    ? { success: true, outcome: "delivered", recipients }
+    : {
+        success: true,
+        outcome: "no_recipient",
+        recipients: 0,
+        skipped: "OneSignal menerima permintaan tetapi melaporkan 0 penerima.",
+      };
 }
 
 function chunk<T>(items: T[], size: number): T[][] {
@@ -147,6 +181,7 @@ export async function sendPushToUsers(
   if (!creds) {
     return {
       success: false,
+      outcome: "failed",
       recipients: 0,
       error:
         "Kredensial OneSignal (NEXT_PUBLIC_ONESIGNAL_APP_ID / ONESIGNAL_REST_API_KEY) belum diatur.",
@@ -158,7 +193,12 @@ export async function sendPushToUsers(
   );
 
   if (targets.length === 0) {
-    return { success: true, recipients: 0, skipped: "Tidak ada penerima." };
+    return {
+      success: true,
+      outcome: "no_recipient",
+      recipients: 0,
+      skipped: "Tidak ada penerima.",
+    };
   }
 
   const results: PushResult[] = [];
@@ -180,15 +220,22 @@ export async function sendPushToUsers(
     );
   }
 
-  const failed = results.find((r) => !r.success);
+  // Satu permintaan gagal membuat seluruh pengiriman dilaporkan gagal: sebagian
+  // penerima tidak diketahui nasibnya, dan itu bukan keberhasilan.
+  const failed = results.find((r) => r.outcome === "failed");
   if (failed) return failed;
 
   const recipients = results.reduce((total, r) => total + r.recipients, 0);
   const skipped = results.find((r) => r.skipped)?.skipped;
 
   return recipients > 0
-    ? { success: true, recipients }
-    : { success: true, recipients: 0, skipped: skipped ?? "Tidak ada perangkat aktif." };
+    ? { success: true, outcome: "delivered", recipients }
+    : {
+        success: true,
+        outcome: "no_recipient",
+        recipients: 0,
+        skipped: skipped ?? "Tidak ada perangkat aktif.",
+      };
 }
 
 /**
@@ -205,6 +252,7 @@ export async function sendPushToSegments(
   if (!creds) {
     return {
       success: false,
+      outcome: "failed",
       recipients: 0,
       error:
         "Kredensial OneSignal (NEXT_PUBLIC_ONESIGNAL_APP_ID / ONESIGNAL_REST_API_KEY) belum diatur.",
@@ -213,7 +261,12 @@ export async function sendPushToSegments(
 
   const targets = segments.filter((s) => typeof s === "string" && s.length > 0);
   if (targets.length === 0) {
-    return { success: true, recipients: 0, skipped: "Tidak ada segment tujuan." };
+    return {
+      success: true,
+      outcome: "no_recipient",
+      recipients: 0,
+      skipped: "Tidak ada segment tujuan.",
+    };
   }
 
   return post(

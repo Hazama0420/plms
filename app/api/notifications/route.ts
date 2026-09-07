@@ -13,6 +13,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, requireRole } from "@/lib/api-auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendPushToUsers } from "@/lib/onesignal";
+import { getAdminRecipientIds } from "@/lib/notification-helper";
 import { notificationCreateSchema, validate } from "@/lib/validations";
 
 // ============================================================
@@ -87,13 +88,13 @@ export async function POST(req: NextRequest) {
         .in("id", user_ids ?? []);
       if (error) throw new Error("Gagal memeriksa penerima: " + error.message);
       targetUserIds = (data ?? []).map((u) => u.id as string);
+    } else if (recipient_type === "all_admins") {
+      // Lewat helper karena kolom `users.role` memuat dua ejaan Super Admin
+      // ("super_admin" dan "superadmin"); daftar yang ditulis di sini dulu hanya
+      // mencocokkan yang pertama dan diam-diam melewatkan sebagian admin.
+      targetUserIds = await getAdminRecipientIds(supabaseAdmin);
     } else {
-      const roles =
-        recipient_type === "all_agents"
-          ? ["agent"]
-          : recipient_type === "all_admins"
-            ? ["super_admin", "admin"]
-            : null;
+      const roles = recipient_type === "all_agents" ? ["agent"] : null;
 
       let query = supabaseAdmin.from("users").select("id");
       if (roles) query = query.in("role", roles);
@@ -145,6 +146,7 @@ export async function POST(req: NextRequest) {
       push: {
         delivered: push.recipients,
         ok: push.success,
+        outcome: push.outcome,
         ...(push.skipped ? { note: push.skipped } : {}),
         ...(push.error ? { error: push.error } : {}),
       },

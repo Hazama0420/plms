@@ -36,6 +36,7 @@ import {
   Building2,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useTranslation } from "@/lib/i18n/hooks";
 
 // ============================================================
 // DATA FASILITAS DENGAN IKON & KATEGORI
@@ -59,6 +60,7 @@ const facilityCategories: FacilityItem[] = [
   // Keamanan & Akses
   { id: "Parkir", label: "Area Parkir", category: "Keamanan & Akses", icon: Car },
   { id: "Keamanan 24 Jam", label: "Keamanan 24 Jam", category: "Keamanan & Akses", icon: ShieldCheck },
+  { id: "One Gate System", label: "One Gate System", category: "Keamanan & Akses", icon: KeyRound },
   { id: "CCTV", label: "CCTV System", category: "Keamanan & Akses", icon: Camera },
   { id: "Akses Kartu", label: "Akses Kartu / Access Card", category: "Keamanan & Akses", icon: KeyRound },
 
@@ -85,6 +87,7 @@ interface StepFacilitiesProps {
 }
 
 export function StepFacilities({ formData, updateFormData, nextStep, prevStep }: StepFacilitiesProps) {
+  const { t } = useTranslation();
   const [search, setSearch] = useState("");
   const [customInput, setCustomInput] = useState("");
   const [customFacilities, setCustomFacilities] = useState<string[]>([]);
@@ -122,7 +125,7 @@ export function StepFacilities({ formData, updateFormData, nextStep, prevStep }:
       facilityCategories.some((f) => f.label.toLowerCase() === trimmed.toLowerCase()) ||
       customFacilities.some((c) => c.toLowerCase() === trimmed.toLowerCase())
     ) {
-      toast.info("Fasilitas tersebut sudah ada di daftar.");
+      toast.info(t("createProperty.facilitiesStep.duplicateToast"));
       setCustomInput("");
       return;
     }
@@ -135,7 +138,7 @@ export function StepFacilities({ formData, updateFormData, nextStep, prevStep }:
     updateFormData({ facilities: newSelected });
 
     setCustomInput("");
-    toast.success(`Fasilitas "${trimmed}" berhasil ditambahkan!`);
+    toast.success(t("createProperty.facilitiesStep.successToast").replace("{facility}", trimmed));
   };
 
   // Filter Fasilitas Berdasarkan Search
@@ -156,10 +159,10 @@ export function StepFacilities({ formData, updateFormData, nextStep, prevStep }:
       <div>
         <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
           <Sparkles className="w-6 h-6 text-emerald-600" />
-          Fasilitas Properti
+          {t("createProperty.facilitiesStep.title")}
         </h2>
         <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
-          Pilih fasilitas yang tersedia untuk meningkatkan daya tarik listing Anda.
+          {t("createProperty.facilitiesStep.subtitle")}
         </p>
       </div>
 
@@ -168,7 +171,7 @@ export function StepFacilities({ formData, updateFormData, nextStep, prevStep }:
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
           <Input
-            placeholder="Cari fasilitas (misal: AC, Gym, Swimming Pool)..."
+            placeholder={t("createProperty.facilitiesStep.searchPlaceholder")}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9 h-10 text-xs bg-background"
@@ -189,7 +192,7 @@ export function StepFacilities({ formData, updateFormData, nextStep, prevStep }:
             variant="secondary"
             className="h-10 px-3.5 text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 shrink-0"
           >
-            {selected.length} Fasilitas Terpilih
+            {t("createProperty.facilitiesStep.selectedCount").replace("{count}", selected.length.toString())}
           </Badge>
 
           {selected.length > 0 && (
@@ -200,7 +203,7 @@ export function StepFacilities({ formData, updateFormData, nextStep, prevStep }:
               onClick={() => updateFormData({ facilities: [] })}
               className="h-10 text-xs text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30"
             >
-              Reset
+              {t("createProperty.facilitiesStep.reset")}
             </Button>
           )}
         </div>
@@ -263,7 +266,7 @@ export function StepFacilities({ formData, updateFormData, nextStep, prevStep }:
         {customFacilities.length > 0 && (
           <div className="p-4 sm:p-5 rounded-2xl bg-slate-50/70 dark:bg-slate-900/40 border border-slate-200/80 dark:border-slate-800 space-y-3">
             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
-              Fasilitas Tambahan Kustom
+              {t("createProperty.facilitiesStep.customTitle")}
             </h3>
             <div className="flex flex-wrap gap-2">
               {customFacilities.map((custom) => {
@@ -292,11 +295,11 @@ export function StepFacilities({ formData, updateFormData, nextStep, prevStep }:
         {/* INPUT UNTUK MENAMBAH FASILITAS KUSTOM BARU */}
         <div className="p-4 rounded-2xl border border-dashed border-slate-300 dark:border-slate-800 bg-background/50 space-y-2">
           <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-            Fasilitas Lainnya (Kustom)
+            {t("createProperty.facilitiesStep.addCustomLabel")}
           </Label>
           <div className="flex gap-2">
             <Input
-              placeholder="Contoh: Smart Home System, EV Charger..."
+              placeholder={t("createProperty.facilitiesStep.customPlaceholder")}
               value={customInput}
               onChange={(e) => setCustomInput(e.target.value)}
               onKeyDown={(e) => {
@@ -314,14 +317,14 @@ export function StepFacilities({ formData, updateFormData, nextStep, prevStep }:
               className="h-9 text-xs bg-slate-800 hover:bg-slate-900 dark:bg-slate-700 dark:hover:bg-slate-600 text-white gap-1 px-3"
             >
               <Plus className="w-3.5 h-3.5" />
-              <span>Tambah</span>
+              <span>{t("createProperty.facilitiesStep.addBtn")}</span>
             </Button>
           </div>
         </div>
 
         {filteredCategories.length === 0 && customFacilities.length === 0 && (
           <div className="text-center py-8 bg-slate-50 dark:bg-slate-900/30 rounded-2xl border border-dashed">
-            <p className="text-xs text-slate-500">Tidak ada fasilitas yang cocok dengan pencarian "{search}".</p>
+            <p className="text-xs text-slate-500">{t("createProperty.facilitiesStep.notFound").replace("{search}", search)}</p>
           </div>
         )}
       </div>

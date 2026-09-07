@@ -97,13 +97,14 @@ export default function FollowupDetailPage() {
   }, [currentUserRole]);
 
   const canModify = isAdmin || followup?.assigned_to === currentUserId || followup?.created_by === currentUserId;
+  const canAccessContact = isAdmin || (followup?.assigned_to && followup.assigned_to === currentUserId);
 
-  // 🔒 HELPER SENSOR NOMOR HP TERSTANDAR UNTUK AGENT
+  // 🔒 HELPER SENSOR NOMOR HP TERSTANDAR (HANYA ADMIN & AGEN PENANGGUNG JAWAB YANG DAPAT MELIHAT)
   const formatPhoneForUser = useCallback((phone?: string) => {
     if (!phone) return "-";
-    if (isAdmin) return phone;
+    if (canAccessContact) return phone;
     return "08xx-xxxx-xxxx";
-  }, [isAdmin]);
+  }, [canAccessContact]);
 
   // ===== FETCH DATA =====
   const fetchData = useCallback(async () => {
@@ -149,26 +150,20 @@ export default function FollowupDetailPage() {
 
     setSaving(true);
     try {
-      await crmService.updateFollowup(followupId, { status });
+      const result = await crmService.updateFollowup(followupId, { status });
 
-      // 🔴 Catat log aktivitas di crm_activities
-      const leadId = followup?.lead_id;
-      const leadName = followup?.lead?.contact?.full_name || followup?.lead?.full_name || "Klien";
       const statusLabel = statusConfig[status]?.label || status;
-
-      if (currentUserId && leadId) {
-        await supabase.from("crm_activities").insert([
-          {
-            lead_id: leadId,
-            user_id: currentUserId,
-            activity_type: "Status Update",
-            notes: `Status follow-up dengan ${leadName} diperbarui menjadi: '${statusLabel}'`,
-            created_at: new Date().toISOString(),
+      if (result.lifecycle.shouldOfferNextFollowup) {
+        toast.success(`Status berhasil diperbarui menjadi ${statusLabel}`, {
+          description: "Buat Follow-Up berikutnya agar Lead tetap tertangani.",
+          action: {
+            label: "Buat berikutnya",
+            onClick: () => router.push(`/crm/followups/create?lead_id=${result.lifecycle.leadId}`),
           },
-        ]);
+        });
+      } else {
+        toast.success(`Status berhasil diperbarui menjadi ${statusLabel}`);
       }
-
-      toast.success(`Status berhasil diperbarui menjadi ${statusLabel}`);
       await fetchData();
     } catch (error: any) {
       console.error("Error updating status:", error);
@@ -218,12 +213,12 @@ export default function FollowupDetailPage() {
     }
   };
 
-  // 🛡️ DIRECT WHATSAPP LINK DENGAN BLOKIR TOTAL UNTUK AGENT
+  // 🛡️ DIRECT WHATSAPP LINK DENGAN PROTEKSI AKSES KONTAK
   const handleOpenWhatsApp = async () => {
-    if (!isAdmin) {
+    if (!canAccessContact) {
       toast.error("Akses Kontak Terkunci!", {
         description:
-          "Nomor kontak disembunyikan demi keamanan data perusahaan. Gunakan sistem pesan terpusat atau hubungi Admin.",
+          "Nomor kontak disembunyikan demi keamanan data perusahaan. Hanya Admin dan Agen penanggung jawab yang memiliki akses kontak langsung.",
       });
       return;
     }
@@ -343,12 +338,12 @@ export default function FollowupDetailPage() {
             onClick={handleOpenWhatsApp}
             className={cn(
               "text-xs gap-1 h-8 px-2.5 shadow-xs cursor-pointer",
-              isAdmin
+              canAccessContact
                 ? "bg-emerald-600 hover:bg-emerald-700 text-white"
                 : "bg-muted text-muted-foreground border border-border"
             )}
           >
-            {isAdmin ? <MessageCircle className="w-3.5 h-3.5 fill-white" /> : <Lock className="w-3.5 h-3.5 text-amber-500" />} Chat WA
+            {canAccessContact ? <MessageCircle className="w-3.5 h-3.5 fill-white" /> : <Lock className="w-3.5 h-3.5 text-amber-500" />} Chat WA
           </Button>
 
           {/* 🎯 EDIT BUTTON DENGAN ROUTING /edit */}

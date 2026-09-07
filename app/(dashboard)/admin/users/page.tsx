@@ -22,10 +22,14 @@ import {
   Bell,
   UserCheck,
   UserPlus,
+  UserX,
   RefreshCw,
   Building2,
   Sparkles,
   Send,
+  Clock,
+  BadgeCheck,
+  Ban,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -72,6 +76,7 @@ const ROLE_ICONS: Record<UserRole, React.ReactNode> = {
   admin: <ShieldCheck className="h-3.5 w-3.5 text-purple-500" />,
   agent: <Shield className="h-3.5 w-3.5 text-emerald-500" />,
   marketing: <ShieldEllipsis className="h-3.5 w-3.5 text-amber-500" />,
+  commissioner: <ShieldCheck className="h-3.5 w-3.5 text-blue-500" />,
   viewer: <Eye className="h-3.5 w-3.5 text-slate-400" />,
 };
 
@@ -80,8 +85,42 @@ const ROLE_BADGE_STYLE: Record<UserRole, string> = {
   admin: "bg-purple-500/10 text-purple-600 border-purple-500/30 dark:bg-purple-950/40 dark:text-purple-400",
   agent: "bg-emerald-500/10 text-emerald-600 border-emerald-500/30 dark:bg-emerald-950/40 dark:text-emerald-400",
   marketing: "bg-amber-500/10 text-amber-600 border-amber-500/30 dark:bg-amber-950/40 dark:text-amber-400",
+  commissioner: "bg-blue-500/10 text-blue-600 border-blue-500/30 dark:bg-blue-950/40 dark:text-blue-400",
   viewer: "bg-slate-500/10 text-slate-600 border-slate-500/30 dark:bg-slate-800 dark:text-slate-400",
 };
+
+// Baris lama bisa punya status NULL. Diperlakukan sebagai aktif — sama seperti
+// gerbang di lib/permissions.ts yang memblokir daftar tertentu, bukan
+// mensyaratkan "active".
+const STATUS_META = {
+  active: {
+    label: "Aktif",
+    icon: <BadgeCheck className="h-3.5 w-3.5" />,
+    style: "bg-emerald-500/10 text-emerald-600 border-emerald-500/30 dark:bg-emerald-950/40 dark:text-emerald-400",
+  },
+  pending: {
+    label: "Menunggu",
+    icon: <Clock className="h-3.5 w-3.5" />,
+    style: "bg-amber-500/10 text-amber-700 border-amber-500/30 dark:bg-amber-950/40 dark:text-amber-400",
+  },
+  suspended: {
+    label: "Nonaktif",
+    icon: <Ban className="h-3.5 w-3.5" />,
+    style: "bg-rose-500/10 text-rose-600 border-rose-500/30 dark:bg-rose-950/40 dark:text-rose-400",
+  },
+} as const;
+
+/**
+ * Kedua ejaan dianggap Super Admin. Baris lama memakai 'superadmin' tanpa garis
+ * bawah, dan penjaga yang hanya mengenal satu ejaan akan melewatkan baris yang
+ * memakai ejaan lainnya. Cocok dengan is_super_admin() di migrasi 010 dan
+ * isSuperAdminRole() di app/api/admin/users/route.ts.
+ */
+const isSuperAdminRole = (role?: string | null) =>
+  role === "super_admin" || role === "superadmin";
+
+const statusMetaOf = (status?: string | null) =>
+  STATUS_META[(status ?? "active") as keyof typeof STATUS_META] ?? STATUS_META.active;
 
 export default function AdminUsersPage() {
   const { userRole, isLoading: roleLoading } = usePermissions();
@@ -95,6 +134,12 @@ export default function AdminUsersPage() {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
+  // Persetujuan agen
+  const [showRejectDialog, setShowRejectDialog] = useState(false);
+  const [rejecting, setRejecting] = useState(false);
+  const [approvingId, setApprovingId] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<"all" | "pending">("all");
+
   // Notification states
   const [showSendNotification, setShowSendNotification] = useState(false);
   const [notificationForm, setNotificationForm] = useState({
@@ -107,7 +152,18 @@ export default function AdminUsersPage() {
   });
   const [sendingNotification, setSendingNotification] = useState(false);
 
-  const isSuperAdmin = userRole === "super_admin"
+  const isSuperAdmin = userRole === "super_admin";
+  const isAdmin = userRole === "admin" || isSuperAdmin;
+
+  // Role yang boleh dipilih di dialog Edit Role. Super Admin sengaja tidak ada
+  // di daftar: menaikkan orang ke peran tertinggi bukan aksi yang pantas
+  // dilakukan lewat dropdown di tabel. Bila memang perlu, lakukan langsung di
+  // basis data. Penurunan pangkat Super Admin juga tertutup — baris Super Admin
+  // tidak menawarkan Edit Role sama sekali (lihat kolom Aksi).
+  const assignableRoles = useMemo<UserRole[]>(
+    () => (Object.keys(USER_ROLES) as UserRole[]).filter((r) => r !== "super_admin"),
+    []
+  );
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   // Ambil current user ID
@@ -140,25 +196,31 @@ export default function AdminUsersPage() {
   // Metric Stats
   const metrics = useMemo(() => {
     const total = users.length;
-    const superAdmins = users.filter((u) => u.role === "super_admin" || (u.role as any) === "superadmin").length;
+    const superAdmins = users.filter((u) => isSuperAdminRole(u.role)).length;
     const admins = users.filter((u) => u.role === "admin").length;
     const agents = users.filter((u) => u.role === "agent").length;
     const viewers = users.filter((u) => u.role === "viewer").length;
-    return { total, superAdmins, admins, agents, viewers };
+    const pending = users.filter((u) => u.status === "pending").length;
+    return { total, superAdmins, admins, agents, viewers, pending };
   }, [users]);
 
   const filteredUsers = useMemo(() => {
-    return users.filter(
-      (u) =>
-        u.full_name?.toLowerCase().includes(search.toLowerCase()) ||
-        u.email?.toLowerCase().includes(search.toLowerCase()) ||
-        u.role?.toLowerCase().includes(search.toLowerCase())
-    );
-  }, [users, search]);
+    const query = search.toLowerCase();
+    return users.filter((u) => {
+      if (statusFilter === "pending" && u.status !== "pending") return false;
+      return (
+        u.full_name?.toLowerCase().includes(query) ||
+        u.email?.toLowerCase().includes(query) ||
+        u.role?.toLowerCase().includes(query)
+      );
+    });
+  }, [users, search, statusFilter]);
 
   const handleEdit = (user: UserWithRole) => {
     setSelectedUser(user);
-    setEditingRole(user.role);
+    // Nilai awal dijatuhkan ke 'viewer' bila role saat ini tidak ada di daftar
+    // pilihan — Select tanpa opsi yang cocok akan tampil kosong.
+    setEditingRole(assignableRoles.includes(user.role) ? user.role : "viewer");
     setShowEditDialog(true);
   };
 
@@ -170,15 +232,62 @@ export default function AdminUsersPage() {
       toast.success(`Role ${selectedUser.full_name || selectedUser.email} berhasil diperbarui`);
       setShowEditDialog(false);
       fetchUsers();
-    } catch {
-      toast.error("Gagal memperbarui role");
+    } catch (error) {
+      // Pesan dari server ditampilkan apa adanya: penolakan wewenang perlu
+      // terbaca sebagai aturan, bukan sebagai kegagalan teknis.
+      toast.error("Gagal memperbarui role", {
+        description: error instanceof Error ? error.message : undefined,
+      });
     } finally {
       setSaving(false);
     }
   };
 
+  // ---------- APPROVE / REJECT ----------
+
+  const handleApprove = async (user: UserWithRole) => {
+    setApprovingId(user.id);
+    try {
+      await userService.updateUserStatus(user.id, { status: "active", is_approved: true });
+      toast.success(`${user.full_name || user.email} telah disetujui.`);
+      fetchUsers();
+    } catch {
+      toast.error("Gagal menyetujui pengguna.");
+    } finally {
+      setApprovingId(null);
+    }
+  };
+
+  const handleReject = async () => {
+    if (!selectedUser) return;
+    setRejecting(true);
+    try {
+      await userService.updateUserStatus(selectedUser.id, { status: "suspended", is_approved: false });
+      toast.success(`Pengajuan ${selectedUser.full_name || selectedUser.email} ditolak — akun dinonaktifkan.`);
+      setShowRejectDialog(false);
+      fetchUsers();
+    } catch {
+      toast.error("Gagal menolak pengguna.");
+    } finally {
+      setRejecting(false);
+    }
+  };
+
+  const handleReactivate = async (user: UserWithRole) => {
+    setApprovingId(user.id);
+    try {
+      await userService.updateUserStatus(user.id, { status: "active", is_approved: true });
+      toast.success(`${user.full_name || user.email} telah diaktifkan kembali.`);
+      fetchUsers();
+    } catch {
+      toast.error("Gagal mengaktifkan pengguna.");
+    } finally {
+      setApprovingId(null);
+    }
+  };
+
   const handleDelete = (user: UserWithRole) => {
-    if (user.role === "super_admin" || (user.role as any) === "superadmin") {
+    if (isSuperAdminRole(user.role)) {
       toast.error("Tidak dapat menghapus akun Super Admin!");
       return;
     }
@@ -276,7 +385,7 @@ export default function AdminUsersPage() {
     );
   }
 
-  if (!isSuperAdmin) {
+  if (!isAdmin) {
     return (
       <div className="flex h-[60vh] items-center justify-center p-4">
         <Card className="max-w-md text-center border-rose-500/30 rounded-2xl shadow-xs">
@@ -286,7 +395,7 @@ export default function AdminUsersPage() {
             </div>
             <h3 className="text-base font-bold text-foreground">Akses Terbatas</h3>
             <p className="text-muted-foreground text-xs leading-relaxed">
-              Modul Manajemen User dan Kontrol Hak Akses Sistem ini hanya dapat diakses oleh Super Admin.
+              Halaman ini hanya dapat diakses oleh Admin dan Super Admin.
             </p>
           </CardContent>
         </Card>
@@ -345,6 +454,32 @@ export default function AdminUsersPage() {
           <p className="text-lg font-bold font-mono text-foreground mt-1">{metrics.total}</p>
         </Card>
 
+        {/* Kartu ini merangkap tombol: menekan berarti menyaring tabel di bawah. */}
+        <Card
+          role="button"
+          tabIndex={0}
+          onClick={() => setStatusFilter(statusFilter === "pending" ? "all" : "pending")}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              setStatusFilter(statusFilter === "pending" ? "all" : "pending");
+            }
+          }}
+          className={cn(
+            "border shadow-2xs rounded-xl bg-card p-3 cursor-pointer transition hover:border-amber-500/50",
+            statusFilter === "pending" && "border-amber-500 ring-1 ring-amber-500/30",
+            metrics.pending > 0 && "border-amber-500/40"
+          )}
+        >
+          <div className="flex items-center justify-between text-muted-foreground">
+            <span className="text-[11px] font-semibold">Menunggu Persetujuan</span>
+            <Clock className={cn("w-4 h-4 text-amber-500", metrics.pending > 0 && "animate-pulse")} />
+          </div>
+          <p className="text-lg font-bold font-mono text-amber-600 dark:text-amber-400 mt-1">
+            {metrics.pending}
+          </p>
+        </Card>
+
         <Card className="border shadow-2xs rounded-xl bg-card p-3">
           <div className="flex items-center justify-between text-muted-foreground">
             <span className="text-[11px] font-semibold">Tim Agen</span>
@@ -362,14 +497,6 @@ export default function AdminUsersPage() {
             {metrics.admins + metrics.superAdmins}
           </p>
         </Card>
-
-        <Card className="border shadow-2xs rounded-xl bg-card p-3">
-          <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-[11px] font-semibold">Klien / Viewer</span>
-            <Eye className="w-4 h-4 text-slate-400" />
-          </div>
-          <p className="text-lg font-bold font-mono text-slate-600 dark:text-slate-300 mt-1">{metrics.viewers}</p>
-        </Card>
       </div>
 
       {/* 🟢 TOOLBAR SEARCH & DIRECTORY TABLE */}
@@ -377,7 +504,18 @@ export default function AdminUsersPage() {
         <CardHeader className="p-3.5 border-b bg-muted/20 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
           <div>
             <CardTitle className="text-xs sm:text-sm font-bold flex items-center gap-2 text-foreground">
-              <Users className="w-4 h-4 text-emerald-600" /> Direktori Pengguna Sistem
+              <Users className="w-4 h-4 text-emerald-600" />
+              {statusFilter === "pending" ? "Menunggu Persetujuan" : "Direktori Pengguna Sistem"}
+              {statusFilter === "pending" && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setStatusFilter("all")}
+                  className="h-6 px-2 text-[10px] rounded-lg text-muted-foreground hover:text-foreground cursor-pointer"
+                >
+                  Tampilkan semua
+                </Button>
+              )}
             </CardTitle>
           </div>
 
@@ -411,15 +549,34 @@ export default function AdminUsersPage() {
                     <TableHead className="text-[11px] font-bold py-2.5">User Profile</TableHead>
                     <TableHead className="text-[11px] font-bold py-2.5">Email</TableHead>
                     <TableHead className="text-[11px] font-bold py-2.5">Role Akses</TableHead>
+                    <TableHead className="text-[11px] font-bold py-2.5">Status</TableHead>
                     <TableHead className="text-[11px] font-bold py-2.5">Tanggal Registrasi</TableHead>
                     <TableHead className="text-[11px] font-bold py-2.5 text-right">Aksi</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody className="divide-y divide-border/40 text-xs">
                   {filteredUsers.map((user) => {
-                    const isSuperAdminUser = user.role === "super_admin" 
+                    // Kedua ejaan diperiksa, sama seperti metrics dan
+                    // handleDelete: baris lama memakai 'superadmin' tanpa garis
+                    // bawah, dan penjaga yang hanya mengenal satu ejaan akan
+                    // melewatkan baris yang memakai ejaan lainnya.
+                    const isSuperAdminUser = isSuperAdminRole(user.role);
                     const isCurrentUser = currentUserId === user.id;
                     const canDelete = isSuperAdmin && !isSuperAdminUser && !isCurrentUser;
+                    // Hanya Super Admin yang boleh mengubah role, dan baris
+                    // Super Admin tidak bisa diubah oleh siapa pun dari sini.
+                    // Server dan trigger basis data menegakkan hal yang sama —
+                    // ini semata agar kontrolnya tidak tampil bagi yang tidak
+                    // berwenang.
+                    const canEditRole = isSuperAdmin && !isSuperAdminUser;
+                    const statusMeta = statusMetaOf(user.status);
+                    const isPending = user.status === "pending";
+                    const isSuspended = user.status === "suspended";
+                    const busy = approvingId === user.id;
+                    // API menolak menonaktifkan diri sendiri; super_admin juga
+                    // dilindungi agar pengurus terakhir tidak bisa dikunci.
+                    const canDeactivate =
+                      !isPending && !isSuspended && !isCurrentUser && !isSuperAdminUser;
 
                     return (
                       <TableRow key={user.id} className="hover:bg-muted/30 transition">
@@ -456,6 +613,18 @@ export default function AdminUsersPage() {
                             {getRoleLabel(user.role)}
                           </Badge>
                         </TableCell>
+                        <TableCell className="py-2.5">
+                          <Badge
+                            variant="outline"
+                            className={cn(
+                              "gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border shadow-2xs",
+                              statusMeta.style
+                            )}
+                          >
+                            {statusMeta.icon}
+                            {statusMeta.label}
+                          </Badge>
+                        </TableCell>
                         <TableCell className="py-2.5 font-mono text-[11px] text-muted-foreground">
                           {user.created_at ? new Date(user.created_at).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" }) : "-"}
                         </TableCell>
@@ -465,16 +634,57 @@ export default function AdminUsersPage() {
                               <MoreHorizontal className="h-4 w-4" />
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end" className="w-36 rounded-xl text-xs">
-                              <DropdownMenuItem onClick={() => handleEdit(user)} className="gap-2 cursor-pointer">
-                                <UserCog className="h-3.5 w-3.5 text-purple-600" /> Edit Role
-                              </DropdownMenuItem>
+                              {canEditRole && (
+                                <DropdownMenuItem onClick={() => handleEdit(user)} className="gap-2 cursor-pointer">
+                                  <UserCog className="h-3.5 w-3.5 text-purple-600" /> Edit Role
+                                </DropdownMenuItem>
+                              )}
+                              {(isPending || isSuspended) && (
+                                <DropdownMenuItem
+                                  onClick={() => (isPending ? handleApprove(user) : handleReactivate(user))}
+                                  disabled={busy}
+                                  className="gap-2 text-emerald-600 focus:text-emerald-600 focus:bg-emerald-500/10 cursor-pointer"
+                                >
+                                  {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BadgeCheck className="h-3.5 w-3.5" />}
+                                  {isPending ? "Setujui Agen" : "Aktifkan Kembali"}
+                                </DropdownMenuItem>
+                              )}
+                              {isPending && (
+                                <DropdownMenuItem
+                                  onClick={() => { setSelectedUser(user); setShowRejectDialog(true); }}
+                                  disabled={busy}
+                                  className="gap-2 text-amber-600 focus:text-amber-600 focus:bg-amber-500/10 cursor-pointer"
+                                >
+                                  <Ban className="h-3.5 w-3.5" /> Tolak
+                                </DropdownMenuItem>
+                              )}
+                              {canDeactivate && (
+                                <DropdownMenuItem
+                                  onClick={() => { setSelectedUser(user); setShowRejectDialog(true); }}
+                                  className="gap-2 text-rose-600 focus:text-rose-600 focus:bg-rose-500/10 cursor-pointer"
+                                >
+                                  <UserX className="h-3.5 w-3.5" /> Nonaktifkan
+                                </DropdownMenuItem>
+                              )}
                               {canDelete && (
                                 <DropdownMenuItem
                                   onClick={() => handleDelete(user)}
                                   className="gap-2 text-rose-600 focus:text-rose-600 focus:bg-rose-500/10 cursor-pointer"
                                 >
-                                  <Trash2 className="h-3.5 w-3.5" /> Hapus User
+                                  <Trash2 className="h-3.5 w-3.5" /> Hapus Permanen
                                 </DropdownMenuItem>
+                              )}
+                              {/* Baris Super Admin tidak menawarkan aksi apa pun
+                                  bagi admin. Tanpa keterangan ini, menu yang
+                                  kosong terbaca seperti fitur yang rusak. */}
+                              {!canEditRole && !canDelete && !canDeactivate && !isPending && !isSuspended && (
+                                <div className="px-2 py-1.5 text-[10px] text-muted-foreground leading-relaxed">
+                                  {isSuperAdminUser
+                                    ? "Akun Super Admin hanya dapat diubah oleh Super Admin."
+                                    : isCurrentUser
+                                    ? "Tidak ada aksi untuk akun sendiri."
+                                    : "Tidak ada aksi tersedia."}
+                                </div>
                               )}
                             </DropdownMenuContent>
                           </DropdownMenu>
@@ -509,11 +719,11 @@ export default function AdminUsersPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="rounded-xl text-xs">
-                  {Object.entries(USER_ROLES).map(([key, value]) => (
+                  {assignableRoles.map((key) => (
                     <SelectItem key={key} value={key} className="text-xs cursor-pointer">
                       <div className="flex items-center gap-2">
-                        {ROLE_ICONS[key as UserRole]}
-                        <span className="font-bold">{value.label}</span>
+                        {ROLE_ICONS[key]}
+                        <span className="font-bold">{USER_ROLES[key].label}</span>
                       </div>
                     </SelectItem>
                   ))}
@@ -558,6 +768,37 @@ export default function AdminUsersPage() {
             >
               {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
               <span>Hapus Permanen</span>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 🟡 DIALOG KONFIRMASI TOLAK PENGAJUAN AGEN */}
+      <Dialog open={showRejectDialog} onOpenChange={setShowRejectDialog}>
+        <DialogContent className="max-w-sm rounded-2xl p-5 text-xs">
+          <DialogHeader className="pb-2">
+            <DialogTitle className="text-sm font-bold text-amber-600 flex items-center gap-2">
+              <Ban className="w-4 h-4" />
+              {selectedUser?.status === "pending" ? "Tolak Pengajuan Agen" : "Nonaktifkan Akun"}
+            </DialogTitle>
+            <DialogDescription className="text-xs leading-relaxed">
+              {selectedUser?.status === "pending" ? "Tolak pengajuan " : "Nonaktifkan akun "}
+              <strong className="text-foreground">{selectedUser?.full_name || selectedUser?.email}</strong>? Akunnya tidak bisa login lagi, tetapi datanya tetap tersimpan sehingga bisa diaktifkan kembali nanti.
+            </DialogDescription>
+          </DialogHeader>
+
+          <DialogFooter className="gap-2 pt-3">
+            <Button variant="outline" size="sm" onClick={() => setShowRejectDialog(false)} className="h-8 text-xs rounded-xl">
+              Batal
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => handleReject()}
+              disabled={rejecting}
+              className="h-8 text-xs bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-semibold gap-1.5 cursor-pointer"
+            >
+              {rejecting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Ban className="h-3.5 w-3.5" />}
+              <span>{selectedUser?.status === "pending" ? "Tolak Pengajuan" : "Nonaktifkan"}</span>
             </Button>
           </DialogFooter>
         </DialogContent>

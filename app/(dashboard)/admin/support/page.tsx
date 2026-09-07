@@ -15,6 +15,20 @@ export default function AdminSupportInbox() {
 
   const fetchMessages = async () => {
     setLoading(true);
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      toast.error("Sesi Anda telah berakhir. Silakan login kembali.");
+      setLoading(false);
+      return;
+    }
+
+    // Disaring ke salinan milik admin ini. /api/support menulis satu baris untuk
+    // SETIAP admin, jadi tanpa filter ini setiap pesan tampil sebanyak jumlah
+    // admin — dan "Tandai Dibaca" hanya akan mengubah salah satu salinannya.
     const { data, error } = await supabase
       .from("notifications")
       .select(`
@@ -27,9 +41,12 @@ export default function AdminSupportInbox() {
         users:sender_id ( full_name, email, phone )
       `)
       .eq("type", "support")
+      .eq("user_id", user.id)
       .order("created_at", { ascending: false });
 
-    if (!error && data) {
+    if (error) {
+      toast.error("Gagal memuat pesan bantuan", { description: error.message });
+    } else if (data) {
       setMessages(data);
     }
     setLoading(false);
@@ -40,7 +57,18 @@ export default function AdminSupportInbox() {
   }, []);
 
   const markAsRead = async (id: string) => {
-    await supabase.from("notifications").update({ is_read: true }).eq("id", id);
+    const { error } = await supabase
+      .from("notifications")
+      .update({ is_read: true })
+      .eq("id", id);
+
+    // RLS bisa menolak update tanpa memunculkan pengecualian. Tanpa pemeriksaan
+    // ini, tombolnya tampak berhasil padahal barisnya tidak berubah.
+    if (error) {
+      toast.error("Gagal menandai pesan", { description: error.message });
+      return;
+    }
+
     toast.success("Pesan ditandai sudah dibaca");
     fetchMessages();
   };
@@ -74,7 +102,7 @@ export default function AdminSupportInbox() {
             <Card key={msg.id} className={`border ${!msg.is_read ? "border-emerald-500 bg-emerald-50/20" : ""}`}>
               <CardHeader className="p-4 pb-2 flex flex-row items-center justify-between">
                 <CardTitle className="text-xs font-bold flex items-center gap-2">
-                  <span>{msg.users?.full_name || "Tanpa Nama"}</span>
+                  <span className="truncate">{msg.users?.full_name || msg.users?.email || "Tanpa Nama"}</span>
                   <Badge variant={msg.is_read ? "outline" : "default"} className="text-[10px]">
                     {msg.is_read ? "Selesai/Dibaca" : "Pesan Baru"}
                   </Badge>
@@ -88,11 +116,29 @@ export default function AdminSupportInbox() {
                 <p className="p-3 bg-muted/40 rounded-lg text-foreground font-sans">
                   {msg.message}
                 </p>
-                <div className="flex items-center justify-between pt-1">
-                  <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
-                    <span className="flex items-center gap-1"><Mail className="w-3 h-3" /> {msg.users?.email}</span>
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                    {msg.users?.email ? (
+                      <a
+                        href={`mailto:${msg.users.email}`}
+                        className="flex items-center gap-1 hover:text-foreground hover:underline"
+                      >
+                        <Mail className="w-3 h-3" /> {msg.users.email}
+                      </a>
+                    ) : (
+                      <span className="flex items-center gap-1 italic">
+                        <Mail className="w-3 h-3" /> Kontak tidak tersedia
+                      </span>
+                    )}
                     {msg.users?.phone && (
-                      <span className="flex items-center gap-1"><Phone className="w-3 h-3" /> {msg.users?.phone}</span>
+                      <a
+                        href={`https://wa.me/${msg.users.phone.replace(/\D/g, "").replace(/^0/, "62")}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1 hover:text-foreground hover:underline"
+                      >
+                        <Phone className="w-3 h-3" /> {msg.users.phone}
+                      </a>
                     )}
                   </div>
 

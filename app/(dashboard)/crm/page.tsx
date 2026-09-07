@@ -5,11 +5,13 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import { Loader2, LayoutGrid } from "lucide-react";
+import { useTranslation } from "@/hooks/use-translation";
 import { CrmKanbanBoard } from "@/components/crm/CrmKanbanBoard";
 import AgentActivityMonitor from "@/components/crm/AgentActivityMonitor";
 
 function CRMContent() {
   const router = useRouter();
+  const { t } = useTranslation();
   const [loadingRole, setLoadingRole] = useState(true);
 
   // 🔒 CEK ROLE & REDIRECT JIKA VIEWER
@@ -38,7 +40,7 @@ function CRMContent() {
         ).toLowerCase();
 
         if (role === "viewer" || role === "reviewer") {
-          toast.error("Akses Ditolak: Akun Viewer tidak memiliki izin mengakses CRM.");
+          toast.error(t("crm.page.deniedToast"));
           router.replace("/properties");
           return;
         }
@@ -51,7 +53,7 @@ function CRMContent() {
     }
 
     verifyViewerAccess();
-  }, [router]);
+  }, [router, t]);
 
   if (loadingRole) {
     return (
@@ -67,10 +69,10 @@ function CRMContent() {
       <div className="flex flex-col md:flex-row md:items-center justify-between pb-4 border-b border-border gap-4">
         <div>
           <h1 className="text-xl sm:text-2xl font-black tracking-tight text-foreground flex items-center gap-2">
-            <LayoutGrid className="w-6 h-6 text-emerald-600 dark:text-emerald-400" /> Manajemen CRM & Pipeline Prospek
+            <LayoutGrid className="w-6 h-6 text-emerald-600 dark:text-emerald-400" /> {t("crm.page.title")}
           </h1>
           <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
-            Kelola alur konversi klien, estimasi deal, dan status negosiasi properti.
+            {t("crm.page.subtitle")}
           </p>
         </div>
       </div>

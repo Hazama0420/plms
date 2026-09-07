@@ -38,15 +38,15 @@ export class AIService {
 
   constructor() {
     this.groq = new Groq({
-      apiKey: process.env.GROQ_API_KEY!,
+      apiKey: process.env.GROQ_API_KEY || "",
     });
 
     this.gemini = new GoogleGenAI({
-      apiKey: process.env.GEMINI_API_KEY!,
+      apiKey: process.env.GEMINI_API_KEY || "",
     });
 
-    this.agnesApiKey = process.env.AGNES_API_KEY!;
-    this.agnesApiUrl = process.env.AGNES_API_URL!;
+    this.agnesApiKey = process.env.AGNES_API_KEY || "";
+    this.agnesApiUrl = process.env.AGNES_API_URL || "";
   }
 
   // ===== FALLBACK 3 PROVIDER (Teks Utama) =====
@@ -138,6 +138,10 @@ export class AIService {
 
   // ===== AGNES AI PROVIDER =====
   private async generateAgnes(prompt: string, systemPrompt?: string) {
+    if (!this.agnesApiKey || !this.agnesApiUrl) {
+      throw new Error("Agnes API key or URL not configured");
+    }
+
     const messages: Array<{ role: string; content: string }> = [];
 
     if (systemPrompt) {

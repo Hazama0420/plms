@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 
 import { crmService } from "@/services/crm.service";
+import { syncCRMLeadInterestsAction } from "@/actions/crm-interests.action";
 import { supabase } from "@/lib/supabase/client";
 import type { LeadStatus } from "@/types/crm.types";
 
@@ -48,6 +49,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "@/lib/i18n/hooks";
 
 // ============================================================
 // TYPES
@@ -55,8 +57,8 @@ import { cn } from "@/lib/utils";
 interface Contact {
   id: string;
   full_name: string;
-  phone: string | null;
-  email: string | null;
+  phone?: string | null;
+  email?: string | null;
 }
 
 interface Property {
@@ -102,6 +104,7 @@ const interestTypePresets = [
 
 export default function EditLeadPage() {
   const router = useRouter();
+  const { t } = useTranslation();
   const params = useParams();
   const leadId = params.id as string;
 
@@ -239,7 +242,7 @@ export default function EditLeadPage() {
         setProperties(propertiesData || []);
       } catch (error) {
         console.error("Error fetching lead data:", error);
-        toast.error("Gagal memuat data lead");
+        toast.error(t("crm.editLead.toastLeadFetchFail"));
         router.push(`/crm/leads/${leadId}`);
       } finally {
         setLoading(false);
@@ -315,34 +318,25 @@ export default function EditLeadPage() {
   // ===== QUICK CREATE CONTACT HANDLER =====
   const handleCreateQuickContact = async () => {
     if (!quickContactForm.full_name) {
-      toast.error("Nama lengkap kontak wajib diisi");
+      toast.error(t("crm.createLead.toastNameRequired"));
       return;
     }
 
     setQuickContactSaving(true);
     try {
-      const generatedCode = `CNT-${Math.floor(100000 + Math.random() * 900000)}`;
+      const data = await crmService.createContact({
+        full_name: quickContactForm.full_name,
+        phone: quickContactForm.phone || null,
+        email: quickContactForm.email || null,
+      });
 
-      const { data, error } = await supabase
-        .from("crm_contacts")
-        .insert({
-          contact_code: generatedCode,
-          full_name: quickContactForm.full_name,
-          phone: quickContactForm.phone || null,
-          email: quickContactForm.email || null,
-        })
-        .select("id, full_name, phone, email")
-        .single();
-
-      if (error) throw error;
-
-      toast.success("Kontak baru berhasil dibuat!");
+      toast.success(t("crm.createLead.toastContactSuccess"));
       setContacts((prev) => [data, ...prev]);
       setForm((prev) => ({ ...prev, contact_id: data.id }));
       setIsQuickContactOpen(false);
       setQuickContactForm({ full_name: "", phone: "", email: "" });
     } catch (err: any) {
-      toast.error("Gagal menambah kontak baru: " + (err.message || err));
+      toast.error(t("crm.createLead.toastContactFail").replace("{msg}", err.message || err));
     } finally {
       setQuickContactSaving(false);
     }
@@ -352,7 +346,7 @@ export default function EditLeadPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.contact_id) {
-      toast.error("Kontak lead wajib dipilih");
+      toast.error(t("crm.createLead.toastContactRequired"));
       return;
     }
 
@@ -373,37 +367,20 @@ export default function EditLeadPage() {
         notes: form.notes || undefined,
       });
 
-      // 2. PERBAIKAN: Update relasi minat properti pada tabel `crm_interests`
-      await supabase
-        .from("crm_interests")
-        .delete()
-        .eq("lead_id", leadId);
-
-      if (selectedProperties.length > 0) {
-        const interestsPayload = selectedProperties.map((propertyId) => ({
-          lead_id: leadId,
-          property_id: propertyId,
-          interest_level: "high",
-          priority: 1,
-        }));
-
-        const { error: interestErr } = await supabase
-          .from("crm_interests")
-          .insert(interestsPayload);
-
-        if (interestErr) {
-          console.error("Gagal mengupdate minat properti (crm_interests):", interestErr.message || interestErr);
-          toast.warning("Data lead diperbarui, namun gagal menyimpan daftar minat properti.");
-        }
+      // 2. Update relasi minat properti melalui Server Action terpusat
+      const interestResult = await syncCRMLeadInterestsAction(leadId, selectedProperties);
+      if (!interestResult.success) {
+        console.error("Gagal mengupdate minat properti:", interestResult.error);
+        toast.warning(t("crm.editLead.toastSyncInterestsFail"));
       }
 
-      toast.success("Data lead prospek berhasil diperbarui!");
+      toast.success(t("crm.editLead.toastLeadSuccess"));
       router.push(`/crm/leads/${leadId}`);
       router.refresh();
     } catch (error: any) {
       console.error("Error updating lead:", error);
-      toast.error("Gagal memperbarui lead", {
-        description: error.message || "Silakan periksa kembali data yang dimasukkan.",
+      toast.error(t("crm.editLead.toastLeadFail"), {
+        description: error.message || t("crm.editLead.toastLeadFailDesc"),
       });
     } finally {
       setSaving(false);
@@ -438,10 +415,10 @@ export default function EditLeadPage() {
           </Button>
           <div>
             <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
-              ✏️ Edit Lead Prospek
+              ✏️ {t("crm.editLead.title")}
             </h1>
             <p className="text-xs text-muted-foreground">
-              Perbarui rincian data klien, status pipeline, budget, dan penugasan agent.
+              {t("crm.editLead.desc")}
             </p>
           </div>
         </div>
@@ -452,10 +429,10 @@ export default function EditLeadPage() {
         <Card className="border shadow-md bg-card overflow-hidden">
           <CardHeader className="bg-muted/40 border-b pb-4">
             <CardTitle className="text-sm font-bold flex items-center gap-2">
-              <UserCheck className="w-4 h-4 text-emerald-600" /> Informasi Prospek & Klien
+              <UserCheck className="w-4 h-4 text-emerald-600" /> {t("crm.editLead.infoTitle")}
             </CardTitle>
             <CardDescription className="text-xs">
-              Sesuaikan informasi kontak dan preferensi properti klien.
+              {t("crm.editLead.infoDesc")}
             </CardDescription>
           </CardHeader>
 
@@ -464,7 +441,7 @@ export default function EditLeadPage() {
             <div className="space-y-2 relative" ref={contactRef}>
               <div className="flex items-center justify-between">
                 <Label className="text-xs font-bold text-foreground">
-                  Kontak Klien / Calon Pembeli <span className="text-rose-500">*</span>
+                  {t("crm.createLead.contactLabel")} <span className="text-rose-500">*</span>
                 </Label>
                 <Button
                   type="button"
@@ -473,7 +450,7 @@ export default function EditLeadPage() {
                   onClick={() => setIsQuickContactOpen(true)}
                   className="h-6 text-[11px] text-emerald-600 hover:text-emerald-700 p-0 gap-1 cursor-pointer"
                 >
-                  <Plus className="w-3 h-3" /> Tambah Kontak Baru
+                  <Plus className="w-3 h-3" /> {t("crm.createLead.addNewContact")}
                 </Button>
               </div>
 
@@ -496,7 +473,7 @@ export default function EditLeadPage() {
                   </span>
                 ) : (
                   <span className="text-muted-foreground flex items-center gap-2">
-                    <Search className="w-3.5 h-3.5 text-muted-foreground" /> Cari atau pilih kontak...
+                    <Search className="w-3.5 h-3.5 text-muted-foreground" /> {t("crm.createLead.searchContactPlaceholder")}
                   </span>
                 )}
                 <ChevronDown className="h-4 w-4 opacity-50 shrink-0" />
@@ -519,7 +496,7 @@ export default function EditLeadPage() {
                   <div className="max-h-52 overflow-y-auto space-y-1">
                     {filteredContacts.length === 0 ? (
                       <p className="p-3 text-center text-xs text-muted-foreground">
-                        Kontak tidak ditemukan. Klik "Tambah Kontak Baru" di atas.
+                        {t("crm.createLead.contactNotFound")}
                       </p>
                     ) : (
                       filteredContacts.map((contact) => (
@@ -537,7 +514,7 @@ export default function EditLeadPage() {
                           <div>
                             <p className="font-medium text-foreground">{contact.full_name}</p>
                             <p className="text-[10px] text-muted-foreground font-mono">
-                              {contact.phone || contact.email || "Tanpa No HP"}
+                              {contact.phone || contact.email || t("crm.createLead.withoutPhone")}
                             </p>
                           </div>
                           {form.contact_id === contact.id && (
@@ -554,7 +531,7 @@ export default function EditLeadPage() {
             {/* 2. ASSIGN TO AGENT */}
             <div className="space-y-2 relative" ref={agentRef}>
               <Label className="text-xs font-bold text-foreground">
-                Penanggung Jawab (Agent In-Charge)
+                {t("crm.createLead.picLabel")}
               </Label>
 
               {!isAdmin ? (
@@ -565,11 +542,11 @@ export default function EditLeadPage() {
                       {selectedAgent ? (selectedAgent.full_name || selectedAgent.email) : (currentUserName || "Agent In-Charge")}
                     </span>
                     <Badge variant="outline" className="text-[10px] bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 flex items-center gap-1">
-                      <Lock className="w-2.5 h-2.5" /> Akun Agent (Terkunci)
+                      <Lock className="w-2.5 h-2.5" /> {t("crm.createLead.autoAssigned")}
                     </Badge>
                   </div>
                   <p className="text-[10px] text-muted-foreground">
-                    Penanggung jawab tidak dapat diubah oleh Agent. Hubungi Admin jika perlu pemindahan penugasan.
+                    {t("crm.createLead.autoAssignedDesc")}
                   </p>
                 </div>
               ) : (
@@ -587,7 +564,7 @@ export default function EditLeadPage() {
                         {selectedAgent.full_name || selectedAgent.email}
                       </span>
                     ) : (
-                      <span className="text-muted-foreground">Pilih Agent (Opsional)</span>
+                      <span className="text-muted-foreground">{t("crm.createLead.selectAgent")}</span>
                     )}
                     <ChevronDown className="h-4 w-4 opacity-50 shrink-0" />
                   </div>
@@ -614,7 +591,7 @@ export default function EditLeadPage() {
                           }}
                           className="p-2 rounded-lg cursor-pointer text-xs hover:bg-muted text-muted-foreground"
                         >
-                          -- Belum Diassign --
+                          {t("crm.createLead.unassigned")}
                         </div>
                         {filteredAgents.map((agent) => (
                           <div
@@ -642,13 +619,13 @@ export default function EditLeadPage() {
             {/* 3. STATUS & SUMBER LEAD */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label className="text-xs font-bold text-foreground">Status Tahapan CRM</Label>
+                <Label className="text-xs font-bold text-foreground">{t("crm.createLead.statusLabel")}</Label>
                 <Select
                   value={form.status}
                   onValueChange={(val) => handleChange("status", val || "")}
                 >
                   <SelectTrigger className="h-10 text-xs bg-background">
-                    <SelectValue placeholder="Pilih status" />
+                    <SelectValue placeholder={t("crm.createLead.selectStatus")} />
                   </SelectTrigger>
                   <SelectContent>
                     {statusOptions.map((opt) => (
@@ -665,13 +642,13 @@ export default function EditLeadPage() {
               </div>
 
               <div className="space-y-2">
-                <Label className="text-xs font-bold text-foreground">Sumber Lead (Source)</Label>
+                <Label className="text-xs font-bold text-foreground">{t("crm.createLead.sourceLabel")}</Label>
                 <Select
                   value={form.source}
                   onValueChange={(val) => handleChange("source", val || "")}
                 >
                   <SelectTrigger className="h-10 text-xs bg-background">
-                    <SelectValue placeholder="Pilih sumber" />
+                    <SelectValue placeholder={t("crm.createLead.selectSource")} />
                   </SelectTrigger>
                   <SelectContent>
                     {sourcePresets.map((src) => (
@@ -687,13 +664,13 @@ export default function EditLeadPage() {
             {/* 4. TIPE MINAT & BUDGET */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label className="text-xs font-bold text-foreground">Kategori Minat Properti</Label>
+                <Label className="text-xs font-bold text-foreground">{t("crm.createLead.interestLabel")}</Label>
                 <Select
                   value={form.interest_type}
                   onValueChange={(val) => handleChange("interest_type", val || "")}
                 >
                   <SelectTrigger className="h-10 text-xs bg-background">
-                    <SelectValue placeholder="Pilih jenis properti" />
+                    <SelectValue placeholder={t("crm.createLead.selectInterest")} />
                   </SelectTrigger>
                   <SelectContent>
                     {interestTypePresets.map((type) => (
@@ -706,10 +683,10 @@ export default function EditLeadPage() {
               </div>
 
               <div className="space-y-2">
-                <Label className="text-xs font-bold text-foreground">Estimasi Budget (Rp)</Label>
+                <Label className="text-xs font-bold text-foreground">{t("crm.createLead.budgetLabel")}</Label>
                 <Input
                   type="number"
-                  placeholder="Contoh: 2500000000"
+                  placeholder={t("crm.createLead.budgetPlaceholder")}
                   value={form.budget}
                   onChange={(e) => handleChange("budget", e.target.value)}
                   className="h-10 text-xs font-mono"
@@ -717,7 +694,7 @@ export default function EditLeadPage() {
                 {form.budget ? (
                   <p className="text-[11px] font-mono text-emerald-600 font-bold flex items-center gap-1">
                     <Sparkles className="w-3 h-3 text-amber-500 fill-amber-500" />
-                    Preview: {formatIDRPreview(form.budget)}
+                    {t("crm.createLead.preview")} {formatIDRPreview(form.budget)}
                   </p>
                 ) : null}
               </div>
@@ -726,7 +703,7 @@ export default function EditLeadPage() {
             {/* 5. MULTI-SELECT PROPERTI YANG DIMINATI */}
             <div className="space-y-2 pt-2 border-t border-border/50 relative" ref={propertyRef}>
               <Label className="text-xs font-bold text-foreground">
-                Properti yang Diminati (Multi-Select)
+                {t("crm.createLead.propertyLabel")}
               </Label>
 
               <div className="flex flex-wrap gap-1.5 mb-2">
@@ -771,7 +748,7 @@ export default function EditLeadPage() {
                 className="w-full flex items-center justify-between h-9 px-3 rounded-md border border-dashed border-input bg-background text-xs cursor-pointer hover:border-emerald-500 transition focus:outline-none focus:ring-2 focus:ring-emerald-500"
               >
                 <span className="text-muted-foreground flex items-center gap-1.5">
-                  <Plus className="w-3.5 h-3.5" /> Klik untuk memilih unit properti terkait...
+                  <Plus className="w-3.5 h-3.5" /> {t("crm.createLead.clickToSelect")}
                 </span>
                 <ChevronDown className="h-4 w-4 opacity-50 shrink-0" />
               </div>
@@ -793,7 +770,7 @@ export default function EditLeadPage() {
                   <div className="max-h-48 overflow-y-auto space-y-1">
                     {filteredProperties.length === 0 ? (
                       <p className="p-3 text-center text-xs text-muted-foreground">
-                        Tidak ada properti tambahan tersedia.
+                        {t("crm.createLead.noPropertyAvailable")}
                       </p>
                     ) : (
                       filteredProperties.map((prop) => (
@@ -817,9 +794,9 @@ export default function EditLeadPage() {
 
             {/* 6. CATATAN KHUSUS */}
             <div className="space-y-2">
-              <Label className="text-xs font-bold text-foreground">Catatan / Kebutuhan Khusus Klien</Label>
+              <Label className="text-xs font-bold text-foreground">{t("crm.createLead.notesLabel")}</Label>
               <Textarea
-                placeholder="Misal: Klien mencari rumah dengan halaman luas, lokasi dekat gerbang tol BSD..."
+                placeholder={t("crm.createLead.notesPlaceholder")}
                 value={form.notes}
                 onChange={(e) => handleChange("notes", e.target.value)}
                 rows={3}
@@ -836,11 +813,11 @@ export default function EditLeadPage() {
               >
                 {saving ? (
                   <>
-                    <Loader2 className="h-4 w-4 animate-spin" /> Menyimpan Perubahan...
+                    <Loader2 className="h-4 w-4 animate-spin" /> {t("crm.editLead.savingChanges")}
                   </>
                 ) : (
                   <>
-                    <Save className="h-4 w-4" /> Simpan Perubahan Lead
+                    <Save className="h-4 w-4" /> {t("crm.editLead.saveChangesBtn")}
                   </>
                 )}
               </Button>
@@ -851,7 +828,7 @@ export default function EditLeadPage() {
                 onClick={() => router.back()}
                 className="text-xs h-9 cursor-pointer"
               >
-                Batal
+                {t("crm.createLead.cancelBtn")}
               </Button>
             </div>
           </CardContent>
@@ -863,36 +840,36 @@ export default function EditLeadPage() {
         <DialogContent className="sm:max-w-md rounded-2xl">
           <DialogHeader>
             <DialogTitle className="text-base font-bold flex items-center gap-2">
-              <UserPlus className="w-4 h-4 text-emerald-600" /> Tambah Kontak Baru Cepat
+              <UserPlus className="w-4 h-4 text-emerald-600" /> {t("crm.createLead.quickContactTitle")}
             </DialogTitle>
             <DialogDescription className="text-xs">
-              Buat profil kontak baru secara langsung tanpa keluar dari formulir lead ini.
+              {t("crm.createLead.quickContactDesc")}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-3 py-2 text-xs">
             <div>
-              <Label className="text-xs font-bold">Nama Lengkap *</Label>
+              <Label className="text-xs font-bold">{t("crm.createLead.fullNameLabel")}</Label>
               <Input
-                placeholder="Contoh: Budi Santoso"
+                placeholder={t("crm.createLead.fullNamePlaceholder")}
                 value={quickContactForm.full_name}
                 onChange={(e) => setQuickContactForm({ ...quickContactForm, full_name: e.target.value })}
                 className="h-9 text-xs mt-1"
               />
             </div>
             <div>
-              <Label className="text-xs font-bold">Nomor WhatsApp / HP</Label>
+              <Label className="text-xs font-bold">{t("crm.createLead.phoneLabel")}</Label>
               <Input
-                placeholder="Contoh: 081298765432"
+                placeholder={t("crm.createLead.phonePlaceholder")}
                 value={quickContactForm.phone}
                 onChange={(e) => setQuickContactForm({ ...quickContactForm, phone: e.target.value })}
                 className="h-9 text-xs mt-1 font-mono"
               />
             </div>
             <div>
-              <Label className="text-xs font-bold">Email (Opsional)</Label>
+              <Label className="text-xs font-bold">{t("crm.createLead.emailLabel")}</Label>
               <Input
-                placeholder="Contoh: budi@gmail.com"
+                placeholder={t("crm.createLead.emailPlaceholder")}
                 value={quickContactForm.email}
                 onChange={(e) => setQuickContactForm({ ...quickContactForm, email: e.target.value })}
                 className="h-9 text-xs mt-1"
@@ -908,7 +885,7 @@ export default function EditLeadPage() {
               onClick={() => setIsQuickContactOpen(false)}
               className="text-xs cursor-pointer"
             >
-              Batal
+              {t("crm.createLead.cancelBtn")}
             </Button>
             <Button
               type="button"
@@ -918,7 +895,7 @@ export default function EditLeadPage() {
               className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs gap-1.5 cursor-pointer"
             >
               {quickContactSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-              Simpan Kontak
+              {t("crm.createLead.saveContactBtn")}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -1,18 +1,8 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import {
-  Check,
-  Grid,
-  Ruler,
-  MapPin,
-  Home,
-  DollarSign,
-  User,
-  CheckCircle,
-  HelpCircle,
-  type LucideIcon,
-} from "lucide-react";
+import { Check, Grid, Ruler, MapPin, Home, DollarSign, User, CheckCircle, HelpCircle, type LucideIcon } from "lucide-react";
+import { useTranslation } from "@/lib/i18n/hooks";
 
 // Pemetaan Ikon Explicit untuk Mencegah Bundle Size Membengkak & Error Dynamic Lookup
 const iconMap: Record<string, LucideIcon> = {
@@ -38,6 +28,7 @@ interface SidebarStepperProps {
 }
 
 export function SidebarStepper({ steps, currentStep, onStepClick }: SidebarStepperProps) {
+  const { t } = useTranslation();
   // Hitung persentase progres wizard
   const progressPercentage = Math.round(((currentStep + 1) / steps.length) * 100);
 
@@ -47,10 +38,10 @@ export function SidebarStepper({ steps, currentStep, onStepClick }: SidebarStepp
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <h3 className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-            Tahapan Pasang Iklan
+            {t("createProperty.adSteps")}
           </h3>
           <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 font-mono">
-            {progressPercentage}% Selesai
+            {t("createProperty.percentComplete").replace("{percent}", progressPercentage.toString())}
           </span>
         </div>
         <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-1.5 overflow-hidden">

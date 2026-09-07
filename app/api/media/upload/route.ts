@@ -1,29 +1,19 @@
 // app/api/media/upload/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { createServerClient } from "@supabase/ssr";
-import { cookies } from "next/headers";
+import { requireAuth } from "@/lib/api-auth";
 import { addWatermark } from "@/lib/watermark";
 
 export async function POST(req: NextRequest) {
+  // Otorisasi lewat requireAuth(), bukan pemeriksaan buatan sendiri. Selain
+  // menyeragamkan jalurnya, ini menambahkan pemeriksaan status akun yang
+  // dilakukan getAuthContext(): agen yang belum disetujui (`status = 'pending'`)
+  // atau sudah dinonaktifkan tidak lagi bisa mengunggah media.
+  const auth = await requireAuth();
+  if (!auth.ok) return auth.response;
+
+  const { supabase, userId, role } = auth.ctx;
+
   try {
-    const cookieStore = await cookies();
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          get(name) { return cookieStore.get(name)?.value; },
-          set(name, value, options) { cookieStore.set({ name, value, ...options }); },
-          remove(name, options) { cookieStore.set({ name, value: "", ...options }); },
-        },
-      }
-    );
-
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
     const formData = await req.formData();
     const file = formData.get("file") as File;
     const propertyId = formData.get("propertyId") as string;
@@ -32,6 +22,36 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         { error: "Missing file or propertyId" },
         { status: 400 }
+      );
+    }
+
+    // Verify ownership: user must be able to edit this property
+    const { data: property, error: propertyError } = await supabase
+      .from("properties")
+      .select("id, created_by, assigned_to")
+      .eq("id", propertyId)
+      .maybeSingle();
+
+    if (propertyError || !property) {
+      return NextResponse.json(
+        { error: "Property not found" },
+        { status: 404 }
+      );
+    }
+
+    // Check if user can edit: must be creator, assigned agent, or staff.
+    // `role` dari auth.ctx sudah dinormalisasi oleh normalizeRole(), jadi
+    // kedua ejaan super admin terbaca sama tanpa daftar manual di sini.
+    const isStaff = role === "admin" || role === "super_admin";
+    const canEdit =
+      isStaff ||
+      property.created_by === userId ||
+      property.assigned_to === userId;
+
+    if (!canEdit) {
+      return NextResponse.json(
+        { error: "Forbidden: you cannot upload to this property" },
+        { status: 403 }
       );
     }
 
@@ -106,7 +126,7 @@ export async function POST(req: NextRequest) {
         file_size: watermarkedBuffer.length,
         is_primary: false,
         sort_order: existingCount ?? 0,
-        uploaded_by: user.id,
+        uploaded_by: userId,
       })
       .select()
       .single();
@@ -124,11 +144,9 @@ export async function POST(req: NextRequest) {
       success: true,
       media: mediaData,
     });
-  } catch (error: any) {
-    console.error("Upload API error:", error);
-    return NextResponse.json(
-      { error: error.message || "Internal server error" },
-      { status: 500 }
-    );
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    console.error("Upload API error:", detail);
+    return NextResponse.json({ error: detail }, { status: 500 });
   }
 }

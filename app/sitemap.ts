@@ -81,7 +81,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     //                            pelepasan penugasan mengembalikannya ke draf.
     const { data, error } = await supabase
       .from("properties")
-      .select("id, updated_at")
+      .select("id, slug, updated_at")
       .eq("status", "published")
       .not("assigned_to", "is", null)
       .order("updated_at", { ascending: false });
@@ -89,7 +89,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     if (error) throw new Error(error.message);
 
     const properties: MetadataRoute.Sitemap = (data || []).map((row) => ({
-      url: `${SITE.url}/properties/${row.id}`,
+      url: `${SITE.url}/properties/${(row as any).slug || row.id}`,
       lastModified: row.updated_at ? new Date(row.updated_at) : new Date(),
       changeFrequency: "weekly",
       priority: 0.8,

@@ -4,15 +4,24 @@
 // atau klien Supabase, karena file ini juga dipakai dari proxy.ts yang berjalan
 // di luar konteks request Server Component.
 
-import { UserRole, Permission, ROLE_PERMISSIONS } from "@/types/user.types";
+import { UserRole, Permission, ROLE_PERMISSIONS, VALID_ROLES } from "@/types/user.types";
 
-const VALID_ROLES: UserRole[] = [
-  "super_admin",
-  "admin",
-  "agent",
-  "marketing",
-  "viewer",
-];
+/**
+ * Status akun yang tidak boleh masuk sistem.
+ *
+ * Sengaja daftar-tolak, bukan daftar-izin (`status !== 'active'`): tabel
+ * `users` tidak pernah didefinisikan di berkas migrasi mana pun — DDL-nya
+ * dibuat manual lewat SQL Editor — sehingga nilai bawaan kolom `status` tidak
+ * bisa dipastikan dari repositori ini. Akun lama yang `status`-nya null akan
+ * ikut terkunci oleh daftar-izin, termasuk admin. Yang ditolak di sini hanya
+ * dua nilai yang memang ditulis eksplisit oleh alur pendaftaran.
+ */
+export const BLOCKED_STATUSES = ["pending", "suspended"];
+
+/** Apakah akun dengan status ini ditolak masuk? Nilai null/kosong lolos. */
+export function isBlockedStatus(raw: unknown): boolean {
+  return BLOCKED_STATUSES.includes(String(raw ?? "").toLowerCase().trim());
+}
 
 /**
  * Menyeragamkan penulisan role dari database.
@@ -25,6 +34,15 @@ export function normalizeRole(raw: unknown): UserRole {
   return (VALID_ROLES as string[]).includes(value)
     ? (value as UserRole)
     : "viewer";
+}
+
+/**
+ * Memeriksa apakah suatu role berwenang meninjau atau memverifikasi deal CRM.
+ * Hanya Admin dan Super Admin (termasuk legacy "superadmin") yang berwenang.
+ */
+export function canReviewDeal(rawRole: unknown): boolean {
+  const role = normalizeRole(rawRole);
+  return role === "admin" || role === "super_admin";
 }
 
 /**
@@ -61,6 +79,7 @@ export function hasMinRole(userRole: UserRole | null | undefined, minRole: UserR
     super_admin: 100,
     admin: 80,
     agent: 50,
+    commissioner: 40,
     marketing: 30,
     viewer: 10,
   };
@@ -122,23 +141,31 @@ export function canAccessRoute(userRole: UserRole | null | undefined, route: str
     return hasAnyPermission(userRole, ["manage_own_properties", "manage_all_properties", "view_all_properties"]);
   }
 
-  // CRM, Leads, Follow-up, Survey — seluruhnya data pelanggan
+  // CRM, Leads, Follow-up — data pipeline operasional internal (hanya staf: Agen, Marketing, Admin, Super Admin, Commissioner)
   if (
     matchesSection(route, "crm") ||
-    matchesSection(route, "leads") ||
-    matchesSection(route, "surveys")
+    matchesSection(route, "leads")
   ) {
-    return hasAnyPermission(userRole, ["manage_own_crm", "manage_all_crm", "view_all_crm", "view_own_crm"]);
+    return hasAnyPermission(userRole, ["manage_own_crm", "manage_all_crm", "view_all_crm"]);
   }
 
-  // Invoice & Proyek — data keuangan/operasional internal
-  if (matchesSection(route, "invoices") || matchesSection(route, "projects")) {
-    return hasAnyPermission(userRole, ["manage_all_properties", "manage_own_properties", "view_all_properties"]);
+  // Surveys — jadwal survei properti (dapat diakses staf internal maupun client terdaftar)
+  if (matchesSection(route, "surveys")) {
+    return true;
+  }
+
+  // Invoices — data keuangan internal (khusus Admin & Super Admin)
+  if (matchesSection(route, "invoices")) {
+    return userRole === "admin";
+  }
+
+  // Proyek — operasional internal
+  if (matchesSection(route, "projects")) {
+    return hasAnyPermission(userRole, ["manage_all_properties", "manage_own_properties"]);
   }
 
   // Halaman personal & utilitas — semua user yang sudah login boleh
   if (
-    matchesSection(route, "profile") ||
     matchesSection(route, "settings") ||
     matchesSection(route, "notifications") ||
     matchesSection(route, "kpr-calculator") ||

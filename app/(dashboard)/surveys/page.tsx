@@ -2,6 +2,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useTranslation } from "@/hooks/use-translation";
 import { supabase } from "@/lib/supabase/client";
 import { normalizeRole } from "@/lib/permissions";
 import { openWhatsApp } from "@/lib/whatsapp-link";
@@ -56,39 +57,7 @@ import { Separator } from "@/components/ui/separator";
 // STATUS CONFIG
 // ============================================================
 
-const surveyStatusConfig: Record<
-  SurveyStatus,
-  { label: string; color: string; bg: string }
-> = {
-  scheduled: {
-    label: "Terjadwal",
-    color: "text-blue-600 dark:text-blue-400",
-    bg: "bg-blue-100 dark:bg-blue-950/60 border-blue-200",
-  },
-  completed: {
-    label: "Selesai",
-    color: "text-emerald-600 dark:text-emerald-400",
-    bg: "bg-emerald-100 dark:bg-emerald-950/60 border-emerald-200",
-  },
-  cancelled: {
-    label: "Dibatalkan",
-    color: "text-rose-600 dark:text-rose-400",
-    bg: "bg-rose-100 dark:bg-rose-950/60 border-rose-200",
-  },
-  no_show: {
-    label: "Tidak Hadir",
-    color: "text-amber-600 dark:text-amber-400",
-    bg: "bg-amber-100 dark:bg-amber-950/60 border-amber-200",
-  },
-};
-
-const requestStatusConfig: Record<string, { label: string; color: string }> = {
-  pending: { label: "Menunggu", color: "text-amber-600" },
-  contacted: { label: "Dihubungi", color: "text-blue-600" },
-  scheduled: { label: "Terjadwal", color: "text-emerald-600" },
-  rejected: { label: "Ditolak", color: "text-rose-600" },
-  cancelled: { label: "Dibatalkan", color: "text-slate-600" },
-};
+// surveyStatusConfig & requestStatusConfig moved inside component to react to language changes
 
 // ============================================================
 // HELPER FUNCTIONS
@@ -168,6 +137,23 @@ interface PropertyOption {
 // ============================================================
 
 export default function SurveysPage() {
+  const { t } = useTranslation();
+
+  const surveyStatusConfig: Record<SurveyStatus, { label: string; color: string; bg: string }> = {
+    scheduled: { label: t("surveys.survey_status.scheduled"), color: "text-blue-600 dark:text-blue-400", bg: "bg-blue-100 dark:bg-blue-950/60 border-blue-200" },
+    completed: { label: t("surveys.survey_status.completed"), color: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-100 dark:bg-emerald-950/60 border-emerald-200" },
+    cancelled: { label: t("surveys.survey_status.cancelled"), color: "text-rose-600 dark:text-rose-400", bg: "bg-rose-100 dark:bg-rose-950/60 border-rose-200" },
+    no_show: { label: t("surveys.survey_status.no_show"), color: "text-amber-600 dark:text-amber-400", bg: "bg-amber-100 dark:bg-amber-950/60 border-amber-200" },
+  };
+
+  const requestStatusConfig: Record<string, { label: string; color: string }> = {
+    pending: { label: t("surveys.request_status.pending"), color: "text-amber-600 dark:text-amber-400" },
+    contacted: { label: t("surveys.request_status.contacted"), color: "text-blue-600 dark:text-blue-400" },
+    scheduled: { label: t("surveys.request_status.scheduled"), color: "text-emerald-600 dark:text-emerald-400" },
+    rejected: { label: t("surveys.request_status.rejected"), color: "text-rose-600 dark:text-rose-400" },
+    cancelled: { label: t("surveys.request_status.cancelled"), color: "text-slate-600 dark:text-slate-400" },
+  };
+
   // --- Identitas & peran ---
   const [userId, setUserId] = useState<string | null>(null);
   const [role, setRole] = useState<UserRole | "">("");
@@ -374,7 +360,7 @@ export default function SurveysPage() {
 
   const handleSubmitRequest = async () => {
     if (!requestForm.property_id) {
-      toast.error("Pilih properti yang ingin disurvei");
+      toast.error(t("surveys.property_required_toast"));
       return;
     }
 
@@ -388,8 +374,8 @@ export default function SurveysPage() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Gagal mengirim pengajuan.");
 
-      toast.success("Pengajuan terkirim", {
-        description: json.message || "Agen akan menghubungi Anda segera.",
+      toast.success(t("surveys.send_request_success"), {
+        description: json.message || t("surveys.agent_will_contact_soon"),
       });
       setIsRequestOpen(false);
       setRequestForm((prev) => ({
@@ -401,7 +387,7 @@ export default function SurveysPage() {
       }));
       fetchData();
     } catch (err: any) {
-      toast.error("Pengajuan gagal", { description: err?.message });
+      toast.error(t("surveys.request_failed"), { description: err.message });
     } finally {
       setSubmitting(false);
     }
@@ -417,17 +403,17 @@ export default function SurveysPage() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Gagal memperbarui status.");
 
-      toast.success("Ditandai sudah dihubungi");
+      toast.success(t("surveys.mark_contacted_success"));
       fetchData();
     } catch (err: any) {
-      toast.error("Gagal memperbarui status", { description: err?.message });
+      toast.error(t("surveys.mark_contacted_failed"), { description: err?.message });
     }
   };
 
   const handleReject = async () => {
     if (!rejectTarget) return;
-    if (rejectReason.trim().length === 0) {
-      toast.error("Alasan penolakan wajib diisi");
+    if (!rejectReason.trim()) {
+      toast.error(t("surveys.reject_reason_required_toast"));
       return;
     }
 
@@ -441,12 +427,14 @@ export default function SurveysPage() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Gagal menolak pengajuan.");
 
-      toast.success("Pengajuan ditolak", { description: "Client menerima notifikasi." });
+      toast.success(t("surveys.reject_success"), {
+        description: t("surveys.reject_client_notified"),
+      });
       setRejectTarget(null);
       setRejectReason("");
       fetchData();
     } catch (err: any) {
-      toast.error("Gagal menolak pengajuan", { description: err?.message });
+      toast.error(t("surveys.reject_failed"), { description: err.message });
     } finally {
       setSubmitting(false);
     }
@@ -481,13 +469,13 @@ export default function SurveysPage() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Gagal membuat jadwal.");
 
-      toast.success("Jadwal survei dibuat", {
-        description: "Client menerima notifikasi konfirmasi.",
+      toast.success(t("surveys.schedule_created_success"), {
+        description: t("surveys.client_notified"),
       });
       setScheduleTarget(null);
       fetchData();
     } catch (err: any) {
-      toast.error("Gagal membuat jadwal", { description: err?.message });
+      toast.error(t("surveys.schedule_failed"), { description: err?.message });
     } finally {
       setSubmitting(false);
     }
@@ -503,10 +491,10 @@ export default function SurveysPage() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Gagal memperbarui jadwal.");
 
-      toast.success(`Jadwal ditandai "${surveyStatusConfig[status].label}"`);
+      toast.success(surveyStatusConfig[status]?.label || status);
       fetchData();
     } catch (err: any) {
-      toast.error("Gagal memperbarui jadwal", { description: err?.message });
+      toast.error(t("surveys.update_status_failed"), { description: err?.message });
     }
   };
 
@@ -571,11 +559,11 @@ export default function SurveysPage() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Gagal memperbarui jadwal.");
 
-      toast.success("Jadwal diperbarui", { description: json.message });
+      toast.success(t("surveys.schedule_updated_success"), { description: json.message });
       setEditTarget(null);
       fetchData();
     } catch (err: any) {
-      toast.error("Gagal memperbarui jadwal", { description: err?.message });
+      toast.error(t("surveys.schedule_update_failed"), { description: err?.message });
     } finally {
       setSubmitting(false);
     }
@@ -583,7 +571,7 @@ export default function SurveysPage() {
 
   const contactViaWhatsApp = (phone: string | null | undefined, text: string) => {
     if (!openWhatsApp(phone, text)) {
-      toast.error("Nomor WhatsApp tidak tersedia atau tidak valid");
+      toast.error(t("surveys.wa_unavailable"));
     }
   };
 
@@ -637,12 +625,12 @@ export default function SurveysPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">
-            Jadwal Survei
+            {t("surveys.title")}
           </h1>
           <p className="text-sm text-muted-foreground">
             {isStaff
-              ? "Tangani pengajuan survei dari client dan kelola janji temu Anda."
-              : "Pengajuan dan jadwal survei properti Anda."}
+              ? t("surveys.subtitle_staff")
+              : t("surveys.subtitle_client")}
           </p>
         </div>
 
@@ -654,7 +642,7 @@ export default function SurveysPage() {
             }}
             className="gap-2 shrink-0 rounded-xl cursor-pointer bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20"
           >
-            <Plus className="h-4 w-4" /> Ajukan Survei
+            <Plus className="h-4 w-4" /> {t("surveys.request_btn")}
           </Button>
         )}
       </div>
@@ -664,8 +652,8 @@ export default function SurveysPage() {
         <AlertCircle className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
         <span>
           {isStaff
-            ? "Anda hanya melihat pengajuan dan jadwal yang ditugaskan kepada Anda. Data janji temu agen lain tidak ditampilkan."
-            : "Jadwal ini bersifat pribadi — hanya Anda dan agen yang bersangkutan dapat melihatnya."}
+            ? t("surveys.privacy_note_staff")
+            : t("surveys.privacy_note_client")}
         </span>
       </div>
 
@@ -673,7 +661,7 @@ export default function SurveysPage() {
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input
-          placeholder="Cari properti, kode listing, atau nama..."
+          placeholder={t("surveys.search_placeholder")}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="pl-9 h-9 text-xs rounded-xl"
@@ -693,7 +681,7 @@ export default function SurveysPage() {
         <Tabs defaultValue="requests" className="w-full">
           <TabsList className="w-full grid grid-cols-2 rounded-xl h-10">
             <TabsTrigger value="requests" className="text-xs gap-1.5 rounded-lg cursor-pointer">
-              Request Masuk
+              {t("surveys.tab_requests")}
               {pendingCount > 0 && (
                 <Badge className="h-4 min-w-4 px-1 text-[10px] bg-rose-600 text-white rounded-full">
                   {pendingCount}
@@ -701,7 +689,7 @@ export default function SurveysPage() {
               )}
             </TabsTrigger>
             <TabsTrigger value="schedule" className="text-xs rounded-lg cursor-pointer">
-              Jadwal Survei ({filteredSurveys.length})
+              {t("surveys.tab_schedule")} ({filteredSurveys.length})
             </TabsTrigger>
           </TabsList>
 
@@ -710,8 +698,8 @@ export default function SurveysPage() {
             {openRequests.length === 0 ? (
               <EmptyState
                 icon={<MessageCircle className="w-8 h-8 text-muted-foreground/50" />}
-                title="Belum ada pengajuan yang perlu ditangani"
-                description="Pengajuan survei dari client atas properti yang Anda pegang akan muncul di sini."
+                title={t("surveys.no_requests_title")}
+                description={t("surveys.no_requests_desc")}
               />
             ) : (
               openRequests.map((req) => (
@@ -740,7 +728,7 @@ export default function SurveysPage() {
             {filteredRequests.some((r) => !openRequests.includes(r)) && (
               <div className="pt-4">
                 <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-2">
-                  Riwayat Pengajuan
+                  {t("surveys.history_title")}
                 </p>
                 <div className="space-y-2">
                   {filteredRequests
@@ -776,8 +764,8 @@ export default function SurveysPage() {
             {filteredSurveys.length === 0 ? (
               <EmptyState
                 icon={<CalendarIcon className="w-8 h-8 text-muted-foreground/50" />}
-                title="Belum ada jadwal survei"
-                description="Jadwal terbentuk setelah Anda menyetujui pengajuan dan menentukan waktu bersama client."
+                title={t("surveys.no_schedules_title")}
+                description={t("surveys.no_schedules_desc")}
               />
             ) : (
               filteredSurveys.map((survey) => (
@@ -810,13 +798,13 @@ export default function SurveysPage() {
           {/* Jadwal saya */}
           <section className="space-y-3">
             <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-              Jadwal Survei Saya
+              {t("surveys.my_schedule_title")}
             </p>
             {filteredSurveys.length === 0 ? (
               <EmptyState
                 icon={<CalendarIcon className="w-8 h-8 text-muted-foreground/50" />}
-                title="Belum ada jadwal survei"
-                description="Ajukan survei atas properti yang Anda minati. Agen akan menghubungi Anda untuk menentukan waktu."
+                title={t("surveys.no_schedules_title")}
+                description={t("surveys.no_schedules_client_desc")}
               />
             ) : (
               filteredSurveys.map((survey) => (
@@ -841,7 +829,7 @@ export default function SurveysPage() {
           {filteredRequests.length > 0 && (
             <section className="space-y-2">
               <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-                Pengajuan Saya
+                {t("surveys.my_requests_title")}
               </p>
               {filteredRequests.map((req) => {
                 const cfg = requestStatusConfig[req.status];
@@ -868,7 +856,7 @@ export default function SurveysPage() {
                         )}
                         {req.status === "pending" && (
                           <p className="text-[11px] text-muted-foreground">
-                            Agen akan menghubungi Anda melalui WhatsApp.
+                            {t("surveys.agent_will_contact")}
                           </p>
                         )}
                       </div>
@@ -894,7 +882,7 @@ export default function SurveysPage() {
                         }
                         className="mt-3 h-8 w-full text-[11px] gap-1.5 rounded-xl cursor-pointer text-emerald-700 border-emerald-300"
                       >
-                        <MessageCircle className="w-3.5 h-3.5" /> Hubungi Agen
+                        <MessageCircle className="w-3.5 h-3.5" /> {t("surveys.contact_agent_btn")}
                       </Button>
                     )}
                   </Card>
@@ -911,15 +899,15 @@ export default function SurveysPage() {
       <Dialog open={isRequestOpen} onOpenChange={setIsRequestOpen}>
         <DialogContent className="max-w-md rounded-2xl">
           <DialogHeader>
-            <DialogTitle className="text-base font-bold">Ajukan Survei Properti</DialogTitle>
+            <DialogTitle className="text-base font-bold">{t("surveys.request_property_survey")}</DialogTitle>
             <DialogDescription className="text-xs">
-              Agen properti akan menghubungi Anda via WhatsApp untuk menyepakati waktu.
+              {t("surveys.request_description")}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-3 py-2 text-xs">
             <div>
-              <Label className="text-[11px] font-medium">Properti *</Label>
+              <Label className="text-[11px] font-medium">{t("surveys.property_required")}</Label>
               <Select
                 value={requestForm.property_id}
                 onValueChange={(v) => setRequestForm({ ...requestForm, property_id: v || "" })}
@@ -930,11 +918,11 @@ export default function SurveysPage() {
                       pengguna. Labelnya dicari sendiri, sepola StepContact.tsx:119-127.
                       Saat tautan datang dari halaman detail properti, daftar dropdown
                       mungkin belum termuat; teks sementara lebih baik daripada UUID. */}
-                  <SelectValue placeholder="Pilih properti">
+                  <SelectValue placeholder={t("surveys.select_property")}>
                     {(() => {
                       if (!requestForm.property_id) return undefined;
                       const picked = properties.find((p) => p.id === requestForm.property_id);
-                      if (!picked) return "Memuat properti...";
+                      if (!picked) return t("surveys.loading_properties");
                       return `${picked.listing_code ? `[${picked.listing_code}] ` : ""}${picked.title}`;
                     })()}
                   </SelectValue>
@@ -942,7 +930,7 @@ export default function SurveysPage() {
                 <SelectContent className="rounded-xl max-h-64">
                   {properties.length === 0 ? (
                     <div className="p-3 text-[11px] text-muted-foreground text-center">
-                      Memuat properti...
+                      {t("surveys.loading_properties")}
                     </div>
                   ) : (
                     properties.map((p) => (
@@ -957,32 +945,32 @@ export default function SurveysPage() {
             </div>
 
             <div>
-              <Label className="text-[11px] font-medium">Nama Anda *</Label>
+              <Label className="text-[11px] font-medium">{t("surveys.your_name_required")}</Label>
               <Input
                 value={requestForm.requester_name}
                 onChange={(e) =>
                   setRequestForm({ ...requestForm, requester_name: e.target.value })
                 }
-                placeholder="Nama lengkap"
+                placeholder={t("surveys.full_name")}
                 className="h-9 text-xs rounded-xl mt-1"
               />
             </div>
 
             <div>
-              <Label className="text-[11px] font-medium">Nomor WhatsApp *</Label>
+              <Label className="text-[11px] font-medium">{t("surveys.whatsapp_number_required")}</Label>
               <Input
                 value={requestForm.requester_phone}
                 onChange={(e) =>
                   setRequestForm({ ...requestForm, requester_phone: e.target.value })
                 }
-                placeholder="08xxxxxxxxxx"
+                placeholder={t("surveys.whatsapp_number_required")}
                 className="h-9 text-xs rounded-xl mt-1"
               />
             </div>
 
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <Label className="text-[11px] font-medium">Tanggal Diinginkan</Label>
+                <Label className="text-[11px] font-medium">{t("surveys.preferred_date")}</Label>
                 <Input
                   type="date"
                   min={new Date().toISOString().slice(0, 10)}
@@ -994,7 +982,7 @@ export default function SurveysPage() {
                 />
               </div>
               <div>
-                <Label className="text-[11px] font-medium">Jam Diinginkan</Label>
+                <Label className="text-[11px] font-medium">{t("surveys.preferred_time")}</Label>
                 <Input
                   type="time"
                   value={requestForm.preferred_time}
@@ -1007,15 +995,15 @@ export default function SurveysPage() {
             </div>
 
             <p className="text-[10px] text-muted-foreground -mt-1">
-              Waktu di atas hanya preferensi. Jadwal pasti disepakati bersama agen.
+              {t("surveys.time_preference_note")}
             </p>
 
             <div>
-              <Label className="text-[11px] font-medium">Pesan untuk Agen</Label>
+              <Label className="text-[11px] font-medium">{t("surveys.message_for_agent")}</Label>
               <Textarea
                 value={requestForm.message}
                 onChange={(e) => setRequestForm({ ...requestForm, message: e.target.value })}
-                placeholder="Hal yang ingin Anda periksa saat survei..."
+                placeholder={t("surveys.things_to_check")}
                 rows={3}
                 className="text-xs rounded-xl mt-1"
               />
@@ -1029,7 +1017,7 @@ export default function SurveysPage() {
               onClick={() => setIsRequestOpen(false)}
               className="text-xs rounded-xl cursor-pointer"
             >
-              Batal
+              {t("common.cancel")}
             </Button>
             <Button
               size="sm"
@@ -1038,7 +1026,7 @@ export default function SurveysPage() {
               className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs rounded-xl cursor-pointer gap-1.5"
             >
               {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-              {submitting ? "Mengirim..." : "Kirim Pengajuan"}
+              {submitting ? t("surveys.submitting") : t("surveys.send_request_btn")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1058,17 +1046,17 @@ export default function SurveysPage() {
         <DialogContent className="max-w-md rounded-2xl">
           <DialogHeader>
             <DialogTitle className="text-base font-bold">
-              {editTarget ? "Ubah Jadwal Survei" : "Buat Jadwal Survei"}
+              {editTarget ? t("surveys.edit_schedule_title") : t("surveys.create_schedule_title")}
             </DialogTitle>
             <DialogDescription className="text-xs">
               {editTarget ? (
                 <>
-                  Untuk <strong>{editTarget.client_name}</strong> —{" "}
+                  {t("surveys.for_client")} <strong>{editTarget.client_name}</strong> —{" "}
                   {editTarget.property?.title}
                 </>
               ) : (
                 <>
-                  Untuk <strong>{scheduleTarget?.requester_name}</strong> —{" "}
+                  {t("surveys.for_client")} <strong>{scheduleTarget?.requester_name}</strong> —{" "}
                   {scheduleTarget?.property?.title}
                 </>
               )}
@@ -1078,20 +1066,19 @@ export default function SurveysPage() {
           <div className="space-y-3 py-2 text-xs">
             {scheduleTarget?.preferred_date && (
               <div className="p-2.5 bg-amber-500/10 border border-amber-500/20 rounded-xl text-[11px] text-amber-800 dark:text-amber-300">
-                Preferensi client: {scheduleTarget.preferred_date}
-                {scheduleTarget.preferred_time ? ` pukul ${scheduleTarget.preferred_time}` : ""}
+                {t("surveys.client_preference")} {scheduleTarget.preferred_date}
+                {scheduleTarget.preferred_time ? ` ${t("surveys.preferred_time").toLowerCase()} ${scheduleTarget.preferred_time}` : ""}
               </div>
             )}
 
             {editTarget && (
               <div className="p-2.5 bg-blue-500/10 border border-blue-500/20 rounded-xl text-[11px] text-blue-800 dark:text-blue-300">
-                Mengubah waktu akan mengirim notifikasi ke client dan menjadwalkan
-                ulang pengingat H-1 jam.
+                {t("surveys.schedule_change_note")}
               </div>
             )}
 
             <div>
-              <Label className="text-[11px] font-medium">Waktu Survei *</Label>
+              <Label className="text-[11px] font-medium">{t("surveys.survey_time_required")}</Label>
               <Input
                 type="datetime-local"
                 min={nowLocalInputValue()}
@@ -1105,7 +1092,7 @@ export default function SurveysPage() {
 
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <Label className="text-[11px] font-medium">Durasi (menit)</Label>
+                <Label className="text-[11px] font-medium">{t("surveys.duration_minutes")}</Label>
                 <Input
                   type="number"
                   min={15}
@@ -1119,7 +1106,7 @@ export default function SurveysPage() {
                 />
               </div>
               <div>
-                <Label className="text-[11px] font-medium">Metode</Label>
+                <Label className="text-[11px] font-medium">{t("surveys.method")}</Label>
                 <Select
                   value={scheduleForm.type}
                   onValueChange={(v) => setScheduleForm({ ...scheduleForm, type: v || "lapangan" })}
@@ -1129,10 +1116,10 @@ export default function SurveysPage() {
                   </SelectTrigger>
                   <SelectContent className="rounded-xl">
                     <SelectItem value="lapangan" className="text-xs">
-                      Lapangan
+                      {t("surveys.method_field")}
                     </SelectItem>
                     <SelectItem value="virtual" className="text-xs">
-                      Virtual
+                      {t("surveys.method_virtual")}
                     </SelectItem>
                   </SelectContent>
                 </Select>
@@ -1141,32 +1128,32 @@ export default function SurveysPage() {
 
             {scheduleForm.type === "virtual" ? (
               <div>
-                <Label className="text-[11px] font-medium">URL Meeting *</Label>
+                <Label className="text-[11px] font-medium">{t("surveys.meeting_url_required")}</Label>
                 <Input
                   value={scheduleForm.meeting_url}
                   onChange={(e) =>
                     setScheduleForm({ ...scheduleForm, meeting_url: e.target.value })
                   }
-                  placeholder="https://meet.google.com/..."
+                  placeholder={t("surveys.meeting_url_required")}
                   className="h-9 text-xs rounded-xl mt-1"
                 />
               </div>
             ) : (
               <div>
-                <Label className="text-[11px] font-medium">Titik Temu</Label>
+                <Label className="text-[11px] font-medium">{t("surveys.meeting_point")}</Label>
                 <Input
                   value={scheduleForm.location_note}
                   onChange={(e) =>
                     setScheduleForm({ ...scheduleForm, location_note: e.target.value })
                   }
-                  placeholder="Contoh: Pos security cluster depan"
+                  placeholder={t("surveys.meeting_point")}
                   className="h-9 text-xs rounded-xl mt-1"
                 />
               </div>
             )}
 
             <div>
-              <Label className="text-[11px] font-medium">Catatan</Label>
+              <Label className="text-[11px] font-medium">{t("surveys.notes")}</Label>
               <Textarea
                 value={scheduleForm.notes}
                 onChange={(e) => setScheduleForm({ ...scheduleForm, notes: e.target.value })}
@@ -1186,7 +1173,7 @@ export default function SurveysPage() {
               }}
               className="text-xs rounded-xl cursor-pointer"
             >
-              Batal
+              {t("common.cancel")}
             </Button>
             <Button
               size="sm"
@@ -1196,10 +1183,10 @@ export default function SurveysPage() {
             >
               {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
               {submitting
-                ? "Menyimpan..."
+                ? t("surveys.saving")
                 : editTarget
-                  ? "Simpan Perubahan"
-                  : "Simpan & Beri Tahu Client"}
+                  ? t("surveys.save_changes_btn")
+                  : t("surveys.save_notify_btn")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1211,18 +1198,18 @@ export default function SurveysPage() {
       <Dialog open={!!rejectTarget} onOpenChange={(o) => !o && setRejectTarget(null)}>
         <DialogContent className="max-w-sm rounded-2xl">
           <DialogHeader>
-            <DialogTitle className="text-base font-bold">Tolak Pengajuan</DialogTitle>
+            <DialogTitle className="text-base font-bold">{t("surveys.reject_request")}</DialogTitle>
             <DialogDescription className="text-xs">
-              Alasan ini dikirim ke client sebagai notifikasi, jadi tuliskan dengan jelas.
+              {t("surveys.reject_request_desc")}
             </DialogDescription>
           </DialogHeader>
 
           <div className="py-2">
-            <Label className="text-[11px] font-medium">Alasan Penolakan *</Label>
+            <Label className="text-[11px] font-medium">{t("surveys.reject_reason_required")}</Label>
             <Textarea
               value={rejectReason}
               onChange={(e) => setRejectReason(e.target.value)}
-              placeholder="Contoh: Properti sudah terjual / sedang dalam proses akad."
+              placeholder={t("surveys.reject_reason_example")}
               rows={3}
               className="text-xs rounded-xl mt-1"
             />
@@ -1235,7 +1222,7 @@ export default function SurveysPage() {
               onClick={() => setRejectTarget(null)}
               className="text-xs rounded-xl cursor-pointer"
             >
-              Batal
+              {t("common.cancel")}
             </Button>
             <Button
               size="sm"
@@ -1244,7 +1231,7 @@ export default function SurveysPage() {
               className="bg-rose-600 hover:bg-rose-700 text-white text-xs rounded-xl cursor-pointer gap-1.5"
             >
               {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-              Tolak Pengajuan
+              {t("surveys.reject_submit_btn")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1290,6 +1277,14 @@ function RequestCard({
   onSchedule: () => void;
   onReject: () => void;
 }) {
+  const { t } = useTranslation();
+  const requestStatusConfig: Record<string, { label: string; color: string }> = {
+    pending: { label: t("surveys.request_status.pending"), color: "text-amber-600 dark:text-amber-400" },
+    contacted: { label: t("surveys.request_status.contacted"), color: "text-blue-600 dark:text-blue-400" },
+    scheduled: { label: t("surveys.request_status.scheduled"), color: "text-emerald-600 dark:text-emerald-400" },
+    rejected: { label: t("surveys.request_status.rejected"), color: "text-rose-600 dark:text-rose-400" },
+    cancelled: { label: t("surveys.request_status.cancelled"), color: "text-slate-600 dark:text-slate-400" },
+  };
   const cfg = requestStatusConfig[request.status];
 
   return (
@@ -1325,7 +1320,7 @@ function RequestCard({
           {request.preferred_date && (
             <p className="flex items-center gap-1.5 text-muted-foreground text-[11px]">
               <CalendarIcon className="w-3.5 h-3.5 shrink-0" />
-              Preferensi: {request.preferred_date}
+              {t("surveys.preference")}: {request.preferred_date}
               {request.preferred_time ? ` • ${request.preferred_time}` : ""}
             </p>
           )}
@@ -1345,14 +1340,14 @@ function RequestCard({
             onClick={onContact}
             className="h-8 text-[11px] gap-1.5 rounded-xl cursor-pointer bg-emerald-600 hover:bg-emerald-700 text-white"
           >
-            <MessageCircle className="w-3.5 h-3.5" /> Hubungi via WA
+            <MessageCircle className="w-3.5 h-3.5" /> {t("surveys.contact_wa_btn")}
           </Button>
           <Button
             size="sm"
             onClick={onSchedule}
             className="h-8 text-[11px] gap-1.5 rounded-xl cursor-pointer bg-blue-600 hover:bg-blue-700 text-white"
           >
-            <CalendarIcon className="w-3.5 h-3.5" /> Buat Jadwal
+            <CalendarIcon className="w-3.5 h-3.5" /> {t("surveys.create_schedule_btn")}
           </Button>
         </div>
 
@@ -1364,7 +1359,7 @@ function RequestCard({
               onClick={onMarkContacted}
               className="h-8 text-[11px] gap-1.5 rounded-xl cursor-pointer"
             >
-              <CheckCircle2 className="w-3.5 h-3.5" /> Sudah Dihubungi
+              <CheckCircle2 className="w-3.5 h-3.5" /> {t("surveys.marked_contacted_btn")}
             </Button>
           ) : (
             <div />
@@ -1375,7 +1370,7 @@ function RequestCard({
             onClick={onReject}
             className="h-8 text-[11px] gap-1.5 rounded-xl cursor-pointer text-rose-600 border-rose-200 hover:bg-rose-50"
           >
-            <XCircle className="w-3.5 h-3.5" /> Tolak
+            <XCircle className="w-3.5 h-3.5" /> {t("surveys.reject_btn")}
           </Button>
         </div>
       </CardContent>
@@ -1400,6 +1395,13 @@ function SurveyCard({
   onCancel?: () => void;
   onEdit?: () => void;
 }) {
+  const { t } = useTranslation();
+  const surveyStatusConfig: Record<SurveyStatus, { label: string; color: string; bg: string }> = {
+    scheduled: { label: t("surveys.survey_status.scheduled"), color: "text-blue-600 dark:text-blue-400", bg: "bg-blue-100 dark:bg-blue-950/60 border-blue-200" },
+    completed: { label: t("surveys.survey_status.completed"), color: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-100 dark:bg-emerald-950/60 border-emerald-200" },
+    cancelled: { label: t("surveys.survey_status.cancelled"), color: "text-rose-600 dark:text-rose-400", bg: "bg-rose-100 dark:bg-rose-950/60 border-rose-200" },
+    no_show: { label: t("surveys.survey_status.no_show"), color: "text-amber-600 dark:text-amber-400", bg: "bg-amber-100 dark:bg-amber-950/60 border-amber-200" },
+  };
   const cfg = surveyStatusConfig[survey.status] || surveyStatusConfig.scheduled;
   const { date, time } = formatDateTime(survey.scheduled_at);
   const address = formatAddress(survey.property);
@@ -1441,8 +1443,8 @@ function SurveyCard({
           <span className="flex items-center gap-1.5 text-muted-foreground text-[11px]">
             <User className="w-3.5 h-3.5 shrink-0" />
             {viewerIsAgent
-              ? `Client: ${survey.client_name}`
-              : `Agen: ${survey.agent?.full_name || "Agen properti"}`}
+              ? `${t("surveys.client_label")} ${survey.client_name}`
+              : `${t("surveys.agent_label")} ${survey.agent?.full_name || "Agen properti"}`}
           </span>
           <Badge variant="outline" className="text-[10px] rounded-lg capitalize">
             {survey.type}
@@ -1451,7 +1453,7 @@ function SurveyCard({
 
         {survey.location_note && (
           <p className="text-[11px] text-muted-foreground">
-            <span className="font-semibold text-foreground">Titik temu:</span>{" "}
+            <span className="font-semibold text-foreground">{t("surveys.meeting_point_label")}</span>{" "}
             {survey.location_note}
           </p>
         )}
@@ -1471,7 +1473,7 @@ function SurveyCard({
               onClick={() => window.open(survey.meeting_url!, "_blank")}
               className="h-8 text-[11px] gap-1.5 rounded-xl cursor-pointer bg-blue-600 hover:bg-blue-700 text-white"
             >
-              <ExternalLink className="w-3.5 h-3.5" /> Buka Meeting
+              <ExternalLink className="w-3.5 h-3.5" /> {t("surveys.open_meeting_btn")}
             </Button>
           ) : (
             <Button
@@ -1479,7 +1481,7 @@ function SurveyCard({
               onClick={() => openGoogleMaps(survey.property?.title || "Properti", address)}
               className="h-8 text-[11px] gap-1.5 rounded-xl cursor-pointer bg-blue-600 hover:bg-blue-700 text-white"
             >
-              <MapPin className="w-3.5 h-3.5" /> Navigasi
+              <MapPin className="w-3.5 h-3.5" /> {t("surveys.navigate_btn")}
             </Button>
           )}
 
@@ -1489,7 +1491,7 @@ function SurveyCard({
             onClick={onContact}
             className="h-8 text-[11px] gap-1.5 rounded-xl cursor-pointer text-emerald-700 border-emerald-300"
           >
-            <MessageCircle className="w-3.5 h-3.5" /> Hubungi
+            <MessageCircle className="w-3.5 h-3.5" /> {t("surveys.contact_btn")}
           </Button>
         </div>
 
@@ -1505,7 +1507,7 @@ function SurveyCard({
                 onClick={onComplete}
                 className="h-8 text-[10px] gap-1 rounded-xl cursor-pointer text-emerald-700"
               >
-                <CheckCircle2 className="w-3 h-3" /> Selesai
+                <CheckCircle2 className="w-3 h-3" /> {t("surveys.done_btn")}
               </Button>
               <Button
                 size="sm"
@@ -1513,7 +1515,7 @@ function SurveyCard({
                 onClick={onNoShow}
                 className="h-8 text-[10px] gap-1 rounded-xl cursor-pointer text-amber-700"
               >
-                <Ban className="w-3 h-3" /> Absen
+                <Ban className="w-3 h-3" /> {t("surveys.absent_btn")}
               </Button>
               <Button
                 size="sm"
@@ -1521,7 +1523,7 @@ function SurveyCard({
                 onClick={onCancel}
                 className="h-8 text-[10px] gap-1 rounded-xl cursor-pointer text-rose-600"
               >
-                <XCircle className="w-3 h-3" /> Batal
+                <XCircle className="w-3 h-3" /> {t("surveys.cancel_btn")}
               </Button>
             </div>
 
@@ -1532,7 +1534,7 @@ function SurveyCard({
                 onClick={onEdit}
                 className="h-8 w-full text-[10px] gap-1 rounded-xl cursor-pointer text-blue-700 border-blue-300"
               >
-                <Pencil className="w-3 h-3" /> Ubah Jadwal
+                <Pencil className="w-3 h-3" /> {t("surveys.edit_schedule_btn")}
               </Button>
             )}
           </div>

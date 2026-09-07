@@ -107,7 +107,7 @@ const getPublishedProperty = cache(
         .from("properties")
         .select(
           `
-            id, title, description, property_type, listing_type,
+            id, title, description, property_type, listing_type, slug,
             address:property_address(address, city_name, province_name, district_name, postal_code, latitude, longitude),
             price:property_price(selling_price, rental_price),
             specifications:property_specifications(bedroom, bathroom),
@@ -122,10 +122,14 @@ const getPublishedProperty = cache(
         // yang tidak punya hak membuka halamannya.
         .eq("status", "published");
 
-      // Rute ini menerima UUID maupun listing_code, mengikuti propertyService.
-      query = UUID_PATTERN.test(idOrCode)
-        ? query.eq("id", idOrCode)
-        : query.eq("listing_code", idOrCode);
+      // Rute ini menerima UUID, listing_code, atau slug.
+      if (UUID_PATTERN.test(idOrCode)) {
+        query = query.eq("id", idOrCode);
+      } else if (/^IP-\d{6}\d{2}$/.test(idOrCode)) {
+        query = query.eq("listing_code", idOrCode);
+      } else {
+        query = query.eq("slug", idOrCode);
+      }
 
       const { data, error } = await query.maybeSingle();
       if (error) throw new Error(error.message);
@@ -259,7 +263,7 @@ export async function generateMetadata({
   // Canonical selalu memakai UUID walaupun pengunjung datang lewat
   // listing_code, supaya kedua bentuk URL tidak dihitung sebagai dua halaman
   // berbeda dengan isi yang sama.
-  const canonical = `${SITE.url}/properties/${property.id}`;
+  const canonical = `${SITE.url}/properties/${"slug" in property && property.slug ? property.slug : property.id}`;
 
   return {
     title,

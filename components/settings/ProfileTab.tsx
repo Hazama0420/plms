@@ -15,13 +15,10 @@ import {
   CalendarDays,
   MessageCircle,
   Key,
-  LogOut,
   Loader2,
   Eye,
   EyeOff,
   Save,
-  MessageSquare,
-  Headphones,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -64,8 +61,6 @@ interface ProfileTabProps {
   formatJoinDate: (dateStr: string) => string;
   formatCurrency: (value: number | undefined | null) => string;
   toWhatsAppLink: (phone: string) => string | null;
-  openWhatsAppAdmin: () => void;
-  setIsChatAdminOpen: (v: boolean) => void;
   handleCopy: (value: string, label: string) => void;
 }
 
@@ -99,20 +94,18 @@ export function ProfileTab({
   formatJoinDate,
   formatCurrency,
   toWhatsAppLink,
-  openWhatsAppAdmin,
-  setIsChatAdminOpen,
   handleCopy,
 }: ProfileTabProps) {
   const waLink = toWhatsAppLink(profile.phone);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      {/* LEFT COLUMN */}
-      <div className="lg:col-span-1 space-y-6">
+      {/* LEFT COLUMN - sidebar dengan avatar dan stats */}
+      <div className="order-2 lg:order-1 lg:col-span-1 space-y-6">
         {/* Foto Profil Card */}
         <Card className="border shadow-xs overflow-hidden">
           <CardHeader className="bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/40 dark:to-teal-950/40 pb-3 border-b">
-            <CardTitle className="text-xs font-bold flex items-center gap-2 text-foreground">
+            <CardTitle className="text-sm font-bold flex items-center gap-2 text-foreground">
               <User size={16} className="text-emerald-600" />
               Foto Profil Saya
             </CardTitle>
@@ -156,7 +149,7 @@ export function ProfileTab({
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={uploadingAvatar}
-                className="absolute bottom-0 right-0 bg-emerald-600 text-white p-2 rounded-full hover:bg-emerald-700 shadow-md transition cursor-pointer"
+                className="absolute bottom-0 right-0 bg-emerald-600 text-white p-3 rounded-full hover:bg-emerald-700 shadow-md transition cursor-pointer"
               >
                 <Camera size={14} />
               </button>
@@ -189,52 +182,16 @@ export function ProfileTab({
           </CardContent>
         </Card>
 
-        {/* KARTU BANTUAN & CHAT ADMIN */}
-        <Card className="border border-emerald-200 dark:border-emerald-900/60 shadow-xs bg-gradient-to-b from-emerald-50/50 to-background dark:from-emerald-950/20">
-          <CardHeader className="p-4 pb-2 border-b border-emerald-100 dark:border-emerald-900/40">
-            <CardTitle className="text-xs font-bold flex items-center gap-2 text-emerald-800 dark:text-emerald-300">
-              <Headphones size={16} className="text-emerald-600" />
-              Bantuan Admin Kantor
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-4 space-y-3 text-xs">
-            <p className="text-[11px] text-muted-foreground">
-              Mengalami kendala akun atau butuh panduan sistem CRM? Hubungi Admin Support Kantor.
-            </p>
-            <div className="flex flex-col gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={openWhatsAppAdmin}
-                className="w-full text-xs h-8 border-emerald-300 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 gap-1.5 cursor-pointer font-semibold"
-              >
-                <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
-                WhatsApp Direct Admin
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                onClick={() => setIsChatAdminOpen(true)}
-                className="w-full text-xs h-8 bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 cursor-pointer shadow-xs"
-              >
-                <MessageSquare className="w-3.5 h-3.5" />
-                Kirim Pesan Dukungan
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-
         {/* Performa Agen Quick Stats */}
         {!statsLoading && agentStats && (
           <Card className="border shadow-xs">
             <CardHeader className="p-4 pb-2 border-b bg-muted/20">
-              <CardTitle className="text-xs font-bold flex items-center gap-2">
+              <CardTitle className="text-sm font-bold flex items-center gap-2">
                 <Sparkles size={15} className="text-emerald-600" />
                 Performa Agen Saya
               </CardTitle>
             </CardHeader>
-            <CardContent className="p-4 space-y-2.5 text-xs">
+            <CardContent className="p-4 space-y-2.5 text-sm">
               <div className="flex items-center justify-between border-l-3 border-blue-500 pl-2.5 py-0.5">
                 <span className="text-muted-foreground text-[11px]">Total Properti</span>
                 <span className="font-bold">{agentStats.total_properties}</span>
@@ -252,43 +209,43 @@ export function ProfileTab({
         )}
       </div>
 
-      {/* RIGHT COLUMN */}
-      <div className="lg:col-span-2 space-y-6">
+      {/* RIGHT COLUMN - form, didahulukan di mobile */}
+      <div className="order-1 lg:order-2 lg:col-span-2 space-y-6">
         {/* Form Data Diri */}
         <Card className="border shadow-xs">
           <CardHeader className="p-4 border-b bg-muted/20">
-            <CardTitle className="text-xs font-bold flex items-center gap-2">
+            <CardTitle className="text-sm font-bold flex items-center gap-2">
               <User className="w-4 h-4 text-emerald-600" />
               Informasi Data Diri & Kontak
             </CardTitle>
-            <CardDescription className="text-[11px]">
+            <CardDescription className="text-xs">
               Perbarui nama lengkap, nomor WhatsApp, dan kantor perusahaan Anda.
             </CardDescription>
           </CardHeader>
           <CardContent className="p-5">
-            <form onSubmit={handleProfileSubmit} className="space-y-4 text-xs">
+            <form onSubmit={handleProfileSubmit} className="space-y-4 text-sm">
               <div className="space-y-1.5">
-                <Label className="font-semibold text-xs flex items-center gap-1.5">
+                <Label className="font-semibold text-sm flex items-center gap-1.5">
                   <Mail size={14} className="text-muted-foreground" />
                   Alamat Email Akun
                 </Label>
                 <div className="flex items-center gap-2">
-                  <Input value={profile.email} disabled className="h-9 bg-muted/50 text-xs" />
+                  <Input value={profile.email} disabled className="h-11 bg-muted/50 text-sm" />
                   <Button
                     type="button"
                     variant="outline"
                     size="icon"
-                    className="h-9 w-9 shrink-0 cursor-pointer"
+                    className="h-11 w-11 shrink-0 cursor-pointer"
                     onClick={() => handleCopy(profile.email, "Email")}
                   >
-                    <Copy size={14} />
+                    <Copy size={15} />
                   </Button>
                 </div>
-                <p className="text-[10px] text-muted-foreground">Email utama tidak dapat diubah secara langsung.</p>
+                <p className="text-xs text-muted-foreground">Email utama tidak dapat diubah secara langsung.</p>
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="full_name" className="font-semibold text-xs">
+                <Label htmlFor="full_name" className="font-semibold text-sm">
                   Nama Lengkap <span className="text-rose-500">*</span>
                 </Label>
                 <Input
@@ -296,30 +253,30 @@ export function ProfileTab({
                   placeholder="Masukkan nama lengkap Anda"
                   value={profile.full_name}
                   onChange={(e) => setProfile((prev: any) => ({ ...prev, full_name: e.target.value }))}
-                  className="h-9 text-xs"
+                  className="h-11 text-sm"
                   required
                 />
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <Label htmlFor="phone" className="font-semibold text-xs flex items-center gap-1.5">
+                  <Label htmlFor="phone" className="font-semibold text-sm flex items-center gap-1.5">
                     <Phone size={14} className="text-muted-foreground" />
                     Nomor Telepon / WhatsApp
                   </Label>
                   <Input
                     id="phone"
-                    placeholder="089505808415"
+                    placeholder="081234567890"
                     value={profile.phone}
                     onChange={(e) => setProfile((prev: any) => ({ ...prev, phone: e.target.value }))}
-                    className="h-9 text-xs font-mono"
+                    className="h-11 text-sm font-mono"
                   />
                   {waLink && (
                     <a
                       href={waLink}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-[11px] text-emerald-600 hover:underline font-medium pt-0.5"
+                      className="inline-flex items-center gap-1 text-xs text-emerald-600 hover:underline font-medium pt-0.5"
                     >
                       <MessageCircle size={12} />
                       Uji Coba Tautan WhatsApp
@@ -327,8 +284,9 @@ export function ProfileTab({
                   )}
                 </div>
 
+                {profile.role !== 'viewer' && (
                 <div className="space-y-1.5">
-                  <Label htmlFor="company" className="font-semibold text-xs flex items-center gap-1.5">
+                  <Label htmlFor="company" className="font-semibold text-sm flex items-center gap-1.5">
                     <Building2 size={14} className="text-muted-foreground" />
                     Perusahaan / Kantor Agen
                   </Label>
@@ -337,16 +295,17 @@ export function ProfileTab({
                     placeholder="Nama PT / Agensi Properti"
                     value={profile.company}
                     onChange={(e) => setProfile((prev: any) => ({ ...prev, company: e.target.value }))}
-                    className="h-9 text-xs"
+                    className="h-11 text-sm"
                   />
                 </div>
+                )}
               </div>
 
               <div className="pt-2">
                 <Button
                   type="submit"
                   disabled={savingProfile}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white h-9 text-xs gap-1.5 cursor-pointer"
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white h-11 text-sm gap-1.5 cursor-pointer"
                 >
                   {savingProfile ? (
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -363,18 +322,18 @@ export function ProfileTab({
         {/* Form Keamanan Akun */}
         <Card className="border shadow-xs">
           <CardHeader className="p-4 border-b bg-muted/20">
-            <CardTitle className="text-xs font-bold flex items-center gap-2">
+            <CardTitle className="text-sm font-bold flex items-center gap-2">
               <Lock className="w-4 h-4 text-emerald-600" />
               Keamanan Akun & Ubah Password
             </CardTitle>
-            <CardDescription className="text-[11px]">
+            <CardDescription className="text-xs">
               Ubah password Anda secara berkala. Masukkan password lama untuk verifikasi keamanan.
             </CardDescription>
           </CardHeader>
           <CardContent className="p-5">
-            <form onSubmit={handlePasswordSubmit} className="space-y-4 text-xs">
+            <form onSubmit={handlePasswordSubmit} className="space-y-4 text-sm">
               <div className="space-y-1.5 p-3 rounded-xl bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/60 dark:border-amber-900/40">
-                <Label htmlFor="current-pass" className="font-bold text-xs text-amber-900 dark:text-amber-300 flex items-center gap-1.5">
+                <Label htmlFor="current-pass" className="font-bold text-sm text-amber-900 dark:text-amber-300 flex items-center gap-1.5">
                   <Key className="w-3.5 h-3.5 text-amber-600" /> Password Saat Ini (Password Lama) <span className="text-rose-500">*</span>
                 </Label>
                 <div className="relative">
@@ -384,18 +343,18 @@ export function ProfileTab({
                     placeholder="Masukkan password lama Anda"
                     value={currentPassword}
                     onChange={(e) => setCurrentPassword(e.target.value)}
-                    className="h-9 pr-9 text-xs bg-background"
+                    className="h-11 pr-11 text-sm bg-background"
                     required
                   />
                   <button
                     type="button"
                     onClick={() => setShowCurrentPassword(!showCurrentPassword)}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
                   >
                     {showCurrentPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
-                <p className="text-[10px] text-amber-700/80 dark:text-amber-400">
+                <p className="text-xs text-amber-700/80 dark:text-amber-400">
                   Wajib diisi untuk membuktikan identitas pemilik akun.
                 </p>
               </div>
@@ -404,7 +363,7 @@ export function ProfileTab({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <Label htmlFor="new-pass" className="font-semibold text-xs">
+                  <Label htmlFor="new-pass" className="font-semibold text-sm">
                     Password Baru <span className="text-rose-500">*</span>
                   </Label>
                   <div className="relative">
@@ -414,13 +373,13 @@ export function ProfileTab({
                       placeholder="Minimal 8 karakter"
                       value={newPassword}
                       onChange={(e) => setNewPassword(e.target.value)}
-                      className="h-9 pr-9 text-xs"
+                      className="h-11 pr-11 text-sm"
                       required
                     />
                     <button
                       type="button"
                       onClick={() => setShowNewPassword(!showNewPassword)}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
                     >
                       {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
@@ -431,7 +390,7 @@ export function ProfileTab({
                       <div className="flex gap-1 h-1.5 w-full bg-muted rounded-full overflow-hidden">
                         <div className={cn("h-full transition-all duration-300", strengthInfo.barClass)} />
                       </div>
-                      <p className="text-[10px] text-muted-foreground flex items-center justify-between">
+                      <p className="text-xs text-muted-foreground flex items-center justify-between">
                         <span>Kekuatan Password:</span>
                         <span className="font-bold uppercase">{strengthInfo.label}</span>
                       </p>
@@ -440,7 +399,7 @@ export function ProfileTab({
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label htmlFor="confirm-pass" className="font-semibold text-xs">
+                  <Label htmlFor="confirm-pass" className="font-semibold text-sm">
                     Konfirmasi Password Baru <span className="text-rose-500">*</span>
                   </Label>
                   <div className="relative">
@@ -450,13 +409,13 @@ export function ProfileTab({
                       placeholder="Ulangi password baru"
                       value={confirmPassword}
                       onChange={(e) => setConfirmPassword(e.target.value)}
-                      className="h-9 pr-9 text-xs"
+                      className="h-11 pr-11 text-sm"
                       required
                     />
                     <button
                       type="button"
                       onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
                     >
                       {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
@@ -467,7 +426,7 @@ export function ProfileTab({
               <Button
                 type="submit"
                 disabled={changingPassword || !currentPassword || !newPassword || !confirmPassword}
-                className="bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-white dark:text-slate-900 text-white h-9 text-xs font-semibold gap-2 cursor-pointer mt-2"
+                className="bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-white dark:text-slate-900 text-white h-11 text-sm font-semibold gap-2 cursor-pointer mt-2"
               >
                 {changingPassword ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />

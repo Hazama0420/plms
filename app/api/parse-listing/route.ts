@@ -3,7 +3,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { aiService } from "@/services/ai.service";
 import { requireAuth } from "@/lib/api-auth";
-import { enforceAiQuota, estimateTokens } from "@/lib/ai-quota";
+import { authorizeAI } from "@/lib/ai/policy";
+import { estimateTokens } from "@/lib/ai-quota";
 
 const MAX_TEXT_LENGTH = 20_000;
 
@@ -54,24 +55,19 @@ Kembalikan hanya JSON valid, tanpa teks tambahan.`;
 
     const userPrompt = `Ekstrak informasi dari listing property berikut:\n\n${text}`;
 
-    // Batas 20.000 karakter membatasi satu permintaan, bukan jumlahnya. Kuota
-    // token harian inilah yang menahan pengiriman teks panjang berulang-ulang.
-    const quota = await enforceAiQuota({
-      feature: "parse_listing",
+    const guard = await authorizeAI({
+      featureKey: "property.parse",
       req: request,
-      userId: auth.ctx.userId,
-      role: auth.ctx.role,
-      estimatedTokens: estimateTokens(systemPrompt) + estimateTokens(userPrompt),
     });
-    if (!quota.ok) return quota.response;
+    if (!guard.ok) return guard.response;
 
-    const result = await aiService.generateWithFallback(userPrompt, systemPrompt);
-
-    await quota.commit(
-      estimateTokens(systemPrompt) +
-        estimateTokens(userPrompt) +
-        estimateTokens(result.text)
-    );
+    let result;
+    try {
+      result = await aiService.generateWithFallback(userPrompt, systemPrompt);
+    } catch (error) {
+      await guard.rollback();
+      throw error;
+    }
 
     // Parse JSON dari response AI
     let parsedData;
@@ -85,11 +81,18 @@ Kembalikan hanya JSON valid, tanpa teks tambahan.`;
       }
     } catch (error) {
       console.error("Failed to parse AI response:", result.text);
+      await guard.rollback();
       return NextResponse.json(
         { error: "AI menghasilkan format yang tidak valid. Coba lagi." },
         { status: 500 }
       );
     }
+
+    await guard.commit(
+      estimateTokens(systemPrompt) +
+        estimateTokens(userPrompt) +
+        estimateTokens(result.text)
+    );
 
     // Validasi field yang wajib ada
     const requiredFields = ['title', 'property_type', 'listing_type'];

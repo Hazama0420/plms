@@ -2,8 +2,9 @@
 import { NextResponse } from "next/server";
 import { aiService } from "@/services/ai.service";
 import { dashboardService } from "@/services/dashboard.service";
+import { authorizeAI } from "@/lib/ai/policy";
+import { estimateTokens } from "@/lib/ai-quota";
 import { requireRole } from "@/lib/api-auth";
-import { enforceAiQuota, estimateTokens } from "@/lib/ai-quota";
 
 export async function GET(req: Request) {
   try {
@@ -14,25 +15,20 @@ export async function GET(req: Request) {
     const auth = await requireRole(["super_admin"]);
     if (!auth.ok) return auth.response;
 
-    const { supabase } = auth.ctx;
-
-    // 1. Fitur berbayar: harus dinyalakan secara eksplisit.
-    //
-    // Sebelumnya kondisinya `value === "false"`, sehingga baris setting yang
-    // belum ada berarti null dan AI tetap dipanggil — gagal-terbuka pada fitur
-    // berbiaya. Sekarang apa pun selain "true" berarti mati.
-    const { data: settingData } = await supabase
-      .from("system_settings")
-      .select("value")
-      .eq("key", "ai_summary_enabled")
-      .maybeSingle();
-
-    if (settingData?.value !== "true") {
-      return NextResponse.json({
-        disabled: true,
-        enabled: false,
-        summary: "Fitur ini berbayar.",
-      });
+    const guard = await authorizeAI({
+      featureKey: "executive.summary",
+      req,
+    });
+    if (!guard.ok) {
+      // If disabled via centralized policy, return the old structured response
+      if (guard.response.status === 403) {
+         return NextResponse.json({
+          disabled: true,
+          enabled: false,
+          summary: "Fitur ini berbayar.",
+        });
+      }
+      return guard.response;
     }
 
     // 2. Ambil statistik real-time dari database
@@ -65,20 +61,15 @@ ATURAN FORMATTING MUTLAK:
 - Kalimat 2: Rekomendasi tindakan operasional taktis & terukur yang harus segera dieksekusi tim agen.
 `;
 
-    // Lapis ketiga setelah role dan setting: memuat ulang dashboard berkali-kali
-    // tidak lagi berarti memanggil AI berkali-kali.
-    const quota = await enforceAiQuota({
-      feature: "dashboard_summary",
-      req,
-      userId: auth.ctx.userId,
-      role: auth.ctx.role,
-      estimatedTokens: estimateTokens(prompt),
-    });
-    if (!quota.ok) return quota.response;
+    let aiResponse;
+    try {
+      aiResponse = await aiService.generateWithFallback(prompt);
+    } catch (error) {
+      await guard.rollback();
+      throw error;
+    }
 
-    const aiResponse = await aiService.generateWithFallback(prompt);
-
-    await quota.commit(estimateTokens(prompt) + estimateTokens(aiResponse.text));
+    await guard.commit(estimateTokens(prompt) + estimateTokens(aiResponse.text));
 
     // Bersihkan karakter markdown agar teks tampil rapi
     const cleanSummary = aiResponse.text.replace(/\*\*/g, "").replace(/\*/g, "").trim();

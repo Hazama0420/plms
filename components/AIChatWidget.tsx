@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { MessageSquare, X, Send, Bot, Sparkles } from "lucide-react";
+import { useTranslation } from "@/hooks/use-translation";
 
 interface Message {
   role: "assistant" | "user";
@@ -13,17 +14,30 @@ interface Message {
 }
 
 export default function AIChatWidget() {
+  const { t, language } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "assistant",
-      text: "Halo! Selamat datang di Inland Property. Saya Agnes, siap membantu Anda seputar dunia properti, pencarian listing, maupun simulasi KPR.",
+      text: t("aiChat.greeting"),
     },
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [isLimited, setIsLimited] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setMessages((prev) => {
+      if (prev.length === 1 && prev[0].role === "assistant") {
+        const currentGreeting = t("aiChat.greeting");
+        if (prev[0].text !== currentGreeting) {
+          return [{ role: "assistant", text: currentGreeting }];
+        }
+      }
+      return prev;
+    });
+  }, [language, t]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -79,7 +93,7 @@ export default function AIChatWidget() {
         ...prev,
         {
           role: "assistant",
-          text: "Maaf, terjadi gangguan koneksi ke server AI. Silakan coba beberapa saat lagi atau hubungi CS kami melalui WhatsApp.",
+          text: t("aiChat.errorMessage"),
         },
       ]);
     } finally {
@@ -96,7 +110,7 @@ export default function AIChatWidget() {
         <Button
           onClick={() => setIsOpen(true)}
           className="h-12 w-12 sm:h-14 sm:w-14 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white shadow-2xl flex items-center justify-center transition-all cursor-pointer hover:scale-105"
-          title="Tanya Agnes AI"
+          title={t("aiChat.buttonTitle")}
         >
           <MessageSquare className="h-5 w-5 sm:h-6 sm:w-6" />
         </Button>
@@ -112,7 +126,7 @@ export default function AIChatWidget() {
                 <CardTitle className="text-sm font-bold flex items-center gap-1.5">
                   Agnes AI <Sparkles className="w-3 h-3 text-emerald-400" />
                 </CardTitle>
-                <p className="text-[10px] text-emerald-400">Online • Inland Property</p>
+                <p className="text-[10px] text-emerald-400">{t("aiChat.status")}</p>
               </div>
             </div>
             <button
@@ -150,7 +164,7 @@ export default function AIChatWidget() {
             ))}
             {loading && (
               <div className="flex gap-2 items-center text-slate-400 text-[11px] py-1">
-                <Bot className="h-3 w-3 animate-pulse text-emerald-400" /> Agnes sedang mengetik...
+                <Bot className="h-3 w-3 animate-pulse text-emerald-400" /> {t("aiChat.typing")}
               </div>
             )}
             <div ref={messagesEndRef} />
@@ -161,7 +175,7 @@ export default function AIChatWidget() {
             <Input
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder={isLimited ? "Batas harian tercapai..." : "Tanya sesuatu ke Agnes..."}
+              placeholder={isLimited ? t("aiChat.placeholderLimit") : t("aiChat.placeholderDefault")}
               disabled={isLimited || loading}
               className="h-9 text-xs rounded-xl bg-white/10 border-white/20 text-white placeholder:text-slate-400 focus-visible:ring-emerald-400 disabled:opacity-50"
             />

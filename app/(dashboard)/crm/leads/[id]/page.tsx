@@ -22,12 +22,16 @@ import {
   RefreshCw,
   Building,
   Zap,
+  UserPlus,
+  ExternalLink,
+  CalendarClock,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { id } from "date-fns/locale";
 
 import { crmService, type LeadWithRelations } from "@/services/crm.service";
 import { supabase } from "@/lib/supabase/client";
+import { updateCRMLeadStatusAction, claimCRMLeadAction } from "@/actions/crm-leads.action";
 import type { LeadStatus } from "@/types/crm.types";
 
 import { Button } from "@/components/ui/button";
@@ -76,24 +80,14 @@ interface Followup {
 }
 
 const STATUS_OPTIONS: { value: LeadStatus; label: string; color: string }[] = [
-  { value: "new", label: "Baru", color: "bg-blue-500" },
-  { value: "contacted", label: "Dihubungi", color: "bg-amber-500" },
-  { value: "qualified", label: "Kualifikasi", color: "bg-green-500" },
-  { value: "negotiation", label: "Negosiasi", color: "bg-purple-500" },
+  { value: "new", label: "Baru (New)", color: "bg-blue-500" },
+  { value: "contacted", label: "Dihubungi (Contacted)", color: "bg-amber-500" },
+  { value: "qualified", label: "Kualifikasi (Qualified)", color: "bg-emerald-500" },
   { value: "proposal", label: "Proposal", color: "bg-indigo-500" },
-  { value: "won", label: "Menang", color: "bg-emerald-600" },
-  { value: "lost", label: "Hilang", color: "bg-rose-500" },
+  { value: "negotiation", label: "Negosiasi (Negotiation)", color: "bg-purple-500" },
+  { value: "won", label: "Menang (Won)", color: "bg-emerald-600" },
+  { value: "lost", label: "Hilang (Lost)", color: "bg-rose-500" },
 ];
-
-const STATUS_BADGE_VARIANTS: Record<LeadStatus, { className: string }> = {
-  new: { className: "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20" },
-  contacted: { className: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20" },
-  qualified: { className: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20" },
-  negotiation: { className: "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20" },
-  proposal: { className: "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20" },
-  won: { className: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20" },
-  lost: { className: "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20" },
-};
 
 const ACTIVITY_ICONS: Record<string, React.ReactNode> = {
   created: <Plus className="h-3.5 w-3.5 text-blue-500" />,
@@ -103,6 +97,11 @@ const ACTIVITY_ICONS: Record<string, React.ReactNode> = {
   note: <MessageSquare className="h-3.5 w-3.5 text-slate-400" />,
   "WhatsApp Chat": <MessageCircle className="h-3.5 w-3.5 text-emerald-500" />,
   meeting: <Users className="h-3.5 w-3.5 text-indigo-500" />,
+  survey_scheduled: <Calendar className="h-3.5 w-3.5 text-blue-500" />,
+  survey_completed: <CheckCircle className="h-3.5 w-3.5 text-emerald-500" />,
+  survey_cancelled: <Trash2 className="h-3.5 w-3.5 text-rose-500" />,
+  survey_rescheduled: <Clock className="h-3.5 w-3.5 text-amber-500" />,
+  site_visit: <Calendar className="h-3.5 w-3.5 text-blue-500" />,
 };
 
 export default function LeadDetailPage() {
@@ -118,6 +117,7 @@ export default function LeadDetailPage() {
   const [filteredActivities, setFilteredActivities] = useState<Activity[]>([]);
   const [followups, setFollowups] = useState<Followup[]>([]);
   const [interestsList, setInterestsList] = useState<any[]>([]);
+  const [surveys, setSurveys] = useState<any[]>([]);
   const [properties, setProperties] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -167,68 +167,101 @@ export default function LeadDetailPage() {
     );
   }, [currentUserRole]);
 
-  // 🔒 SENSOR NOMOR TELEPON TOTAL UNTUK ROLE AGENT
+  const isAssignedAgent = useMemo(() => {
+    if (!currentUserId || !lead?.assigned_to) return false;
+    return currentUserRole === "agent" && lead.assigned_to === currentUserId;
+  }, [currentUserRole, lead?.assigned_to, currentUserId]);
+
+  const canAccessContact = useMemo(() => {
+    return Boolean(isAdminOrSuperAdmin || isAssignedAgent);
+  }, [isAdminOrSuperAdmin, isAssignedAgent]);
+
   const formatPhoneForUser = useCallback(
     (phone?: string) => {
       if (!phone) return "-";
-      if (isAdminOrSuperAdmin) return phone;
+      if (canAccessContact) return phone;
       return "08xx-xxxx-xxxx";
     },
-    [isAdminOrSuperAdmin]
+    [canAccessContact]
   );
+
+  const canClaim = useMemo(() => {
+    const role = currentUserRole.toLowerCase().trim();
+    return ["agent", "marketing", "admin", "super_admin", "superadmin"].includes(role);
+  }, [currentUserRole]);
+
+  const handleClaimLead = async () => {
+    if (!lead) return;
+    if (!canClaim) {
+      toast.error("Akses Ditolak!", {
+        description: "Role Anda tidak memiliki izin untuk mengklaim lead.",
+      });
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const res = await claimCRMLeadAction(lead.id);
+      if (!res.success) {
+        toast.error(res.error || "Gagal mengklaim Lead");
+        fetchData();
+        return;
+      }
+
+      toast.success("Berhasil mengklaim Lead!", {
+        description: "Anda sekarang adalah penanggung jawab prospek ini.",
+      });
+      fetchData();
+    } catch (err: any) {
+      toast.error("Gagal mengklaim Lead: " + err.message);
+      fetchData();
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const leadData = await crmService.getLeadById(leadId);
+      if (!leadData) {
+        setLead(null);
+        return;
+      }
       setLead(leadData);
 
-      const { data: interestsData, error: intErr } = await supabase
+      const { data: interestsData } = await supabase
         .from("crm_interests")
-        .select("*")
+        .select("*, property:properties(*)")
         .eq("lead_id", leadId);
+      setInterestsList(interestsData || []);
 
-      if (!intErr && interestsData && interestsData.length > 0) {
-        const propertyIds = interestsData.map((i: any) => i.property_id).filter(Boolean);
-        let propertiesMap: Record<string, any> = {};
+      const { data: actData } = await supabase
+        .from("crm_activities")
+        .select("*, user:users(full_name)")
+        .eq("lead_id", leadId)
+        .order("created_at", { ascending: false });
+      setActivities(actData || []);
 
-        if (propertyIds.length > 0) {
-          const { data: propData } = await supabase
-            .from("properties")
-            .select("id, title, listing_code")
-            .in("id", propertyIds);
+      const { data: folData } = await supabase
+        .from("crm_followups")
+        .select("*")
+        .eq("lead_id", leadId)
+        .order("followup_date", { ascending: false });
+      setFollowups(folData || []);
 
-          if (propData) {
-            propertiesMap = propData.reduce((acc: any, p: any) => {
-              acc[p.id] = p;
-              return acc;
-            }, {});
-          }
-        }
+      const { data: surveyData } = await supabase
+        .from("surveys")
+        .select("*, property:properties(id, title, listing_code)")
+        .eq("lead_id", leadId)
+        .order("scheduled_at", { ascending: false });
+      setSurveys(surveyData || []);
 
-        const formattedInterests = interestsData.map((i: any) => ({
-          ...i,
-          property: propertiesMap[i.property_id] || { title: "Properti Pilihan", listing_code: "INL-PROP" },
-        }));
-
-        setInterestsList(formattedInterests);
-      } else {
-        setInterestsList([]);
-      }
-
-      const activitiesData = await crmService.getActivities(leadId);
-      setActivities(activitiesData || []);
-      setFilteredActivities(activitiesData || []);
-
-      const followupsData = await crmService.getFollowups({ lead_id: leadId, limit: 50 });
-      setFollowups(followupsData.data || []);
-
-      const { data: propsData } = await supabase
+      const { data: propData } = await supabase
         .from("properties")
         .select("id, title, listing_code")
-        .eq("status", "published");
-
-      setProperties(propsData || []);
+        .limit(50);
+      setProperties(propData || []);
     } catch (error) {
       console.error("Error fetching lead detail:", error);
       toast.error("Gagal memuat data lead");
@@ -244,17 +277,37 @@ export default function LeadDetailPage() {
   useEffect(() => {
     if (activityFilter === "all") {
       setFilteredActivities(activities);
+    } else if (activityFilter === "survey") {
+      setFilteredActivities(activities.filter((a) => a.activity_type.startsWith("survey") || a.activity_type === "site_visit"));
     } else {
       setFilteredActivities(activities.filter((a) => a.activity_type === activityFilter));
     }
   }, [activityFilter, activities]);
 
-  // 🛡️ BUKA WHATSAPP DENGAN BLOKIR TOTAL UNTUK ROLE AGENT
+  // 🔒 PEMBARUAN STATUS TER-OTORISASI
+  const handleStatusChange = async (newStatus: LeadStatus) => {
+    if (!lead) return;
+    setSaving(true);
+    try {
+      const res = await updateCRMLeadStatusAction(lead.id, newStatus);
+      if (!res.success) {
+        toast.error(res.error || "Gagal memperbarui status");
+        return;
+      }
+      toast.success("Status lead berhasil diperbarui");
+      fetchData();
+    } catch (err: any) {
+      toast.error("Gagal memperbarui status: " + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleOpenWhatsApp = async (phone?: string, customText?: string) => {
-    if (!isAdminOrSuperAdmin) {
+    if (!canAccessContact) {
       toast.error("Akses Kontak Terkunci!", {
         description:
-          "Nomor kontak disembunyikan demi keamanan data perusahaan. Gunakan sistem pesan terpusat atau hubungi Admin.",
+          "Nomor kontak disembunyikan demi keamanan data perusahaan. Hanya Admin dan Agen penanggung jawab yang memiliki akses kontak langsung.",
       });
       return;
     }
@@ -269,12 +322,13 @@ export default function LeadDetailPage() {
 
     if (currentUserId && leadId) {
       try {
+        const actorLabel = isAdminOrSuperAdmin ? "Admin" : "Agen";
         await supabase.from("crm_activities").insert([
           {
             lead_id: leadId,
             user_id: currentUserId,
             activity_type: "WhatsApp Chat",
-            notes: `Admin mengontak klien ${lead?.contact?.full_name || "Klien"} via WhatsApp`,
+            notes: `${actorLabel} mengontak klien ${lead?.contact?.full_name || "Klien"} via WhatsApp`,
             created_at: new Date().toISOString(),
           },
         ]);
@@ -350,7 +404,6 @@ export default function LeadDetailPage() {
           leadName: clientName,
           property: propertyInterest,
           status: lead?.status || "New Lead",
-          // Role ditentukan server dari sesi, tidak lagi dikirim dari klien.
         }),
       });
 
@@ -429,15 +482,12 @@ export default function LeadDetailPage() {
     }
     setSaving(true);
     try {
-      const payload: any = {
+      await crmService.addInterest({
         lead_id: lead.id,
         property_id: newInterest.property_id,
         interest_level: newInterest.interest_level || "high",
-        notes: newInterest.notes || null,
-      };
-
-      const { error } = await supabase.from("crm_interests").insert(payload);
-      if (error) throw error;
+        notes: newInterest.notes || undefined,
+      });
 
       toast.success("Minat properti berhasil ditambahkan");
       setShowAddInterest(false);
@@ -451,7 +501,6 @@ export default function LeadDetailPage() {
     }
   };
 
-  // 🔒 HAPUS LEAD KHUSUS ADMIN & SUPER ADMIN
   const handleDeleteLead = async () => {
     if (!lead) return;
     if (!isAdminOrSuperAdmin) {
@@ -473,8 +522,6 @@ export default function LeadDetailPage() {
       setShowDeleteDialog(false);
     }
   };
-
-  const getStatusLabel = (status: LeadStatus) => STATUS_OPTIONS.find((s) => s.value === status)?.label || status;
 
   if (loading) {
     return (
@@ -499,8 +546,7 @@ export default function LeadDetailPage() {
 
   return (
     <div className="space-y-4 pb-20 max-w-4xl mx-auto px-3 sm:px-4 bg-background min-h-screen text-foreground">
-      
-      {/* 🚀 HEADER MINIMALIS & COMPACT */}
+      {/* HEADER */}
       <div className="flex items-center justify-between pt-3 pb-2 border-b border-border gap-2">
         <div className="flex items-center gap-2 min-w-0">
           <Button variant="ghost" size="icon" onClick={() => router.back()} className="h-8 w-8 shrink-0 hover:bg-muted text-foreground">
@@ -517,11 +563,20 @@ export default function LeadDetailPage() {
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          <Badge variant="outline" className={cn("text-[10px] font-semibold px-2 py-0.5 rounded-md", STATUS_BADGE_VARIANTS[lead.status]?.className)}>
-            {getStatusLabel(lead.status)}
-          </Badge>
+          {/* SELECTOR STATUS DENGAN VALIDASI SERVER ACTION */}
+          <Select value={lead.status} onValueChange={(val) => handleStatusChange(val as LeadStatus)} disabled={saving}>
+            <SelectTrigger className="h-8 text-xs font-semibold w-[140px] border-border bg-card">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="bg-card border-border text-card-foreground">
+              {STATUS_OPTIONS.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value} className="text-xs">
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
-          {/* 🔒 TOMBOL HAPUS HANYA UNTUK ADMIN */}
           {isAdminOrSuperAdmin && (
             <Button
               variant="ghost"
@@ -536,27 +591,92 @@ export default function LeadDetailPage() {
         </div>
       </div>
 
-      {/* ⚡ ACTION BAR DENGAN PROTEKSI ROLE */}
-      <div className={cn(
-        "grid gap-2 bg-card p-2 rounded-xl border border-border shadow-2xs",
-        isAdminOrSuperAdmin ? "grid-cols-4" : "grid-cols-3"
-      )}>
-        {/* 1. WA KLIEN */}
+      {/* UNASSIGNED LEAD BANNER & CLAIM CTA */}
+      {!lead.assigned_to && (
+        <div className="p-3.5 rounded-xl border border-amber-500/30 bg-amber-500/10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="p-2 rounded-lg bg-amber-500/20 text-amber-600 dark:text-amber-400 shrink-0">
+              <UserPlus className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-bold text-foreground">
+                Lead Belum Memiliki Penanggung Jawab
+              </p>
+              <p className="text-[11px] text-muted-foreground truncate">
+                Ambil prospek ini untuk mulai mengelola follow-up dan membuka akses kontak klien.
+              </p>
+            </div>
+          </div>
+
+          {canClaim && (
+            <Button
+              onClick={handleClaimLead}
+              disabled={saving}
+              className="w-full sm:w-auto h-9 min-h-[44px] sm:min-h-[36px] px-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs gap-1.5 cursor-pointer shadow-xs shrink-0"
+            >
+              <UserPlus className="w-3.5 h-3.5" />
+              <span>Ambil Lead Ini</span>
+            </Button>
+          )}
+        </div>
+      )}
+
+      {/* QUICK ACTIONS BAR */}
+      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 bg-card p-2 rounded-xl border border-border shadow-2xs">
+        {/* 1. WhatsApp Action */}
         <Button
           onClick={() => handleOpenWhatsApp(lead.contact?.phone ?? undefined)}
           className={cn(
             "flex flex-col items-center justify-center gap-1 h-14 rounded-lg text-[9px] sm:text-[10px] font-semibold cursor-pointer transition-colors",
-            isAdminOrSuperAdmin
+            canAccessContact
               ? "bg-emerald-600 hover:bg-emerald-700 text-white"
               : "bg-muted text-muted-foreground border border-border"
           )}
         >
-          {isAdminOrSuperAdmin ? <MessageSquare className="w-4 h-4" /> : <Lock className="w-4 h-4 text-amber-500" />}
-          <span>{isAdminOrSuperAdmin ? "WA Klien" : "WA Terkunci"}</span>
+          {canAccessContact ? <MessageSquare className="w-4 h-4" /> : <Lock className="w-4 h-4 text-amber-500" />}
+          <span>{canAccessContact ? "WA Klien" : "WA Terkunci"}</span>
         </Button>
 
-        {/* 2. NOTIF AGEN (KHUSUS SUPER ADMIN & ADMIN) */}
-        {isAdminOrSuperAdmin && (
+        {/* 2. Quick Schedule Follow-up */}
+        <Button
+          onClick={() => setShowAddFollowup(true)}
+          className="flex flex-col items-center justify-center gap-1 h-14 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-[9px] sm:text-[10px] font-semibold cursor-pointer shadow-2xs"
+        >
+          <CalendarClock className="w-4 h-4" />
+          <span>+ Follow-up</span>
+        </Button>
+
+        {/* 3. Quick Survey */}
+        <Button
+          onClick={() => router.push(`/surveys?lead_id=${lead.id}`)}
+          className="flex flex-col items-center justify-center gap-1 h-14 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[9px] sm:text-[10px] font-semibold cursor-pointer shadow-2xs"
+        >
+          <Calendar className="w-4 h-4" />
+          <span>+ Survei</span>
+        </Button>
+
+        {/* 4. Lihat Properti (if linked) */}
+        {(lead.property_id || interestsList[0]?.property_id) ? (
+          <Button
+            onClick={() => router.push(`/properties/${lead.property_id || interestsList[0]?.property_id}`)}
+            className="flex flex-col items-center justify-center gap-1 h-14 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-[9px] sm:text-[10px] font-semibold cursor-pointer shadow-2xs"
+          >
+            <Building className="w-4 h-4" />
+            <span>Properti</span>
+          </Button>
+        ) : (
+          <Button
+            onClick={() => setShowAddInterest(true)}
+            variant="outline"
+            className="flex flex-col items-center justify-center gap-1 h-14 rounded-lg text-[9px] sm:text-[10px] font-semibold cursor-pointer border-border"
+          >
+            <Building className="w-4 h-4 text-muted-foreground" />
+            <span>+ Minat Unit</span>
+          </Button>
+        )}
+
+        {/* 5. AI Writer / Notif Agen */}
+        {isAdminOrSuperAdmin ? (
           <Button
             onClick={handleSendWaNotificationToAgent}
             disabled={saving}
@@ -566,21 +686,17 @@ export default function LeadDetailPage() {
             <Zap className="w-4 h-4 text-amber-300 fill-amber-300" />
             <span>Notif Agen</span>
           </Button>
+        ) : (
+          <Button
+            onClick={handleOpenAiWriter}
+            className="flex flex-col items-center justify-center gap-1 h-14 bg-muted text-muted-foreground border border-border rounded-lg text-[9px] sm:text-[10px] font-semibold cursor-pointer shadow-2xs"
+          >
+            <Sparkles className="w-4 h-4 text-muted-foreground" />
+            <span>AI Writer</span>
+          </Button>
         )}
 
-        {/* 3. AI WRITER */}
-        <Button
-          onClick={handleOpenAiWriter}
-          className={cn(
-            "flex flex-col items-center justify-center gap-1 h-14 rounded-lg text-[9px] sm:text-[10px] font-semibold cursor-pointer shadow-2xs",
-            isAdminOrSuperAdmin ? "bg-amber-600 hover:bg-amber-700 text-white" : "bg-muted text-muted-foreground border border-border"
-          )}
-        >
-          {isAdminOrSuperAdmin ? <Sparkles className="w-4 h-4 fill-amber-200" /> : <Lock className="w-4 h-4 text-muted-foreground" />}
-          <span>AI Writer</span>
-        </Button>
-
-        {/* 4. SIMULASI KPR */}
+        {/* 6. Simulasi KPR */}
         <Button
           onClick={handleOpenKprCalculator}
           className="flex flex-col items-center justify-center gap-1 h-14 bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 dark:hover:bg-slate-700 text-white rounded-lg text-[9px] sm:text-[10px] font-semibold cursor-pointer shadow-2xs"
@@ -590,9 +706,34 @@ export default function LeadDetailPage() {
         </Button>
       </div>
 
-      {/* 📋 CARD RINGKASAN PROFIL */}
+      {/* PROFIL CARD */}
       <Card className="border border-border bg-card shadow-2xs rounded-xl overflow-hidden text-card-foreground">
         <CardContent className="p-4 space-y-3">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-muted-foreground font-medium">Agen Penanggung Jawab</span>
+            {lead.assigned_to ? (
+              <span className="font-semibold text-foreground flex items-center gap-1.5">
+                <Badge variant="outline" className="text-[10px] font-semibold border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                  {lead.assigned_user?.full_name || lead.assigned_user?.email || "Agen Terdaftar"}
+                </Badge>
+              </span>
+            ) : (
+              <div className="flex items-center gap-2">
+                <Badge variant="outline" className="text-[10px] font-bold border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                  Belum Ditugaskan
+                </Badge>
+                {canClaim && (
+                  <button
+                    type="button"
+                    onClick={handleClaimLead}
+                    className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold hover:underline cursor-pointer"
+                  >
+                    Ambil
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
           <div className="flex items-center justify-between text-xs">
             <span className="text-muted-foreground font-medium">Pekerjaan</span>
             <span className="font-semibold text-foreground">{lead.contact?.occupation || "Belum diisi"}</span>
@@ -610,11 +751,14 @@ export default function LeadDetailPage() {
         </CardContent>
       </Card>
 
-      {/* 📑 TABS NAVIGASI */}
+      {/* TABS */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-3 h-9 bg-muted border border-border rounded-xl p-1 shadow-2xs">
+        <TabsList className="grid w-full grid-cols-4 h-9 bg-muted border border-border rounded-xl p-1 shadow-2xs">
           <TabsTrigger value="timeline" className="text-[11px] font-semibold data-[state=active]:bg-emerald-600 data-[state=active]:text-white text-muted-foreground rounded-lg transition-all">
             Timeline ({filteredActivities.length})
+          </TabsTrigger>
+          <TabsTrigger value="surveys" className="text-[11px] font-semibold data-[state=active]:bg-emerald-600 data-[state=active]:text-white text-muted-foreground rounded-lg transition-all">
+            Survei ({surveys.length})
           </TabsTrigger>
           <TabsTrigger value="followups" className="text-[11px] font-semibold data-[state=active]:bg-emerald-600 data-[state=active]:text-white text-muted-foreground rounded-lg transition-all">
             Follow-up ({followups.length})
@@ -636,6 +780,7 @@ export default function LeadDetailPage() {
                   <SelectItem value="all" className="text-xs">Semua</SelectItem>
                   <SelectItem value="note" className="text-xs">Catatan</SelectItem>
                   <SelectItem value="WhatsApp Chat" className="text-xs">Chat WA</SelectItem>
+                  <SelectItem value="survey" className="text-xs">Survei</SelectItem>
                 </SelectContent>
               </Select>
             </CardHeader>
@@ -668,6 +813,59 @@ export default function LeadDetailPage() {
               >
                 <Plus className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" /> Tambah Catatan Aktivitas
               </Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="surveys" className="mt-3">
+          <Card className="border border-border bg-card shadow-2xs rounded-xl text-card-foreground">
+            <CardHeader className="p-3.5 pb-2.5 border-b border-border flex flex-row items-center justify-between">
+              <CardTitle className="text-xs font-bold text-foreground">Jadwal Survei Properti</CardTitle>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-[11px] border-border bg-background cursor-pointer"
+                onClick={() => router.push("/surveys")}
+              >
+                Ke Modul Survei
+              </Button>
+            </CardHeader>
+            <CardContent className="p-3.5 space-y-3">
+              {surveys.length === 0 ? (
+                <p className="text-xs text-muted-foreground text-center py-6">Belum ada survei terjadwal untuk lead ini.</p>
+              ) : (
+                <div className="space-y-2.5">
+                  {surveys.map((s) => (
+                    <div key={s.id} className="p-3 rounded-lg border border-border bg-background text-xs space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
+                          <Badge variant="outline" className={cn(
+                            "text-[9px] uppercase font-mono border-border",
+                            s.status === "completed" ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/30" :
+                            s.status === "cancelled" ? "bg-rose-500/10 text-rose-600 border-rose-500/30" :
+                            "bg-blue-500/10 text-blue-600 border-blue-500/30"
+                          )}>
+                            {s.status}
+                          </Badge>
+                          <span className="text-[10px] text-muted-foreground uppercase font-semibold">
+                            Survei {s.type}
+                          </span>
+                        </div>
+                        <span className="text-[10px] font-mono font-semibold text-foreground">
+                          {format(new Date(s.scheduled_at), "dd MMM yyyy, HH:mm", { locale: id })}
+                        </span>
+                      </div>
+                      {s.property && (
+                        <p className="font-semibold text-foreground text-xs flex items-center gap-1">
+                          <Building className="w-3.5 h-3.5 text-muted-foreground" />
+                          {s.property.title} <span className="text-muted-foreground text-[10px] font-mono">({s.property.listing_code})</span>
+                        </p>
+                      )}
+                      {s.notes && <p className="text-muted-foreground text-[11px] mt-1">{s.notes}</p>}
+                    </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -745,7 +943,7 @@ export default function LeadDetailPage() {
         </TabsContent>
       </Tabs>
 
-      {/* 🤖 DIALOG MODAL AI WRITER */}
+      {/* DIALOG MODALS */}
       <Dialog open={aiModalOpen} onOpenChange={setAiModalOpen}>
         <DialogContent className="sm:max-w-md rounded-2xl border-border bg-card text-card-foreground">
           <DialogHeader>
@@ -797,7 +995,6 @@ export default function LeadDetailPage() {
         </DialogContent>
       </Dialog>
 
-      {/* DIALOG TAMBAH FOLLOWUP */}
       <Dialog open={showAddFollowup} onOpenChange={setShowAddFollowup}>
         <DialogContent className="sm:max-w-md rounded-2xl text-xs border-border bg-card text-card-foreground">
           <DialogHeader>
@@ -826,7 +1023,6 @@ export default function LeadDetailPage() {
         </DialogContent>
       </Dialog>
 
-      {/* DIALOG TAMBAH CATATAN */}
       <Dialog open={showAddNote} onOpenChange={setShowAddNote}>
         <DialogContent className="sm:max-w-md rounded-2xl text-xs border-border bg-card text-card-foreground">
           <DialogHeader>
@@ -847,7 +1043,6 @@ export default function LeadDetailPage() {
         </DialogContent>
       </Dialog>
 
-      {/* DIALOG TAMBAH MINAT */}
       <Dialog open={showAddInterest} onOpenChange={setShowAddInterest}>
         <DialogContent className="sm:max-w-md rounded-2xl text-xs border-border bg-card text-card-foreground">
           <DialogHeader>
@@ -900,7 +1095,6 @@ export default function LeadDetailPage() {
         </DialogContent>
       </Dialog>
 
-      {/* 🔒 DIALOG HAPUS (KHUSUS ADMIN) */}
       <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <DialogContent className="sm:max-w-md rounded-2xl text-xs border-border bg-card text-card-foreground">
           <DialogHeader>

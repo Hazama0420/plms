@@ -3,10 +3,14 @@
 
 import { useState, useEffect, useCallback, ChangeEvent } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslation } from "@/hooks/use-translation";
+import { usePermissions } from "@/hooks/use-permissions";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase/client";
 
 import { PrintInvoiceButton } from "@/components/invoices/print-invoice-button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { CommissionLedgerTable } from "@/components/invoices/CommissionLedgerTable";
 
 import {
   Plus,
@@ -27,6 +31,7 @@ import {
   Loader2,
   Edit3,
   XCircle,
+  Coins,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -79,16 +84,32 @@ import { type Invoice, resolveInvoiceAmount } from "@/types/invoice.types";
 // types/invoice.types.ts.
 export type InvoiceItem = Invoice;
 
-const statusConfig: Record<string, { label: string; color: string; bg: string }> = {
-  draft: { label: "Draft", color: "text-slate-600 dark:text-slate-400", bg: "bg-slate-100 dark:bg-slate-800 border-slate-200" },
-  sent: { label: "Terkirim", color: "text-blue-600 dark:text-blue-400", bg: "bg-blue-100 dark:bg-blue-950/60 border-blue-200" },
-  paid: { label: "Lunas", color: "text-emerald-700 dark:text-emerald-400", bg: "bg-emerald-100 dark:bg-emerald-950/60 border-emerald-200" },
-  overdue: { label: "Jatuh Tempo", color: "text-rose-600 dark:text-rose-400", bg: "bg-rose-100 dark:bg-rose-950/60 border-rose-200" },
-  cancelled: { label: "Batal", color: "text-slate-500", bg: "bg-slate-100 dark:bg-slate-800 border-slate-200" },
-};
+// statusConfig moved inside component to react to language changes
 
 export default function InvoicesPage() {
   const router = useRouter();
+  const { t } = useTranslation();
+  const { userRole, isLoading: permissionsLoading } = usePermissions();
+
+  useEffect(() => {
+    if (!permissionsLoading) {
+      if (userRole !== "admin" && userRole !== "super_admin") {
+        toast.error("Akses Ditolak", {
+          description: "Hanya Admin dan Super Admin yang dapat mengakses modul tagihan.",
+        });
+        router.replace("/dashboard");
+      }
+    }
+  }, [userRole, permissionsLoading, router]);
+
+  const statusConfig: Record<string, { label: string; color: string; bg: string }> = {
+    draft: { label: t("invoices.draft"), color: "text-slate-600 dark:text-slate-400", bg: "bg-slate-100 dark:bg-slate-800 border-slate-200" },
+    sent: { label: t("invoices.sent"), color: "text-blue-600 dark:text-blue-400", bg: "bg-blue-100 dark:bg-blue-950/60 border-blue-200" },
+    paid: { label: t("invoices.paid"), color: "text-emerald-700 dark:text-emerald-400", bg: "bg-emerald-100 dark:bg-emerald-950/60 border-emerald-200" },
+    overdue: { label: t("invoices.overdue_status"), color: "text-rose-600 dark:text-rose-400", bg: "bg-rose-100 dark:bg-rose-950/60 border-rose-200" },
+    cancelled: { label: t("invoices.cancelled"), color: "text-slate-500", bg: "bg-slate-100 dark:bg-slate-800 border-slate-200" },
+  };
+
   const [invoices, setInvoices] = useState<InvoiceItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -144,14 +165,14 @@ export default function InvoicesPage() {
 
   // ===== HAPUS INVOICE =====
   const handleDelete = async (id: string) => {
-    if (!confirm("Apakah Anda yakin ingin menghapus invoice ini?")) return;
+    if (!confirm(t("invoices.confirm_delete"))) return;
     try {
       await supabase.from("invoices").delete().eq("id", id);
-      toast.success("Invoice berhasil dihapus");
+      toast.success(t("invoices.delete_success"));
       setInvoices((prev) => prev.filter((inv) => inv.id !== id));
       if (selectedInvoice?.id === id) setSelectedInvoice(null);
     } catch (error) {
-      toast.error("Gagal menghapus invoice");
+      toast.error(t("invoices.delete_failed"));
     }
   };
 
@@ -159,7 +180,7 @@ export default function InvoicesPage() {
   const handleUpdateStatus = async (id: string, newStatus: string) => {
     try {
       await supabase.from("invoices").update({ status: newStatus }).eq("id", id);
-      toast.success(`Status diubah menjadi ${statusConfig[newStatus]?.label || newStatus}`);
+      toast.success(`${t("invoices.status_changed")} ${statusConfig[newStatus]?.label || newStatus}`);
       setInvoices((prev) =>
         prev.map((inv) => (inv.id === id ? { ...inv, status: newStatus } : inv))
       );
@@ -167,7 +188,7 @@ export default function InvoicesPage() {
         setSelectedInvoice((prev) => (prev ? { ...prev, status: newStatus } : null));
       }
     } catch (error) {
-      toast.error("Gagal memperbarui status");
+      toast.error(t("invoices.update_status_failed"));
     }
   };
 
@@ -217,25 +238,25 @@ export default function InvoicesPage() {
         });
 
         toast.success("AI Gemini Vision berhasil mengekstrak kuitansi! Silakan tinjau & sesuaikan data.");
+        toast.success(t("invoices.ocr_success"));
       } else {
-        throw new Error(json.error || "Gagal membaca gambar kuitansi.");
+        throw new Error(json.error || t("invoices.scan_failed"));
       }
     } catch (err: any) {
       console.error("OCR Error:", err);
-      toast.error(err?.message || "Gagal memproses gambar OCR.");
+      toast.error(err?.message || t("invoices.load_failed"));
     } finally {
       setScanning(false);
     }
   };
 
-  // ===== SIMPAN INVOICE HASIL SCAN =====
   const handleSaveScannedInvoice = async () => {
     if (!ocrForm.client_name.trim()) {
-      toast.error("Nama Klien / Vendor wajib diisi.");
+      toast.error(t("invoices.error_client_name"));
       return;
     }
     if (ocrForm.total_amount <= 0) {
-      toast.error("Nominal tagihan harus lebih dari 0.");
+      toast.error(t("invoices.error_amount"));
       return;
     }
 
@@ -271,15 +292,14 @@ export default function InvoicesPage() {
         ]);
       }
 
-      toast.success(`Invoice ${newInvoiceObj.invoice_number} berhasil disimpan [${statusConfig[newInvoiceObj.status]?.label}]!`);
+      toast.success(`${t("invoices.invoice_saved")} [${statusConfig[newInvoiceObj.status]?.label}]!`);
       setIsOcrOpen(false);
       setPreviewImage(null);
     } catch (err) {
-      toast.error("Gagal menyimpan invoice.");
+      toast.error(t("invoices.save_invoice_failed"));
     }
   };
 
-  // ===== KIRIM PESAN WHATSAPP =====
   const sendWAInvoice = (inv: InvoiceItem) => {
     const text = encodeURIComponent(
       `🧾 *TAGIHAN INVOICE: ${inv.invoice_number}*\n\n` +
@@ -296,7 +316,6 @@ export default function InvoicesPage() {
     window.open(`https://wa.me/${cleanPhone || ""}?text=${text}`, "_blank");
   };
 
-  // Filter Data
   const filtered = invoices.filter((inv) => {
     const matchSearch =
       inv.invoice_number.toLowerCase().includes(search.toLowerCase()) ||
@@ -314,55 +333,66 @@ export default function InvoicesPage() {
   };
 
   return (
-    <div className="space-y-4 sm:space-y-6 pb-20 max-w-7xl mx-auto px-1 sm:px-0">
-      {/* 1. HEADER HALAMAN */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-border/60 pb-3">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
-            📄 Invoices & Keuangan
-          </h1>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Kelola tagihan transaksi, pengiriman WA, dan cetak invoice resmi.
-          </p>
+    <div className="space-y-4 sm:space-y-6 pb-20 max-w-7xl mx-auto px-3 sm:px-0">
+      <Tabs defaultValue="invoices" className="space-y-4 sm:space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-border/60 pb-3">
+          <div>
+            <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
+              📄 {t("invoices.title")}
+            </h1>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {t("invoices.subtitle")}
+            </p>
+          </div>
+
+          <TabsList className="h-9 p-1 bg-muted rounded-xl self-start sm:self-auto">
+            <TabsTrigger value="invoices" className="rounded-lg text-xs gap-1.5 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-xs">
+              <FileText className="w-3.5 h-3.5" />
+              {t("invoices.tabs.invoices")}
+            </TabsTrigger>
+            <TabsTrigger value="commissions" className="rounded-lg text-xs gap-1.5 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-xs">
+              <Coins className="w-3.5 h-3.5 text-emerald-600" />
+              {t("invoices.tabs.commissions")}
+            </TabsTrigger>
+          </TabsList>
         </div>
 
-        <div className="flex items-center gap-2">
-          <Button
-            onClick={() => {
-              setPreviewImage(null);
-              setOcrForm({
-                invoice_number: "",
-                client_name: "",
-                total_amount: 0,
-                status: "draft",
-                issue_date: "",
-                due_date: "",
-                notes: "",
-              });
-              setIsOcrOpen(true);
-            }}
-            variant="outline"
-            className="flex-1 sm:flex-none border-emerald-500/40 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 text-xs h-9 gap-1.5 rounded-xl cursor-pointer"
-          >
-            <Sparkles className="h-3.5 w-3.5 text-emerald-600 fill-emerald-600" /> Scan AI
-          </Button>
+        <TabsContent value="invoices" className="space-y-4 sm:space-y-6 focus-visible:outline-none mt-0">
+          <div className="flex justify-end gap-2">
+            <Button
+              onClick={() => {
+                setPreviewImage(null);
+                setOcrForm({
+                  invoice_number: "",
+                  client_name: "",
+                  total_amount: 0,
+                  status: "draft",
+                  issue_date: "",
+                  due_date: "",
+                  notes: "",
+                });
+                setIsOcrOpen(true);
+              }}
+              variant="outline"
+              className="flex-1 sm:flex-none border-emerald-500/40 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 text-xs h-9 gap-1.5 rounded-xl cursor-pointer"
+            >
+              <Sparkles className="h-3.5 w-3.5 text-emerald-600 fill-emerald-600" /> {t("invoices.scan_ai_btn")}
+            </Button>
 
-          <Button
-            onClick={() => router.push("/invoices/create")}
-            className="flex-1 sm:flex-none bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-9 shadow-md shadow-emerald-600/20 gap-1.5 rounded-xl font-medium cursor-pointer"
-          >
-            <Plus className="h-4 w-4" /> Buat Invoice
-          </Button>
-        </div>
-      </div>
+            <Button
+              onClick={() => router.push("/invoices/create")}
+              className="flex-1 sm:flex-none bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-9 shadow-md shadow-emerald-600/20 gap-1.5 rounded-xl font-medium cursor-pointer"
+            >
+              <Plus className="h-4 w-4" /> {t("invoices.create_btn")}
+            </Button>
+          </div>
 
-      {/* 2. STATS RINGKASAN */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5 sm:gap-4">
         {[
-          { label: "Total Invoice", value: stats.total, icon: FileText, border: "border-l-emerald-500" },
-          { label: "Lunas (Paid)", value: stats.paid, icon: CheckCircle2, border: "border-l-blue-500" },
-          { label: "Jatuh Tempo", value: stats.overdue, icon: AlertCircle, border: "border-l-rose-500" },
-          { label: "Draft / Pending", value: stats.pending, icon: Clock, border: "border-l-amber-500" },
+          { label: t("invoices.stats.total"), value: stats.total, icon: FileText, border: "border-l-emerald-500" },
+          { label: t("invoices.stats.paid"), value: stats.paid, icon: CheckCircle2, border: "border-l-blue-500" },
+          { label: t("invoices.stats.overdue"), value: stats.overdue, icon: AlertCircle, border: "border-l-rose-500" },
+          { label: t("invoices.stats.draft_pending"), value: stats.pending, icon: Clock, border: "border-l-amber-500" },
         ].map((st, idx) => {
           const IconComp = st.icon;
           return (
@@ -381,12 +411,11 @@ export default function InvoicesPage() {
         })}
       </div>
 
-      {/* 3. SEARCH & FILTER */}
       <div className="flex flex-col sm:flex-row gap-2">
         <div className="flex-1 relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
           <Input
-            placeholder="Cari no invoice, klien, atau properti..."
+            placeholder={t("invoices.search_placeholder")}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9 h-9 text-xs rounded-xl focus-visible:ring-emerald-500"
@@ -395,23 +424,22 @@ export default function InvoicesPage() {
         <div className="flex items-center gap-2">
           <Select value={filterStatus} onValueChange={(val) => setFilterStatus(val || "all")}>
             <SelectTrigger className="flex-1 sm:w-[160px] h-9 text-xs rounded-xl">
-              <SelectValue placeholder="Filter Status" />
+              <SelectValue placeholder={t("invoices.filter_status")} />
             </SelectTrigger>
             <SelectContent className="rounded-xl">
-              <SelectItem value="all" className="text-xs">Semua Status</SelectItem>
-              <SelectItem value="draft" className="text-xs">Draft</SelectItem>
-              <SelectItem value="sent" className="text-xs">Terkirim (Sent)</SelectItem>
-              <SelectItem value="paid" className="text-xs">Lunas (Paid)</SelectItem>
-              <SelectItem value="overdue" className="text-xs">Jatuh Tempo (Overdue)</SelectItem>
+              <SelectItem value="all" className="text-xs">{t("invoices.all_status")}</SelectItem>
+              <SelectItem value="draft" className="text-xs">{t("invoices.draft")}</SelectItem>
+              <SelectItem value="sent" className="text-xs">{t("invoices.sent")}</SelectItem>
+              <SelectItem value="paid" className="text-xs">{t("invoices.paid")}</SelectItem>
+              <SelectItem value="overdue" className="text-xs">{t("invoices.overdue_status")}</SelectItem>
             </SelectContent>
           </Select>
           <Button variant="outline" size="sm" onClick={fetchInvoices} className="h-9 px-2.5 rounded-xl gap-1 text-xs shrink-0 cursor-pointer">
-            <RefreshCw className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Refresh</span>
+            <RefreshCw className="h-3.5 w-3.5" /> <span className="hidden sm:inline">{t("invoices.refresh")}</span>
           </Button>
         </div>
       </div>
 
-      {/* 4. TAMPILAN CARD MOBILE (DIOPTIMALKAN DENGAN TITIK 3 LANGSUNG) */}
       <div className="block md:hidden space-y-2.5">
         {loading ? (
           <div className="space-y-2">
@@ -421,7 +449,7 @@ export default function InvoicesPage() {
           </div>
         ) : filtered.length === 0 ? (
           <Card className="p-8 text-center text-xs text-muted-foreground rounded-2xl">
-            Belum ada data invoice.
+            {t("invoices.no_data_mobile")}
           </Card>
         ) : (
           filtered.map((inv) => {
@@ -458,21 +486,21 @@ export default function InvoicesPage() {
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-44 text-xs rounded-xl shadow-lg">
                       <DropdownMenuItem onClick={() => sendWAInvoice(inv)}>
-                        <MessageCircle className="w-3.5 h-3.5 mr-2 text-emerald-600" /> Kirim WhatsApp
+                        <MessageCircle className="w-3.5 h-3.5 mr-2 text-emerald-600" /> {t("invoices.send_wa")}
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem onClick={() => handleUpdateStatus(inv.id, "paid")}>
-                        <CheckCircle2 className="w-3.5 h-3.5 mr-2 text-emerald-600" /> Tandai Lunas
+                        <CheckCircle2 className="w-3.5 h-3.5 mr-2 text-emerald-600" /> {t("invoices.mark_paid")}
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => handleUpdateStatus(inv.id, "sent")}>
-                        <Send className="w-3.5 h-3.5 mr-2 text-blue-600" /> Tandai Terkirim
+                        <Send className="w-3.5 h-3.5 mr-2 text-blue-600" /> {t("invoices.mark_sent")}
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => handleUpdateStatus(inv.id, "overdue")}>
-                        <AlertCircle className="w-3.5 h-3.5 mr-2 text-rose-600" /> Tandai Jatuh Tempo
+                        <AlertCircle className="w-3.5 h-3.5 mr-2 text-rose-600" /> {t("invoices.mark_overdue")}
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem onClick={() => handleDelete(inv.id)} className="text-rose-600 font-medium">
-                        <Trash2 className="w-3.5 h-3.5 mr-2" /> Hapus Invoice
+                        <Trash2 className="w-3.5 h-3.5 mr-2" /> {t("invoices.delete_invoice")}
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -483,7 +511,7 @@ export default function InvoicesPage() {
                   <div>
                     <h4 className="font-bold text-xs text-foreground line-clamp-1">{inv.client_name}</h4>
                     <p className="text-[10px] text-muted-foreground line-clamp-1">
-                      {inv.property?.title || "Transaksi Properti"}
+                      {inv.property?.title || t("invoices.property_transaction")}
                     </p>
                   </div>
                   <span className="text-sm font-bold font-mono text-emerald-600 dark:text-emerald-400 shrink-0">
@@ -494,10 +522,10 @@ export default function InvoicesPage() {
                 {/* Footer Card */}
                 <div className="flex items-center justify-between pt-1 border-t border-border/40 text-[10px] text-muted-foreground">
                   <span className="flex items-center gap-1 font-mono">
-                    <Clock className="w-3 h-3 text-amber-600" /> Tempo: {inv.due_date}
+                    <Clock className="w-3 h-3 text-amber-600" /> {t("invoices.due_label")} {inv.due_date}
                   </span>
                   <span className="text-emerald-600 font-semibold flex items-center gap-0.5">
-                    Opsi Detail <ChevronRight className="w-3.5 h-3.5" />
+                    {t("invoices.detail_options")} <ChevronRight className="w-3.5 h-3.5" />
                   </span>
                 </div>
               </Card>
@@ -512,10 +540,10 @@ export default function InvoicesPage() {
           <CardHeader className="p-4 pb-3 border-b flex flex-row items-center justify-between">
             <div>
               <CardTitle className="text-sm font-bold flex items-center gap-2">
-                <FileText className="w-4 h-4 text-emerald-600" /> Daftar Transaksi Invoice
+                <FileText className="w-4 h-4 text-emerald-600" /> {t("invoices.table_title")}
               </CardTitle>
               <CardDescription className="text-xs">
-                Rincian invoice resmi, status penagihan, dan tanggal jatuh tempo
+                {t("invoices.table_desc")}
               </CardDescription>
             </div>
           </CardHeader>
@@ -529,7 +557,7 @@ export default function InvoicesPage() {
               </div>
             ) : filtered.length === 0 ? (
               <div className="p-8 text-center text-xs text-muted-foreground">
-                Tidak ada data invoice.
+                {t("invoices.no_data_desktop")}
               </div>
             ) : (
               // Tujuh kolom masih meluber di tablet sempit. Pembungkus ini yang
@@ -540,13 +568,13 @@ export default function InvoicesPage() {
               <Table>
                 <TableHeader className="bg-muted/50">
                   <TableRow>
-                    <TableHead className="text-xs font-semibold">No. Invoice</TableHead>
-                    <TableHead className="text-xs font-semibold">Nama Klien / Vendor</TableHead>
-                    <TableHead className="text-xs font-semibold">Properti Terkait</TableHead>
-                    <TableHead className="text-xs font-semibold">Total Tagihan</TableHead>
-                    <TableHead className="text-xs font-semibold">Status</TableHead>
-                    <TableHead className="text-xs font-semibold">Jatuh Tempo</TableHead>
-                    <TableHead className="text-xs font-semibold text-right">Aksi</TableHead>
+                    <TableHead className="text-xs font-semibold">{t("invoices.invoice_no")}</TableHead>
+                    <TableHead className="text-xs font-semibold">{t("invoices.client_vendor_name")}</TableHead>
+                    <TableHead className="text-xs font-semibold">{t("invoices.related_property")}</TableHead>
+                    <TableHead className="text-xs font-semibold">{t("invoices.total_bill")}</TableHead>
+                    <TableHead className="text-xs font-semibold">{t("invoices.status")}</TableHead>
+                    <TableHead className="text-xs font-semibold">{t("invoices.overdue")}</TableHead>
+                    <TableHead className="text-xs font-semibold text-right">{t("invoices.action")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -599,17 +627,17 @@ export default function InvoicesPage() {
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end" className="w-40 text-xs rounded-xl">
                                 <DropdownMenuItem onClick={() => handleUpdateStatus(inv.id, "paid")}>
-                                  <CheckCircle2 className="w-3.5 h-3.5 mr-2 text-emerald-600" /> Tandai Lunas
+                                  <CheckCircle2 className="w-3.5 h-3.5 mr-2 text-emerald-600" /> {t("invoices.mark_paid")}
                                 </DropdownMenuItem>
                                 <DropdownMenuItem onClick={() => handleUpdateStatus(inv.id, "sent")}>
-                                  <Send className="w-3.5 h-3.5 mr-2 text-blue-600" /> Tandai Terkirim
+                                  <Send className="w-3.5 h-3.5 mr-2 text-blue-600" /> {t("invoices.mark_sent")}
                                 </DropdownMenuItem>
                                 <DropdownMenuItem onClick={() => handleUpdateStatus(inv.id, "overdue")}>
-                                  <AlertCircle className="w-3.5 h-3.5 mr-2 text-rose-600" /> Tandai Jatuh Tempo
+                                  <AlertCircle className="w-3.5 h-3.5 mr-2 text-rose-600" /> {t("invoices.mark_overdue")}
                                 </DropdownMenuItem>
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem onClick={() => handleDelete(inv.id)} className="text-rose-600 font-medium">
-                                  <Trash2 className="w-3.5 h-3.5 mr-2" /> Hapus Invoice
+                                  <Trash2 className="w-3.5 h-3.5 mr-2" /> {t("invoices.delete_invoice")}
                                 </DropdownMenuItem>
                               </DropdownMenuContent>
                             </DropdownMenu>
@@ -625,16 +653,22 @@ export default function InvoicesPage() {
           </CardContent>
         </Card>
       </div>
+        </TabsContent>
+
+        <TabsContent value="commissions" className="space-y-4 sm:space-y-6 focus-visible:outline-none mt-0">
+          <CommissionLedgerTable />
+        </TabsContent>
+      </Tabs>
 
       {/* 6. AI OCR INVOICE SCANNER DIALOG */}
       <Dialog open={isOcrOpen} onOpenChange={setIsOcrOpen}>
         <DialogContent className="sm:max-w-xl rounded-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-base font-bold flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-emerald-600 fill-emerald-600" /> Scan & Edit Invoice AI (Gemini Vision)
+              <Sparkles className="w-4 h-4 text-emerald-600 fill-emerald-600" /> {t("invoices.ocr_dialog_title")}
             </DialogTitle>
             <DialogDescription className="text-xs">
-              Unggah foto kuitansi/invoice. Anda dapat meninjau dan mengedit data sebelum disimpan.
+              {t("invoices.ocr_dialog_desc")}
             </DialogDescription>
           </DialogHeader>
 
@@ -647,14 +681,14 @@ export default function InvoicesPage() {
                 className="absolute inset-0 opacity-0 cursor-pointer"
               />
               <Upload className="w-6 h-6 text-emerald-600 mx-auto mb-1.5" />
-              <p className="font-bold text-foreground">Klik atau drag foto kuitansi ke sini</p>
-              <p className="text-[10px] text-muted-foreground mt-0.5">Format JPG, PNG, atau foto kuitansi</p>
+              <p className="font-bold text-foreground">{t("invoices.click_drag_photo")}</p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">{t("invoices.format_photo")}</p>
             </div>
 
             {scanning && (
               <div className="p-4 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 flex items-center justify-center gap-2 text-muted-foreground">
                 <Loader2 className="w-5 h-5 animate-spin text-emerald-600" />
-                <span className="text-xs font-medium">Gemini AI sedang membaca kuitansi...</span>
+                <span className="text-xs font-medium">{t("invoices.gemini_reading")}</span>
               </div>
             )}
 
@@ -662,36 +696,36 @@ export default function InvoicesPage() {
               <div className="space-y-4 pt-1 border-t border-slate-100 dark:border-slate-800">
                 <div className="flex items-center justify-between">
                   <span className="font-semibold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-1">
-                    <Edit3 className="w-3.5 h-3.5 text-emerald-600" /> Tinjau & Edit Data Hasil Scan:
+                    <Edit3 className="w-3.5 h-3.5 text-emerald-600" /> {t("invoices.review_edit_label")}
                   </span>
                   <Badge variant="secondary" className="text-[10px] bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
-                    Dapat Diedit
+                    {t("invoices.editable_badge")}
                   </Badge>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-1">
-                    <Label className="text-[11px] font-medium">Nomor Invoice / Kuitansi</Label>
+                    <Label className="text-[11px] font-medium">{t("invoices.invoice_receipt_no")}</Label>
                     <Input
                       value={ocrForm.invoice_number}
                       onChange={(e) => setOcrForm({ ...ocrForm, invoice_number: e.target.value })}
-                      placeholder="INV-2026..."
+                      placeholder={t("invoices.invoice_receipt_no")}
                       className="h-8 text-xs font-mono rounded-lg"
                     />
                   </div>
 
                   <div className="space-y-1">
-                    <Label className="text-[11px] font-medium">Nama Vendor / Klien</Label>
+                    <Label className="text-[11px] font-medium">{t("invoices.vendor_client_name")}</Label>
                     <Input
                       value={ocrForm.client_name}
                       onChange={(e) => setOcrForm({ ...ocrForm, client_name: e.target.value })}
-                      placeholder="Nama toko / pembayar"
+                      placeholder={t("invoices.vendor_client_name")}
                       className="h-8 text-xs rounded-lg"
                     />
                   </div>
 
                   <div className="space-y-1">
-                    <Label className="text-[11px] font-medium">Total Nominal (Rp)</Label>
+                    <Label className="text-[11px] font-medium">{t("invoices.total_nominal")}</Label>
                     <Input
                       type="number"
                       value={ocrForm.total_amount}
@@ -702,25 +736,25 @@ export default function InvoicesPage() {
                   </div>
 
                   <div className="space-y-1">
-                    <Label className="text-[11px] font-medium">Status Tagihan</Label>
+                    <Label className="text-[11px] font-medium">{t("invoices.billing_status")}</Label>
                     <Select
                       value={ocrForm.status}
                       onValueChange={(val) => setOcrForm({ ...ocrForm, status: val || "draft" })}
                     >
                       <SelectTrigger className="h-8 text-xs rounded-lg">
-                        <SelectValue placeholder="Pilih status" />
+                        <SelectValue placeholder={t("invoices.billing_status")} />
                       </SelectTrigger>
                       <SelectContent className="rounded-xl">
-                        <SelectItem value="draft" className="text-xs">Draft (Konsep)</SelectItem>
-                        <SelectItem value="sent" className="text-xs">Terkirim (Sent)</SelectItem>
-                        <SelectItem value="paid" className="text-xs">Lunas (Paid)</SelectItem>
-                        <SelectItem value="overdue" className="text-xs">Jatuh Tempo (Overdue)</SelectItem>
+                        <SelectItem value="draft" className="text-xs">{t("invoices.draft_concept")}</SelectItem>
+                        <SelectItem value="sent" className="text-xs">{t("invoices.sent")}</SelectItem>
+                        <SelectItem value="paid" className="text-xs">{t("invoices.paid")}</SelectItem>
+                        <SelectItem value="overdue" className="text-xs">{t("invoices.overdue_status")}</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
 
                   <div className="space-y-1">
-                    <Label className="text-[11px] font-medium">Tanggal Terbit</Label>
+                    <Label className="text-[11px] font-medium">{t("invoices.issue_date")}</Label>
                     <Input
                       type="date"
                       value={ocrForm.issue_date}
@@ -730,7 +764,7 @@ export default function InvoicesPage() {
                   </div>
 
                   <div className="space-y-1">
-                    <Label className="text-[11px] font-medium">Tanggal Jatuh Tempo</Label>
+                    <Label className="text-[11px] font-medium">{t("invoices.due_date_label")}</Label>
                     <Input
                       type="date"
                       value={ocrForm.due_date}
@@ -741,13 +775,13 @@ export default function InvoicesPage() {
                 </div>
 
                 <div className="space-y-1">
-                  <Label className="text-[11px] font-medium">Catatan Invoice</Label>
+                  <Label className="text-[11px] font-medium">{t("invoices.invoice_notes")}</Label>
                   <Textarea
                     value={ocrForm.notes}
                     onChange={(e) => setOcrForm({ ...ocrForm, notes: e.target.value })}
                     rows={2}
                     className="text-xs resize-none rounded-lg"
-                    placeholder="Catatan tambahan..."
+                    placeholder={t("invoices.invoice_notes")}
                   />
                 </div>
               </div>
@@ -756,7 +790,7 @@ export default function InvoicesPage() {
 
           <DialogFooter className="gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
             <Button variant="outline" size="sm" onClick={() => setIsOcrOpen(false)} className="text-xs rounded-xl">
-              Batal
+              {t("invoices.cancel_btn")}
             </Button>
             <Button
               size="sm"
@@ -764,7 +798,7 @@ export default function InvoicesPage() {
               onClick={handleSaveScannedInvoice}
               className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs gap-1.5 rounded-xl shadow-md shadow-emerald-600/20 cursor-pointer"
             >
-              <FileCheck className="w-3.5 h-3.5" /> Simpan Invoice
+              <FileCheck className="w-3.5 h-3.5" /> {t("invoices.save_invoice_btn")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -788,14 +822,14 @@ export default function InvoicesPage() {
               {selectedInvoice?.client_name}
             </SheetTitle>
             <SheetDescription className="text-xs text-muted-foreground">
-              {selectedInvoice?.property?.title || "Transaksi Properti Inland"}
+              {selectedInvoice?.property?.title || t("invoices.property_transaction")}
             </SheetDescription>
           </SheetHeader>
 
           <div className="space-y-3.5 py-3 text-xs">
             {/* Total Nominal Highlight */}
             <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-2xl flex items-center justify-between">
-              <span className="text-muted-foreground font-medium">Total Nominal Tagihan:</span>
+              <span className="text-muted-foreground font-medium">{t("invoices.total_nominal_bill")}</span>
               <span className="text-base font-bold text-emerald-700 dark:text-emerald-300 font-mono">
                 {formatCurrency(selectedInvoice?.total_amount || 0)}
               </span>
@@ -804,18 +838,18 @@ export default function InvoicesPage() {
             {/* Detail Informasi */}
             <div className="p-3 bg-muted/50 rounded-2xl space-y-2 border border-border/40">
               <div className="flex justify-between border-b pb-1.5 border-border/40">
-                <span className="text-muted-foreground">Tgl Jatuh Tempo:</span>
+                <span className="text-muted-foreground">{t("invoices.due_date_short")}</span>
                 <span className="font-mono font-bold text-rose-600">{selectedInvoice?.due_date}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Catatan Tambahan:</span>
+                <span className="text-muted-foreground">{t("invoices.additional_notes")}</span>
                 <span className="font-medium text-foreground">{selectedInvoice?.notes || "-"}</span>
               </div>
             </div>
 
             {/* 🟢 TOMBOL AKSI UTAMA PADA MOBILE DRAWER */}
             <div className="space-y-2 pt-1">
-              <p className="text-[11px] font-bold text-muted-foreground">Aksi & Kelola Invoice:</p>
+              <p className="text-[11px] font-bold text-muted-foreground">{t("invoices.action_manage_invoice")}</p>
               
               <div className="grid grid-cols-2 gap-2">
                 <Button
@@ -824,7 +858,7 @@ export default function InvoicesPage() {
                     if (selectedInvoice) sendWAInvoice(selectedInvoice);
                   }}
                 >
-                  <MessageCircle className="w-4 h-4 fill-white" /> Kirim WhatsApp
+                  <MessageCircle className="w-4 h-4 fill-white" /> {t("invoices.action_wa_send")}
                 </Button>
 
                 {selectedInvoice && (
@@ -843,7 +877,7 @@ export default function InvoicesPage() {
                     if (selectedInvoice) handleUpdateStatus(selectedInvoice.id, "paid");
                   }}
                 >
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Set Lunas
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> {t("invoices.set_paid")}
                 </Button>
 
                 <Button
@@ -853,7 +887,7 @@ export default function InvoicesPage() {
                     if (selectedInvoice) handleUpdateStatus(selectedInvoice.id, "sent");
                   }}
                 >
-                  <Send className="w-3.5 h-3.5 text-blue-600" /> Set Terkirim
+                  <Send className="w-3.5 h-3.5 text-blue-600" /> {t("invoices.set_sent")}
                 </Button>
               </div>
 
@@ -865,7 +899,7 @@ export default function InvoicesPage() {
                   if (selectedInvoice) handleDelete(selectedInvoice.id);
                 }}
               >
-                <Trash2 className="w-3.5 h-3.5" /> Hapus Invoice Ini
+                <Trash2 className="w-3.5 h-3.5" /> {t("invoices.delete_invoice_this")}
               </Button>
             </div>
           </div>

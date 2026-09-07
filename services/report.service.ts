@@ -273,37 +273,33 @@ export const reportService = {
       });
 
       properties?.forEach((p: any) => {
-        const agentIds = new Set<string>();
-
-        if (p.created_by) agentIds.add(p.created_by);
-        if (p.assigned_to) agentIds.add(p.assigned_to);
-
-        if (agentIds.size === 0) return;
+        // Authoritative attribution: Agen penanggung jawab (assigned_to), fallback ke pembuat listing (created_by)
+        // Mencegah double-counting volume penjualan dan revenue antar-agen (BUG-14).
+        const agentId = p.assigned_to || p.created_by;
+        if (!agentId) return;
 
         const priceVal = extractPriceValue(p.property_price);
         const st = (p.status || "").toLowerCase();
         const isClosed = st === "sold" || st === "terjual" || st === "rented" || st === "disewa";
 
-        agentIds.forEach((agentId) => {
-          if (!agentStats[agentId]) {
-            agentStats[agentId] = {
-              agent_id: agentId,
-              agent_name: userMap.get(agentId) || "Agen Resmi",
-              total_properties: 0,
-              total_sold: 0,
-              total_revenue: 0,
-              commission: 0,
-            };
-          }
+        if (!agentStats[agentId]) {
+          agentStats[agentId] = {
+            agent_id: agentId,
+            agent_name: userMap.get(agentId) || "Agen Resmi",
+            total_properties: 0,
+            total_sold: 0,
+            total_revenue: 0,
+            commission: 0,
+          };
+        }
 
-          agentStats[agentId].total_properties += 1;
+        agentStats[agentId].total_properties += 1;
 
-          if (isClosed) {
-            agentStats[agentId].total_sold += 1;
-            agentStats[agentId].total_revenue += priceVal;
-            agentStats[agentId].commission += priceVal * 0.025; // 2.5% Komisi
-          }
-        });
+        if (isClosed) {
+          agentStats[agentId].total_sold += 1;
+          agentStats[agentId].total_revenue += priceVal;
+          agentStats[agentId].commission += priceVal * 0.025; // 2.5% Komisi
+        }
       });
 
       return Object.values(agentStats)
@@ -326,10 +322,9 @@ export const reportService = {
       const { data, error } = await supabase
         .from("property_address")
         .select(`
-          city_id,
-          address,
-          cities(name),
-          districts(name)
+          city_name,
+          district_name,
+          address
         `);
 
       if (error) throw error;
@@ -337,23 +332,7 @@ export const reportService = {
       const counts: Record<string, { name: string; count: number }> = {};
 
       data?.forEach((item: any) => {
-        let locationName = "";
-
-        if (item.cities) {
-          if (Array.isArray(item.cities) && item.cities.length > 0) {
-            locationName = item.cities[0]?.name;
-          } else if (typeof item.cities === "object" && item.cities.name) {
-            locationName = item.cities.name;
-          }
-        }
-
-        if (!locationName && item.districts) {
-          if (Array.isArray(item.districts) && item.districts.length > 0) {
-            locationName = item.districts[0]?.name;
-          } else if (typeof item.districts === "object" && item.districts.name) {
-            locationName = item.districts.name;
-          }
-        }
+        let locationName = item.city_name || item.district_name || "";
 
         if (!locationName && item.address) {
           const addressParts = item.address.split(",");
@@ -370,7 +349,7 @@ export const reportService = {
           .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1))
           .join(" ");
 
-        const key = item.city_id || formattedName;
+        const key = item.city_name || formattedName;
 
         if (!counts[key]) {
           counts[key] = { name: formattedName, count: 0 };

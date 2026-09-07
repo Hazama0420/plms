@@ -32,9 +32,13 @@ import { Switch } from "@/components/ui/switch";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
+import { calculateKprSimulation, formatKprCurrency } from "@/lib/kpr";
+import { useTranslation } from "@/hooks/use-translation";
+
 function KprCalculatorContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { t } = useTranslation();
 
   const paramClientName = searchParams.get("client_name");
   const paramPrice = searchParams.get("price");
@@ -89,103 +93,28 @@ function KprCalculatorContent() {
     setDpNominalInput(Math.round((propertyPrice * pct) / 100));
   };
 
-  // Kalkulasi Simulasi KPR
+  // Kalkulasi Simulasi KPR Canonical Engine
   const calculations = useMemo(() => {
-    const dpNominal = isCustomDpNominal 
-      ? dpNominalInput 
-      : Math.round((propertyPrice * dpPercentage) / 100);
-
-    const loanPrincipal = Math.max(0, propertyPrice - dpNominal);
-
-    const monthlyRateFixed = fixedRate / 100 / 12;
-    const totalMonths = tenureYears * 12;
-
-    let installmentFixed = 0;
-    if (monthlyRateFixed > 0 && totalMonths > 0 && loanPrincipal > 0) {
-      const factorFixed = Math.pow(1 + monthlyRateFixed, totalMonths);
-      installmentFixed = Math.round(
-        loanPrincipal * ((monthlyRateFixed * factorFixed) / (factorFixed - 1))
-      );
-    }
-
-    const fixedMonths = Math.min(fixedYears * 12, totalMonths);
-    const remainingMonthsFloating = Math.max(0, totalMonths - fixedMonths);
-
-    let balanceAfterFixed = loanPrincipal;
-    for (let m = 1; m <= fixedMonths; m++) {
-      const interestPayment = balanceAfterFixed * monthlyRateFixed;
-      const principalPayment = installmentFixed - interestPayment;
-      balanceAfterFixed -= principalPayment;
-    }
-
-    const monthlyRateFloating = floatingRate / 100 / 12;
-    let installmentFloating = installmentFixed;
-
-    if (remainingMonthsFloating > 0 && monthlyRateFloating > 0 && balanceAfterFixed > 0) {
-      const factorFloating = Math.pow(1 + monthlyRateFloating, remainingMonthsFloating);
-      installmentFloating = Math.round(
-        balanceAfterFixed * ((monthlyRateFloating * factorFloating) / (factorFloating - 1))
-      );
-    }
-
-    const requiredIncomeFixed = Math.round(installmentFixed / 0.35);
-
-    const provisiFee = Math.round(loanPrincipal * 0.01);
-    const adminFee = 1500000;
-    const appraisalFee = 1250000;
-    const notaryFee = Math.round(propertyPrice * 0.01);
-    const insuranceFee = Math.round(loanPrincipal * 0.012);
-
-    const bphtbTax = includeBphtb
-      ? Math.max(0, Math.round((propertyPrice - 60000000) * 0.05))
-      : 0;
-
-    const totalBiayaAkad = provisiFee + adminFee + appraisalFee + notaryFee + insuranceFee + bphtbTax;
-    const totalUangAwal = dpNominal + totalBiayaAkad;
-
-    const amortizationSchedule = [];
-    let curBalance = loanPrincipal;
-
-    for (let yr = 1; yr <= tenureYears; yr++) {
-      let yrInterest = 0;
-      let yrPrincipal = 0;
-      const isFixedYear = yr <= fixedYears;
-      const currentRate = isFixedYear ? monthlyRateFixed : monthlyRateFloating;
-      const currentInstallment = isFixedYear ? installmentFixed : installmentFloating;
-
-      for (let m = 1; m <= 12; m++) {
-        const interestM = curBalance * currentRate;
-        const principalM = currentInstallment - interestM;
-        yrInterest += interestM;
-        yrPrincipal += principalM;
-        curBalance -= principalM;
-      }
-
-      amortizationSchedule.push({
-        year: yr,
-        isFixed: isFixedYear,
-        yearlyPrincipal: Math.round(yrPrincipal),
-        yearlyInterest: Math.round(yrInterest),
-        remainingBalance: Math.max(0, Math.round(curBalance)),
-      });
-    }
+    const raw = calculateKprSimulation({
+      propertyPrice,
+      dpPercentage,
+      dpNominalCustom: isCustomDpNominal ? dpNominalInput : null,
+      tenureYears,
+      fixedRate,
+      fixedYears,
+      floatingRate,
+      includeBphtb,
+    });
 
     return {
-      dpNominal,
-      loanPrincipal,
-      installmentFixed,
-      installmentFloating,
-      requiredIncomeFixed,
-      totalMonths,
-      provisiFee,
-      adminFee,
-      appraisalFee,
-      notaryFee,
-      insuranceFee,
-      bphtbTax,
-      totalBiayaAkad,
-      totalUangAwal,
-      amortizationSchedule,
+      ...raw,
+      provisiFee: raw.fees.provisiFee,
+      adminFee: raw.fees.adminFee,
+      appraisalFee: raw.fees.appraisalFee,
+      notaryFee: raw.fees.notaryFee,
+      insuranceFee: raw.fees.insuranceFee,
+      bphtbTax: raw.fees.bphtbTax,
+      totalBiayaAkad: raw.fees.totalBiayaAkad,
     };
   }, [
     propertyPrice,
@@ -199,34 +128,27 @@ function KprCalculatorContent() {
     includeBphtb,
   ]);
 
-  const formatCurrency = (val: number) => {
-    return new Intl.NumberFormat("id-ID", {
-      style: "currency",
-      currency: "IDR",
-      maximumFractionDigits: 0,
-    }).format(val || 0);
-  };
+  const formatCurrency = (val: number) => formatKprCurrency(val);
 
   const handleShareWhatsApp = () => {
-    const text = encodeURIComponent(
-      `🏡 *SIMULASI KPR INLAND PROPERTY*\n` +
-      `-----------------------------------------\n` +
-      (clientName ? `Yth. Bpk/Ibu *${clientName}*,\n\n` : "") +
-      `Rincian simulasi KPR Properti:\n\n` +
-      `💵 *Harga Properti*: ${formatCurrency(propertyPrice)}\n` +
-      `💳 *Uang Muka (DP ${dpPercentage}%)*: ${formatCurrency(calculations.dpNominal)}\n` +
-      `🏦 *Plafon Pinjaman KPR*: ${formatCurrency(calculations.loanPrincipal)}\n\n` +
-      `📌 *ESTIMASI ANGSURAN*\n` +
-      `• *Cicilan Promo (${fixedYears} Thn Pertama)*: *${formatCurrency(calculations.installmentFixed)}/bulan*\n` +
-      `• *Cicilan Setelah Promo (Est. Floating)*: *${formatCurrency(calculations.installmentFloating)}/bulan*\n` +
-      `• Jangka Waktu (Tenor): ${tenureYears} Tahun\n\n` +
-      `💡 *REKOMENDASI GAJI MINIMUM*: *${formatCurrency(calculations.requiredIncomeFixed)}/bulan*\n` +
-      `📑 *ESTIMASI DANA AWAL (DP + AKAD & PAJAK)*: *${formatCurrency(calculations.totalUangAwal)}*\n\n` +
-      `*Catatan:* Hasil dari perhitungan simulasi KPR ini hanya merupakan perkiraan saja. Untuk perhitungan tepatnya, pihak bank akan memberikan ilustrasi angsuran Anda.\n\n` +
-      `Hubungi Tim Agen *Inland Property* untuk pendampingan pengajuan KPR!`
-    );
+    let text = t("kpr.shareText");
+    
+    // Replace all placeholders
+    text = text.replace("{clientName}", clientName ? `Yth. Bpk/Ibu *${clientName}*,\n\n` : "");
+    text = text.replace("{propertyPrice}", formatCurrency(propertyPrice));
+    text = text.replace("{dpPercentage}", dpPercentage.toString());
+    text = text.replace("{dpNominal}", formatCurrency(calculations.dpNominal));
+    text = text.replace("{loanPrincipal}", formatCurrency(calculations.loanPrincipal));
+    text = text.replace("{fixedYears}", fixedYears.toString());
+    text = text.replace("{installmentFixed}", formatCurrency(calculations.installmentFixed));
+    text = text.replace("{installmentFloating}", formatCurrency(calculations.installmentFloating));
+    text = text.replace("{tenureYears}", tenureYears.toString());
+    text = text.replace("{requiredIncomeFixed}", formatCurrency(calculations.requiredIncomeFixed));
+    text = text.replace("{totalUangAwal}", formatCurrency(calculations.totalUangAwal));
 
-    window.open(`https://wa.me/?text=${text}`, "_blank");
+    const encodedText = encodeURIComponent(text);
+
+    window.open(`https://wa.me/?text=${encodedText}`, "_blank");
   };
 
   return (
@@ -240,14 +162,14 @@ function KprCalculatorContent() {
                 <Calculator className="w-5 h-5" />
               </span>
               <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-foreground">
-                Kalkulator KPR
+                {t("kpr.calculatorTitle")}
               </h1>
               <Badge className="bg-emerald-600/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20 text-[10px] font-semibold">
-                Simulasi Instan
+                {t("kpr.instantSimulation")}
               </Badge>
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              Hitung estimasi cicilan bulanan, syarat gaji, dan persediaan modal awal secara cepat & transparan.
+              {t("kpr.calculatorDesc")}
             </p>
           </div>
 
@@ -258,14 +180,14 @@ function KprCalculatorContent() {
               onClick={() => router.back()}
               className="text-xs h-9 rounded-xl border-border/80 cursor-pointer"
             >
-              <ArrowLeft className="w-3.5 h-3.5 mr-1" /> Kembali
+              <ArrowLeft className="w-3.5 h-3.5 mr-1" /> {t("auth.backBtn")}
             </Button>
 
             <Button
               onClick={handleShareWhatsApp}
               className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-9 rounded-xl px-4 gap-1.5 shadow-md shadow-emerald-600/20 font-bold cursor-pointer"
             >
-              <MessageCircle className="w-4 h-4 fill-white text-emerald-600" /> Share via WA
+              <MessageCircle className="w-4 h-4 fill-white text-emerald-600" /> {t("kpr.shareWa")}
             </Button>
           </div>
         </div>
@@ -279,18 +201,18 @@ function KprCalculatorContent() {
               <CardHeader className="p-4 pb-3 border-b border-border/50 bg-gradient-to-r from-emerald-500/5 to-transparent">
                 <CardTitle className="text-xs font-extrabold text-foreground flex items-center justify-between">
                   <span className="flex items-center gap-1.5">
-                    <SlidersHorizontal className="w-4 h-4 text-emerald-600" /> Input Data KPR
+                    <SlidersHorizontal className="w-4 h-4 text-emerald-600" /> {t("kpr.inputData")}
                   </span>
-                  <span className="text-[10px] font-normal text-muted-foreground">Parameter Kredit</span>
+                  <span className="text-[10px] font-normal text-muted-foreground">{t("kpr.creditParams")}</span>
                 </CardTitle>
               </CardHeader>
 
               <CardContent className="p-4 space-y-4 text-xs">
                 {/* Nama Pembeli */}
                 <div className="space-y-1">
-                  <Label className="text-xs font-semibold">Nama Calon Pembeli (Opsional)</Label>
+                  <Label className="text-xs font-semibold">{t("kpr.clientName")}</Label>
                   <Input
-                    placeholder="Contoh: Bpk. Handy"
+                    placeholder={t("kpr.clientNamePlaceholder")}
                     value={clientName}
                     onChange={(e) => setClientName(e.target.value)}
                     className="h-9 text-xs rounded-xl focus-visible:ring-emerald-500"
@@ -300,7 +222,7 @@ function KprCalculatorContent() {
                 {/* Harga Properti */}
                 <div className="space-y-1.5">
                   <div className="flex justify-between items-center">
-                    <Label className="text-xs font-semibold">Harga Rumah / Properti (Rp)</Label>
+                    <Label className="text-xs font-semibold">{t("kpr.propertyPrice")}</Label>
                     <span className="font-mono font-extrabold text-emerald-600 dark:text-emerald-400 text-xs">
                       {formatCurrency(propertyPrice)}
                     </span>
@@ -338,13 +260,13 @@ function KprCalculatorContent() {
                 <div className="space-y-2 bg-amber-500/5 dark:bg-amber-500/10 p-3 rounded-xl border border-amber-500/20">
                   <div className="flex justify-between items-center">
                     <Label className="text-xs font-semibold flex items-center gap-1">
-                      Uang Muka / DP
+                      {t("kpr.downPayment")}
                       <Tooltip>
                         <TooltipTrigger className="inline-flex items-center cursor-pointer">
                           <HelpCircle className="w-3 h-3 text-muted-foreground" />
                         </TooltipTrigger>
                         <TooltipContent className="text-[11px] max-w-xs">
-                          Pembayaran awal dari total harga rumah yang dibayarkan langsung ke penjual/developer.
+                          {t("kpr.dpTooltip")}
                         </TooltipContent>
                       </Tooltip>
                     </Label>
@@ -355,7 +277,7 @@ function KprCalculatorContent() {
 
                   <div className="grid grid-cols-2 gap-2">
                     <div className="space-y-0.5">
-                      <span className="text-[10px] text-muted-foreground">Persen DP (%)</span>
+                      <span className="text-[10px] text-muted-foreground">{t("kpr.dpPercent")}</span>
                       <Input
                         type="number"
                         min={0}
@@ -367,7 +289,7 @@ function KprCalculatorContent() {
                       />
                     </div>
                     <div className="space-y-0.5">
-                      <span className="text-[10px] text-muted-foreground">Nominal DP (Rp)</span>
+                      <span className="text-[10px] text-muted-foreground">{t("kpr.dpNominal")}</span>
                       <Input
                         type="number"
                         step={5000000}
@@ -394,7 +316,7 @@ function KprCalculatorContent() {
                 {/* TENOR / JANGKA WAKTU KREDIT */}
                 <div className="space-y-2">
                   <div className="flex justify-between items-center">
-                    <Label className="text-xs font-semibold">Lama Pinjaman (Tenor)</Label>
+                    <Label className="text-xs font-semibold">{t("kpr.tenure")}</Label>
                     <div className="flex items-center gap-1">
                       <Input
                         type="number"
@@ -404,7 +326,7 @@ function KprCalculatorContent() {
                         onChange={(e) => setTenureYears(Math.max(1, Number(e.target.value)))}
                         className="h-7 w-16 text-center text-xs font-mono rounded-lg p-1"
                       />
-                      <span className="text-xs font-semibold text-muted-foreground">Tahun</span>
+                      <span className="text-xs font-semibold text-muted-foreground">{t("kpr.years")}</span>
                     </div>
                   </div>
 
@@ -432,14 +354,14 @@ function KprCalculatorContent() {
                 <Collapsible open={showAdvanced} onOpenChange={setShowAdvanced} className="...">
   <CollapsibleTrigger className="w-full">
     <div className="w-full py-2 px-3 text-xs text-muted-foreground hover:bg-muted/60 hover:text-foreground rounded-xl flex items-center justify-center gap-1 font-medium transition-colors cursor-pointer">
-      ⚙️ Pengaturan Suku Bunga & Akad Bank
+      {t("kpr.advancedSettings")}
     </div>
   </CollapsibleTrigger>
                   <CollapsibleContent className="space-y-3 pt-3">
                     <div className="p-3 bg-muted/40 rounded-xl space-y-3 border border-border/50">
                       <div className="grid grid-cols-2 gap-2">
                         <div className="space-y-1">
-                          <Label className="text-[10px]">Bunga Fixed Promo (% p.a)</Label>
+                          <Label className="text-[10px]">{t("kpr.fixedRate")}</Label>
                           <Input
                             type="number"
                             step={0.1}
@@ -449,7 +371,7 @@ function KprCalculatorContent() {
                           />
                         </div>
                         <div className="space-y-1">
-                          <Label className="text-[10px]">Masa Promo (Tahun)</Label>
+                          <Label className="text-[10px]">{t("kpr.fixedYears")}</Label>
                           <Select value={String(fixedYears)} onValueChange={(v) => setFixedYears(Number(v || 3))}>
                             <SelectTrigger className="h-8 text-xs rounded-lg">
                               <SelectValue />
@@ -457,7 +379,7 @@ function KprCalculatorContent() {
                             <SelectContent className="rounded-xl">
                               {[1, 2, 3, 5, 8, 10].map((y) => (
                                 <SelectItem key={y} value={String(y)} className="text-xs">
-                                  {y} Tahun
+                                  {y} {t("kpr.years")}
                                 </SelectItem>
                               ))}
                             </SelectContent>
@@ -467,7 +389,7 @@ function KprCalculatorContent() {
 
                       <div className="grid grid-cols-2 gap-2 pt-1 border-t border-border/30">
                         <div className="space-y-1">
-                          <Label className="text-[10px]">Bunga Floating Est. (% p.a)</Label>
+                          <Label className="text-[10px]">{t("kpr.floatingRate")}</Label>
                           <Input
                             type="number"
                             step={0.1}
@@ -478,7 +400,7 @@ function KprCalculatorContent() {
                         </div>
                         <div className="space-y-1 flex items-end">
                           <div className="flex items-center justify-between w-full h-8 bg-background px-2.5 rounded-lg border text-[10px]">
-                            <span>Pajak BPHTB (5%)</span>
+                            <span>{t("kpr.bphtbTax")}</span>
                             <Switch checked={includeBphtb} onCheckedChange={setIncludeBphtb} className="scale-75" />
                           </div>
                         </div>
@@ -500,27 +422,31 @@ function KprCalculatorContent() {
                 {/* BADGE STATS */}
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <Badge className="bg-emerald-600 text-white font-bold text-[10px] px-3 py-1 rounded-full shadow-xs">
-                    💡 Masa Promo {fixedYears} Tahun Pertama
+                    {t("kpr.promoPeriod").replace("{years}", fixedYears.toString())}
                   </Badge>
                   <span className="text-[11px] text-muted-foreground font-mono">
-                    Plafon KPR: <strong className="text-foreground">{formatCurrency(calculations.loanPrincipal)}</strong>
+                    {t("kpr.loanPrincipal")}: <strong className="text-foreground">{formatCurrency(calculations.loanPrincipal)}</strong>
                   </span>
                 </div>
 
                 {/* ANGKA CICILAN UTAMA */}
                 <div className="space-y-1">
                   <span className="text-xs font-semibold text-muted-foreground block">
-                    Estimasi Angsuran Per Bulan:
+                    {t("kpr.estInstallment")}:
                   </span>
                   <div className="flex items-baseline gap-2">
-                    <h2 className="text-3xl sm:text-4xl font-extrabold font-mono text-emerald-600 dark:text-emerald-400 tracking-tight">
+                    <h2 className="text-3xl sm:text-4xl font-extrabold font-mono tabular-nums text-emerald-600 dark:text-emerald-400 tracking-tight">
                       {formatCurrency(calculations.installmentFixed)}
                     </h2>
-                    <span className="text-sm font-semibold text-muted-foreground">/ bulan</span>
+                    <span className="text-sm font-semibold text-muted-foreground">{t("kpr.perMonth")}</span>
                   </div>
                   <p className="text-[11px] text-muted-foreground pt-1 flex items-center gap-1">
                     <Sparkles className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                    Bunga promo <strong>{fixedRate}%</strong> ({fixedYears} thn). Suku bunga floating selanjutnya est. {formatCurrency(calculations.installmentFloating)}/bln.
+                    <span dangerouslySetInnerHTML={{ __html: t("kpr.promoDesc")
+                        .replace("{rate}", `<strong>${fixedRate}</strong>`)
+                        .replace("{years}", fixedYears.toString())
+                        .replace("{amount}", formatCurrency(calculations.installmentFloating))
+                    }} />
                   </p>
                 </div>
 
@@ -529,26 +455,26 @@ function KprCalculatorContent() {
                   {/* CARD GAJI MINIMAL */}
                   <div className="bg-card/80 backdrop-blur-sm p-3.5 rounded-xl border border-emerald-500/20 space-y-1">
                     <span className="text-[10px] text-muted-foreground font-medium flex items-center gap-1">
-                      <BadgeCheck className="w-3.5 h-3.5 text-emerald-600" /> Syarat Minimal Gaji
+                      <BadgeCheck className="w-3.5 h-3.5 text-emerald-600" /> {t("kpr.minSalary")}
                     </span>
-                    <p className="text-sm font-extrabold font-mono text-foreground">
+                    <p className="text-sm font-extrabold font-mono tabular-nums text-foreground">
                       {formatCurrency(calculations.requiredIncomeFixed)} <span className="text-[10px] font-normal text-muted-foreground">/bln</span>
                     </p>
                     <p className="text-[9px] text-muted-foreground leading-tight">
-                      Aturan Bank: Cicilan maks. 35% dari gaji bersih gabungan.
+                      {t("kpr.salaryRule")}
                     </p>
                   </div>
 
                   {/* CARD DANA AWAL */}
                   <div className="bg-card/80 backdrop-blur-sm p-3.5 rounded-xl border border-amber-500/20 space-y-1">
                     <span className="text-[10px] text-muted-foreground font-medium flex items-center gap-1">
-                      <Wallet className="w-3.5 h-3.5 text-amber-600" /> Total Modal Awal
+                      <Wallet className="w-3.5 h-3.5 text-amber-600" /> {t("kpr.initialFunds")}
                     </span>
-                    <p className="text-sm font-extrabold font-mono text-amber-700 dark:text-amber-400">
+                    <p className="text-sm font-extrabold font-mono tabular-nums text-amber-700 dark:text-amber-400">
                       {formatCurrency(calculations.totalUangAwal)}
                     </p>
                     <p className="text-[9px] text-muted-foreground leading-tight">
-                      Termasuk DP ({dpPercentage}%) + Estimasi Biaya Akad & Legalitas.
+                      {t("kpr.initialFundsDesc").replace("{dp}", dpPercentage.toString())}
                     </p>
                   </div>
                 </div>
@@ -559,8 +485,8 @@ function KprCalculatorContent() {
             {/* TAB RINCIAN LENGKAP */}
             <Tabs defaultValue="fees" className="w-full">
               <TabsList className="grid grid-cols-2 h-9 text-xs rounded-xl bg-muted p-1">
-                <TabsTrigger value="fees" className="text-xs rounded-lg font-semibold cursor-pointer">Rincian Biaya Akad & Legalitas</TabsTrigger>
-                <TabsTrigger value="amortization" className="text-xs rounded-lg font-semibold cursor-pointer">Tabel Sisa Pinjaman Tahunan</TabsTrigger>
+                <TabsTrigger value="fees" className="text-xs rounded-lg font-semibold cursor-pointer">{t("kpr.feesTab")}</TabsTrigger>
+                <TabsTrigger value="amortization" className="text-xs rounded-lg font-semibold cursor-pointer">{t("kpr.amortizationTab")}</TabsTrigger>
               </TabsList>
 
               {/* RINCIAN BIAYA AKAD */}
@@ -568,36 +494,36 @@ function KprCalculatorContent() {
                 <Card className="border border-border/70 shadow-2xs rounded-2xl">
                   <CardHeader className="p-4 pb-2">
                     <CardTitle className="text-xs font-bold flex items-center gap-1.5">
-                      <FileCheck2 className="w-3.5 h-3.5 text-emerald-600" /> Estimasi Pengeluaran Awal (DP + Legalitas)
+                      <FileCheck2 className="w-3.5 h-3.5 text-emerald-600" /> {t("kpr.feesTitle")}
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="p-4 pt-1 text-xs space-y-2">
                     <div className="divide-y divide-border/40">
                       <div className="py-2 flex justify-between">
-                        <span className="text-muted-foreground">Uang Muka (DP {dpPercentage}%):</span>
-                        <span className="font-mono text-foreground font-bold">{formatCurrency(calculations.dpNominal)}</span>
+                        <span className="text-muted-foreground">{t("kpr.dpLabel").replace("{dp}", dpPercentage.toString())}</span>
+                        <span className="font-mono tabular-nums text-foreground font-bold">{formatCurrency(calculations.dpNominal)}</span>
                       </div>
                       <div className="py-2 flex justify-between">
-                        <span className="text-muted-foreground">Provisi & Administrasi Bank:</span>
-                        <span className="font-mono text-foreground">{formatCurrency(calculations.provisiFee + calculations.adminFee)}</span>
+                        <span className="text-muted-foreground">{t("kpr.bankAdminLabel")}</span>
+                        <span className="font-mono tabular-nums text-foreground">{formatCurrency(calculations.provisiFee + calculations.adminFee)}</span>
                       </div>
                       <div className="py-2 flex justify-between">
-                        <span className="text-muted-foreground">Notaris, Sertifikat & APHT (Est.):</span>
-                        <span className="font-mono text-foreground">{formatCurrency(calculations.notaryFee)}</span>
+                        <span className="text-muted-foreground">{t("kpr.notaryLabel")}</span>
+                        <span className="font-mono tabular-nums text-foreground">{formatCurrency(calculations.notaryFee)}</span>
                       </div>
                       <div className="py-2 flex justify-between">
-                        <span className="text-muted-foreground">Asuransi Jiwa & Kebakaran (Est.):</span>
-                        <span className="font-mono text-foreground">{formatCurrency(calculations.insuranceFee)}</span>
+                        <span className="text-muted-foreground">{t("kpr.insuranceLabel")}</span>
+                        <span className="font-mono tabular-nums text-foreground">{formatCurrency(calculations.insuranceFee)}</span>
                       </div>
                       {includeBphtb && (
                         <div className="py-2 flex justify-between text-amber-700 dark:text-amber-400">
-                          <span>Pajak Pembeli / BPHTB (5%):</span>
-                          <span className="font-mono font-bold">{formatCurrency(calculations.bphtbTax)}</span>
+                          <span>{t("kpr.bphtbLabel")}</span>
+                          <span className="font-mono tabular-nums font-bold">{formatCurrency(calculations.bphtbTax)}</span>
                         </div>
                       )}
                       <div className="py-3 flex justify-between font-bold bg-emerald-500/10 px-3 rounded-xl mt-2 text-emerald-950 dark:text-emerald-200">
-                        <span>TOTAL MODAL AWAL DISIAPKAN:</span>
-                        <span className="font-mono text-sm">{formatCurrency(calculations.totalUangAwal)}</span>
+                        <span>{t("kpr.totalInitialFunds")}</span>
+                        <span className="font-mono tabular-nums text-sm">{formatCurrency(calculations.totalUangAwal)}</span>
                       </div>
                     </div>
                   </CardContent>
@@ -615,16 +541,16 @@ function KprCalculatorContent() {
                       <Table>
                         <TableHeader className="bg-muted/60 sticky top-0 backdrop-blur-md">
                           <TableRow>
-                            <TableHead className="text-[10px] font-bold">Tahun</TableHead>
-                            <TableHead className="text-[10px] font-bold">Skema Bunga</TableHead>
-                            <TableHead className="text-[10px] font-bold">Angsuran Pokok</TableHead>
-                            <TableHead className="text-[10px] font-bold text-right">Sisa Pinjaman</TableHead>
+                            <TableHead className="text-[10px] font-bold">{t("kpr.year")}</TableHead>
+                            <TableHead className="text-[10px] font-bold">{t("kpr.rateScheme")}</TableHead>
+                            <TableHead className="text-[10px] font-bold">{t("kpr.principalInstallment")}</TableHead>
+                            <TableHead className="text-[10px] font-bold text-right">{t("kpr.remainingBalance")}</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
                           {calculations.amortizationSchedule.map((row) => (
                             <TableRow key={row.year} className="text-xs hover:bg-muted/30">
-                              <TableCell className="py-2 font-mono font-bold">Thn Ke-{row.year}</TableCell>
+                              <TableCell className="py-2 font-mono font-bold">{t("kpr.yearNum").replace("{year}", row.year.toString())}</TableCell>
                               <TableCell className="py-2">
                                 <Badge
                                   variant="outline"
@@ -634,7 +560,7 @@ function KprCalculatorContent() {
                                       : "text-[9px] bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30"
                                   }
                                 >
-                                  {row.isFixed ? "Fixed Promo" : "Floating"}
+                                  {row.isFixed ? t("kpr.fixedPromo") : t("kpr.floating")}
                                 </Badge>
                               </TableCell>
                               <TableCell className="py-2 font-mono text-emerald-600 dark:text-emerald-400">
@@ -657,9 +583,9 @@ function KprCalculatorContent() {
             <div className="p-4 bg-amber-500/10 border border-amber-500/25 rounded-2xl flex items-start gap-3 text-amber-900 dark:text-amber-200">
               <Info className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
               <div className="text-xs leading-relaxed space-y-0.5">
-                <p className="font-bold text-amber-800 dark:text-amber-300">Catatan Penting / Penafian:</p>
+                <p className="font-bold text-amber-800 dark:text-amber-300">{t("kpr.disclaimerTitle")}</p>
                 <p className="italic text-[11px] font-medium">
-                  "Hasil dari perhitungan simulasi KPR ini hanya merupakan perkiraan saja. Untuk perhitungan tepatnya, pihak bank akan memberikan ilustrasi angsuran Anda."
+                  {t("kpr.disclaimerText")}
                 </p>
               </div>
             </div>

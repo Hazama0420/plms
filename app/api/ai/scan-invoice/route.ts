@@ -2,7 +2,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { aiService } from "@/services/ai.service";
 import { requireAuth } from "@/lib/api-auth";
-import { enforceAiQuota, estimateImageTokens } from "@/lib/ai-quota";
+import { authorizeAI } from "@/lib/ai/policy";
+import { estimateImageTokens } from "@/lib/ai-quota";
 
 // Batas ukuran unggahan agar Gemini Vision tidak dibanjiri berkas besar.
 const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB
@@ -45,17 +46,22 @@ export async function POST(req: NextRequest) {
 
     // Kuota dihitung dari ukuran berkas: pemindaian gambar jauh lebih mahal
     // daripada permintaan teks, dan biayanya sebanding dengan resolusinya.
-    const quota = await enforceAiQuota({
-      feature: "scan_invoice",
+    const guard = await authorizeAI({
+      featureKey: "finance.scan_invoice",
       req,
-      userId: auth.ctx.userId,
-      role: auth.ctx.role,
-      estimatedTokens: estimateImageTokens(buffer.byteLength),
     });
-    if (!quota.ok) return quota.response;
+    if (!guard.ok) return guard.response;
 
-    // Panggil Gemini Vision dari AI Service
-    const extractedData = await aiService.scanInvoice(buffer, mimeType);
+    let extractedData;
+    try {
+      // Panggil Gemini Vision dari AI Service
+      extractedData = await aiService.scanInvoice(buffer, mimeType);
+    } catch (error) {
+      await guard.rollback();
+      throw error;
+    }
+
+    await guard.commit(estimateImageTokens(buffer.byteLength));
 
     return NextResponse.json({
       success: true,

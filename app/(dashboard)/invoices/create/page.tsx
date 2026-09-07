@@ -5,6 +5,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase/client";
+import { usePermissions } from "@/hooks/use-permissions";
 import { format } from "date-fns";
 import { id as idLocale } from "date-fns/locale";
 import { cn } from "@/lib/utils";
@@ -133,6 +134,19 @@ const PAYMENT_PRESETS = [
 
 export default function CreateInvoicePage() {
   const router = useRouter();
+  const { userRole, isLoading: permissionsLoading } = usePermissions();
+
+  useEffect(() => {
+    if (!permissionsLoading) {
+      if (userRole !== "admin" && userRole !== "super_admin") {
+        toast.error("Akses Ditolak", {
+          description: "Hanya Admin dan Super Admin yang dapat membuat tagihan baru.",
+        });
+        router.replace("/dashboard");
+      }
+    }
+  }, [userRole, permissionsLoading, router]);
+
   const [loading, setLoading] = useState(false);
   const [properties, setProperties] = useState<PropertyOption[]>([]);
   const [loadingProperties, setLoadingProperties] = useState(true);
@@ -166,6 +180,9 @@ export default function CreateInvoicePage() {
   }, []);
 
   // ===== FETCH CLIENTS DENGAN JOIN crm_leads -> crm_contacts =====
+  // Catatan arsitektur relasi:
+  // Kolom `invoices.client_id` merujuk ke tabel `crm_leads(id)` lewat Foreign Key.
+  // Pilihan klien di dropdown menampilkan nama/kontak klien dengan ID = lead.id.
   useEffect(() => {
     const fetchClients = async () => {
       setLoadingClients(true);
@@ -185,7 +202,7 @@ export default function CreateInvoicePage() {
             .map((lead: any) => {
               const c = lead.contact;
               return {
-                id: lead.id,
+                id: lead.id, // Sesuai FK invoices.client_id -> crm_leads(id)
                 name: c.full_name || c.name || c.email || "Tanpa Nama",
                 email: c.email || "",
                 phone: c.whatsapp || c.phone || c.phone_number || c.no_hp || "",
@@ -193,6 +210,9 @@ export default function CreateInvoicePage() {
             });
           setClients(mapped);
         } else {
+          // Fallback bila crm_leads tidak bisa dibaca: ambil kontak untuk autofill teks,
+          // tetapi id dikosongkan ("") agar invoices.client_id tetap NULL dan tidak
+          // melanggar foreign key constraint database crm_leads(id).
           const { data: contactsData } = await supabase
             .from("crm_contacts")
             .select("*");
@@ -200,7 +220,7 @@ export default function CreateInvoicePage() {
           if (contactsData) {
             setClients(
               contactsData.map((c: any) => ({
-                id: c.id,
+                id: "", // Aman: tidak memasukkan contact_id ke kolom FK lead_id
                 name: c.full_name || c.name || c.email || "Tanpa Nama",
                 email: c.email || "",
                 phone: c.whatsapp || c.phone || c.phone_number || "",

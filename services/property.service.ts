@@ -356,14 +356,16 @@ const propertyService = {
           land:property_land(*),
           building:property_building(*),
           media:property_media(*),
-          assigned_user:users!assigned_to(id, full_name, email, avatar_url)
+          assigned_user:users!assigned_to(id, full_name, avatar_url)
         `
       );
 
     if (uuidRegex.test(id)) {
       query = query.eq("id", id);
-    } else {
+    } else if (/^IP-\d{6}\d{2}$/.test(id)) {
       query = query.eq("listing_code", id);
+    } else {
+      query = query.eq("slug", id);
     }
 
     const { data, error } = await query.maybeSingle();
@@ -425,7 +427,21 @@ const propertyService = {
     if (!original) throw new Error("Property not found");
 
     const timestamp = Date.now();
-    const newListingCode = `${original.listing_code || "PROP"}-COPY-${timestamp}`;
+    const seqResult = await supabase.rpc("next_listing_number");
+    const seqNum = String(seqResult.data ?? 1).padStart(6, "0");
+    const agentId = original.assigned_to || original.created_by;
+    let agentCode = "01";
+    if (agentId) {
+      const { data: agentRow } = await supabase
+        .from("users").select("created_at").eq("id", agentId).maybeSingle();
+      const { count: agentRank } = await supabase
+        .from("users")
+        .select("*", { count: "exact", head: true })
+        .in("role", ["super_admin", "admin", "agent"])
+        .lte("created_at", agentRow?.created_at ?? new Date().toISOString());
+      agentCode = String(agentRank ?? 1).padStart(2, "0");
+    }
+    const newListingCode = `IP-${seqNum}${agentCode}`;
 
     const { data: newProperty, error: insertError } = await supabase
       .from("properties")

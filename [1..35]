@@ -1,0 +1,20 @@
+[35mapp/api/followups/[id]/route.ts[m[36m:[m[32m24[m[36m:[m  const lead = Array.isArray([1;31mfollowup.[mlead) ? [1;31mfollowup.[mlead[0] : [1;31mfollowup.[mlead;
+[35mapp/api/followups/[id]/route.ts[m[36m:[m[32m26[m[36m:[m  const authorized = privileged || [1;31mfollowup.[massigned_to === userId || lead?.assigned_to === userId || lead?.created_by === userId;
+[35mapp/api/followups/[id]/route.ts[m[36m:[m[32m33[m[36m:[m  const didTransitionToCompleted = body.status === "completed" && [1;31mfollowup.[mstatus !== "completed";
+[35mapp/api/followups/[id]/route.ts[m[36m:[m[32m34[m[36m:[m  const didTransitionToCancelled = body.status === "cancelled" && [1;31mfollowup.[mstatus !== "cancelled";
+[35mapp/api/followups/[id]/route.ts[m[36m:[m[32m53[m[36m:[m      action: didTransitionToCompleted ? "[1;31mfollowup.[mcompleted" : "[1;31mfollowup.[mcancelled",
+[35mapp/api/followups/[id]/route.ts[m[36m:[m[32m54[m[36m:[m      targetId: [1;31mfollowup.[mlead_id,
+[35mapp/api/followups/[id]/route.ts[m[36m:[m[32m55[m[36m:[m      detail: { followup_id: id, previous_status: [1;31mfollowup.[mstatus, status: body.status },
+[35mapp/api/followups/[id]/route.ts[m[36m:[m[32m60[m[36m:[m      action: "[1;31mfollowup.[mupdated",
+[35mapp/api/followups/[id]/route.ts[m[36m:[m[32m61[m[36m:[m      targetId: [1;31mfollowup.[mlead_id,
+[35mapp/api/followups/[id]/route.ts[m[36m:[m[32m68[m[36m:[m    lifecycle: { didTransitionToCompleted, shouldOfferNextFollowup, leadId: [1;31mfollowup.[mlead_id },
+[35mapp/api/followups/[id]/route.ts[m[36m:[m[32m83[m[36m:[m  const lead = Array.isArray([1;31mfollowup.[mlead) ? [1;31mfollowup.[mlead[0] : [1;31mfollowup.[mlead;
+[35mapp/api/followups/[id]/route.ts[m[36m:[m[32m85[m[36m:[m  const authorized = privileged || [1;31mfollowup.[massigned_to === userId || lead?.assigned_to === userId || lead?.created_by === userId;
+[35mapp/api/followups/[id]/route.ts[m[36m:[m[32m91[m[36m:[m    action: "[1;31mfollowup.[mdeleted",
+[35mapp/api/followups/[id]/route.ts[m[36m:[m[32m92[m[36m:[m    targetId: [1;31mfollowup.[mlead_id,
+[35mlib/audit-log.ts[m[36m:[m[32m24[m[36m:[m  | "[1;31mfollowup.[mcreated"
+[35mlib/audit-log.ts[m[36m:[m[32m25[m[36m:[m  | "[1;31mfollowup.[mupdated"
+[35mlib/audit-log.ts[m[36m:[m[32m26[m[36m:[m  | "[1;31mfollowup.[mcompleted"
+[35mlib/audit-log.ts[m[36m:[m[32m27[m[36m:[m  | "[1;31mfollowup.[mcancelled"
+[35mlib/audit-log.ts[m[36m:[m[32m28[m[36m:[m  | "[1;31mfollowup.[mdeleted"
+[35mlib/audit-log.ts[m[36m:[m[32m29[m[36m:[m  | "[1;31mfollowup.[moverdue";

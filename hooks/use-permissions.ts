@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { useUser } from "./use-user";
+import { normalizeRole } from "@/lib/permissions";
 import type { UserRole } from "@/types/user.types";
 
 export function usePermissions() {
@@ -20,11 +21,13 @@ export function usePermissions() {
 
       try {
         // Coba ambil role
-        let { data, error } = await supabase
+        const { data: existing, error } = await supabase
           .from("users")
           .select("role")
           .eq("id", user.id)
           .maybeSingle();
+
+        let data = existing;
 
         // Jika data tidak ada, insert dulu
         if (!data && !error) {
@@ -45,7 +48,12 @@ export function usePermissions() {
           }
         }
 
-        setUserRole((data?.role as UserRole) || "viewer");
+        // Diseragamkan lewat normalizeRole(), sama seperti getAuthContext() di
+        // lib/api-auth.ts. Kolom `users.role` di produksi masih memuat ejaan
+        // 'superadmin' tanpa garis bawah; tanpa penyeragaman ini, pemegang baris
+        // itu terbaca bukan super_admin di peramban dan kontrolnya disembunyikan,
+        // padahal server mengakuinya.
+        setUserRole(normalizeRole(data?.role));
       } catch (err) {
         console.warn("Error fetching role:", err);
         setUserRole("viewer");

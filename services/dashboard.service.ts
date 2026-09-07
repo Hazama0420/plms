@@ -4,6 +4,15 @@ export interface DashboardStats {
   totalProperties: number;
   activeListings: number;
   todayLeads: number;
+  totalLeads: number;
+  activeLeads: number;
+  dealsWonCount: number;
+  newLeadsCount: number;
+  pipelineValue: number;
+  scheduledFollowupsCount: number;
+  overdueFollowupsCount: number;
+  myPropertiesCount: number;
+  myPublishedCount: number;
   registeredAgents: number;
   totalSold: number;
   totalRented: number;
@@ -32,7 +41,7 @@ export interface DashboardStats {
 }
 
 export const dashboardService = {
-  async getStats(): Promise<DashboardStats> {
+  async getStats(role?: string, userId?: string): Promise<DashboardStats> {
     // ===== TOTAL PROPERTIES =====
     const { count: totalPropertiesRaw } = await supabase
       .from("properties")
@@ -46,14 +55,36 @@ export const dashboardService = {
       .eq("status", "published");
     const activeListings = activeListingsRaw ?? 0;
 
-    // ===== TODAY'S LEADS =====
+    // ===== CRM LEADS (RECONCILED KPI) =====
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const { count: todayLeadsRaw } = await supabase
-      .from("crm_leads")
-      .select("*", { count: "exact", head: true })
-      .gte("created_at", today.toISOString());
-    const todayLeads = todayLeadsRaw ?? 0;
+
+    let leadsQuery = supabase.from("crm_leads").select("id, status, budget, created_at, assigned_to");
+    if (role === "agent" && userId) {
+      leadsQuery = leadsQuery.eq("assigned_to", userId);
+    }
+    const { data: leadsData } = await leadsQuery;
+    const leads = leadsData || [];
+
+    const totalLeads = leads.length;
+    const activeStages = ["new", "contacted", "qualified", "proposal", "negotiation"];
+    const activeLeadsList = leads.filter((l) => activeStages.includes(l.status));
+    const activeLeads = activeLeadsList.length;
+    const pipelineValue = activeLeadsList.reduce((acc, curr) => acc + (Number(curr.budget) || 0), 0);
+    const dealsWonCount = leads.filter((l) => l.status === "won").length;
+    const newLeadsCount = leads.filter((l) => l.status === "new").length;
+    const todayLeads = leads.filter((l) => new Date(l.created_at) >= today).length;
+
+    // ===== FOLLOW-UPS (RECONCILED KPI) =====
+    const nowIso = new Date().toISOString();
+    let followupsQuery = supabase.from("crm_followups").select("id, status, followup_date, assigned_to");
+    if (role === "agent" && userId) {
+      followupsQuery = followupsQuery.eq("assigned_to", userId);
+    }
+    const { data: followupsData } = await followupsQuery;
+    const pendingFollowups = (followupsData || []).filter((f) => f.status === "pending");
+    const scheduledFollowupsCount = pendingFollowups.filter((f) => f.followup_date >= nowIso).length;
+    const overdueFollowupsCount = pendingFollowups.filter((f) => f.followup_date < nowIso).length;
 
     // ===== REGISTERED AGENTS =====
     const { count: registeredAgentsRaw } = await supabase
@@ -248,6 +279,24 @@ export const dashboardService = {
 
     const agentsTrend = prevAgents > 0 ? Math.round(((currAgents - prevAgents) / prevAgents) * 100) : 0;
 
+    // ===== AGENT PROPERTY COUNTS =====
+    let myPropertiesCount = activeListings;
+    let myPublishedCount = totalPublished;
+    if (role === "agent" && userId) {
+      const { count: apc } = await supabase
+        .from("properties")
+        .select("*", { count: "exact", head: true })
+        .eq("assigned_to", userId);
+      myPropertiesCount = apc ?? 0;
+
+      const { count: appc } = await supabase
+        .from("properties")
+        .select("*", { count: "exact", head: true })
+        .eq("assigned_to", userId)
+        .eq("status", "published");
+      myPublishedCount = appc ?? 0;
+    }
+
     const statsCards = [
       {
         title: "Total Properti",
@@ -266,12 +315,12 @@ export const dashboardService = {
         subtitle: `${totalProperties - activeListings} tidak aktif`,
       },
       {
-        title: "Leads Hari Ini",
-        value: todayLeads,
+        title: "Total Prospek",
+        value: totalLeads,
         icon: "Users",
         trend: leadsTrend,
         color: "orange" as const,
-        subtitle: "Prospek baru masuk",
+        subtitle: `${activeLeads} aktif di pipeline`,
       },
       {
         title: "Total Agen",
@@ -287,6 +336,15 @@ export const dashboardService = {
       totalProperties,
       activeListings,
       todayLeads,
+      totalLeads,
+      activeLeads,
+      dealsWonCount,
+      newLeadsCount,
+      pipelineValue,
+      scheduledFollowupsCount,
+      overdueFollowupsCount,
+      myPropertiesCount,
+      myPublishedCount,
       registeredAgents,
       totalSold,
       totalRented,

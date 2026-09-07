@@ -12,7 +12,8 @@ export type NotificationType =
   | "announcement"
   | "assignment"
   | "property_update"
-  | "lead";
+  | "lead"
+  | "support";
 
 export interface Notification {
   id: string;

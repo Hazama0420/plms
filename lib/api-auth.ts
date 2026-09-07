@@ -12,7 +12,7 @@
 import { NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createServerClientInstance } from "@/lib/supabase/server";
-import { hasPermission, normalizeRole } from "@/lib/permissions";
+import { hasPermission, isBlockedStatus, normalizeRole } from "@/lib/permissions";
 import type { Permission, UserRole } from "@/types/user.types";
 
 export { normalizeRole };
@@ -52,9 +52,15 @@ export async function getAuthContext(): Promise<AuthContext | null> {
 
   const { data: profile } = await supabase
     .from("users")
-    .select("role")
+    .select("role, status")
     .eq("id", user.id)
     .maybeSingle();
+
+  // Akun yang belum disetujui admin (atau dinonaktifkan) diperlakukan sama
+  // dengan tamu: seluruh guard di bawah menerjemahkan null menjadi 401.
+  if (isBlockedStatus(profile?.status)) {
+    return null;
+  }
 
   return {
     supabase,

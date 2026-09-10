@@ -4,6 +4,7 @@ import {
   hasPermission,
   canAccessRoute,
   hasMinRole,
+  isAuthorizedStatus,
   isBlockedStatus,
 } from '@/lib/permissions';
 import type { UserRole } from '@/types/user.types';
@@ -31,11 +32,20 @@ describe('Role & Permission Guards (Phase 11)', () => {
   });
 
   describe('Account Status Guard', () => {
-    it('detects blocked account statuses (pending, suspended)', () => {
-      expect(isBlockedStatus('pending')).toBe(true);
-      expect(isBlockedStatus('suspended')).toBe(true);
-      expect(isBlockedStatus('active')).toBe(false);
-      expect(isBlockedStatus(null)).toBe(false);
+    it.each([
+      ['active', true],
+      [' ACTIVE ', true],
+      ['pending', false],
+      ['suspended', false],
+      ['blocked', false],
+      ['unknown', false],
+      ['', false],
+      ['   ', false],
+      [null, false],
+      [undefined, false],
+    ])('allowlists only normalized active status: %j', (status, expected) => {
+      expect(isAuthorizedStatus(status)).toBe(expected);
+      expect(isBlockedStatus(status)).toBe(!expected);
     });
   });
 

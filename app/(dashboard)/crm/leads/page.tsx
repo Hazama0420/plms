@@ -206,13 +206,7 @@ export default function LeadsPage() {
   );
 
   const canClaimLead = useMemo(() => {
-    return (
-      currentUserRole === "agent" ||
-      currentUserRole === "marketing" ||
-      currentUserRole === "admin" ||
-      currentUserRole === "super_admin" ||
-      currentUserRole === "superadmin"
-    );
+    return currentUserRole.toLowerCase().trim() === "agent";
   }, [currentUserRole]);
 
   const handleClaimLead = async (leadId: string, e?: React.MouseEvent) => {

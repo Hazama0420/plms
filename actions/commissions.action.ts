@@ -3,7 +3,7 @@
 
 import { revenueOperationsService, type CommissionLedgerEntry } from "@/services/revenue-operations.service";
 import { createServerClientInstance } from "@/lib/supabase/server";
-import { normalizeRole } from "@/lib/permissions";
+import { canManageAllCRM, getCRMAuthoritativeActor } from "@/lib/crm-auth";
 
 export interface CommissionActionResult<T = unknown> {
   success: boolean;
@@ -18,31 +18,19 @@ export async function getCommissionLedgersAction(params?: {
 }): Promise<CommissionActionResult<CommissionLedgerEntry[]>> {
   try {
     const supabase = await createServerClientInstance();
-    const {
-      data: { user },
-      error: userErr,
-    } = await supabase.auth.getUser();
-
-    if (userErr || !user) {
+    const actor = await getCRMAuthoritativeActor(supabase);
+    if (!actor) {
       return { success: false, data: [], error: "Sesi tidak valid. Silakan login kembali." };
     }
 
-    const { data: profile } = await supabase
-      .from("users")
-      .select("role")
-      .eq("id", user.id)
-      .maybeSingle();
-
-    const role = normalizeRole(profile?.role ?? user.user_metadata?.role);
-
     // Otorisasi backend: hanya internal staf yang berwenang
-    if (!["admin", "super_admin", "commissioner", "agent"].includes(role)) {
+    if (!["admin", "super_admin", "commissioner", "agent"].includes(actor.role)) {
       return { success: false, data: [], error: "Anda tidak berwenang mengakses data komisi." };
     }
 
     // Jika peran agen, paksa hanya membaca komisi miliknya sendiri
     const effectiveParams =
-      role === "agent" ? { ...params, agentId: user.id } : params;
+      actor.role === "agent" ? { ...params, agentId: actor.user.id } : params;
 
     const ledgers = await revenueOperationsService.getCommissionLedgers(effectiveParams);
     return { success: true, data: ledgers };
@@ -62,27 +50,18 @@ export async function updateCommissionStatusAction(
 ): Promise<CommissionActionResult> {
   try {
     const supabase = await createServerClientInstance();
-    const {
-      data: { user },
-      error: userErr,
-    } = await supabase.auth.getUser();
-
-    if (userErr || !user) {
+    const authoritativeActor = await getCRMAuthoritativeActor(supabase);
+    if (!authoritativeActor) {
       return { success: false, error: "Sesi tidak valid. Silakan login kembali." };
     }
-
-    const { data: profile } = await supabase
-      .from("users")
-      .select("role")
-      .eq("id", user.id)
-      .maybeSingle();
-
-    const role = normalizeRole(profile?.role ?? user.user_metadata?.role);
+    if (!canManageAllCRM(authoritativeActor.role)) {
+      return { success: false, error: "Hanya Admin yang berwenang mengubah status komisi." };
+    }
 
     const actor = {
-      userId: user.id,
-      email: user.email ?? null,
-      role,
+      userId: authoritativeActor.user.id,
+      email: authoritativeActor.user.email ?? null,
+      role: authoritativeActor.role,
     };
 
     const result = await revenueOperationsService.updateCommissionStatus(commissionId, status, actor);

@@ -1,5 +1,6 @@
 // lib/supabase/admin.ts
 import { createClient } from "@supabase/supabase-js";
+import { phase12GuardedFetch } from "@/lib/write-freeze";
 
 export function createAdminClient() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -16,5 +17,6 @@ export function createAdminClient() {
       autoRefreshToken: false,
       persistSession: false,
     },
+    global: { fetch: phase12GuardedFetch },
   });
 }

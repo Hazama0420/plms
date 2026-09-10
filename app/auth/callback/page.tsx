@@ -15,7 +15,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
-import { BLOCKED_STATUSES } from "@/lib/permissions";
+import { isAuthorizedStatus } from "@/lib/permissions";
 import { toast } from "sonner";
 
 export default function AuthCallbackPage() {
@@ -40,7 +40,7 @@ export default function AuthCallbackPage() {
           .eq("id", userId)
           .maybeSingle();
 
-        if (BLOCKED_STATUSES.includes(profile?.status ?? "")) {
+        if (!isAuthorizedStatus(profile?.status)) {
           await supabase.auth.signOut();
           toast.error(
             profile?.status === "pending"

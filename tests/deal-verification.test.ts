@@ -83,7 +83,7 @@ describe('Deal Verification Authorization & Role Normalization (Regression Suite
             select: vi.fn().mockReturnValue({
               eq: vi.fn().mockReturnValue({
                 single: vi.fn().mockResolvedValue({
-                  data: { role: rawRole },
+                  data: { role: rawRole, status: 'active' },
                   error: null,
                 }),
               }),
@@ -185,6 +185,26 @@ describe('Deal Verification Authorization & Role Normalization (Regression Suite
       expect(result.error).toBe('Hanya Admin atau Super Admin yang dapat memverifikasi Deal.');
       expect(revenueOperationsService.processDealClosing).not.toHaveBeenCalled();
     });
+
+    it('fails closed when the authoritative profile cannot be read', async () => {
+      mockSupabase.auth.getUser.mockResolvedValue({
+        data: { user: { id: 'metadata-admin', user_metadata: { role: 'admin' } } },
+        error: null,
+      });
+      mockSupabase.from.mockReturnValue({
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            single: vi.fn().mockResolvedValue({ data: null, error: { message: 'profile unavailable' } }),
+          }),
+        }),
+      });
+
+      const result = await verifyCRMDealAction('lead-1', true);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('Sesi tidak valid.');
+      expect(revenueOperationsService.processDealClosing).not.toHaveBeenCalled();
+    });
   });
 
   describe('updateCRMLeadStatusAction to "won" Authorization', () => {
@@ -216,7 +236,7 @@ describe('Deal Verification Authorization & Role Normalization (Regression Suite
             select: vi.fn().mockReturnValue({
               eq: vi.fn().mockReturnValue({
                 single: vi.fn().mockResolvedValue({
-                  data: { role: rawRole },
+                  data: { role: rawRole, status: 'active' },
                   error: null,
                 }),
               }),
@@ -254,56 +274,27 @@ describe('Deal Verification Authorization & Role Normalization (Regression Suite
       });
     };
 
-    it('allows raw role "superadmin" to mark unverified lead (deal_state: "none") as won', async () => {
-      setupAuthAndLead('superadmin', 'none');
+    it.each(['superadmin', 'super_admin', 'admin'])(
+      'rejects direct won transition for privileged role "%s"',
+      async (role) => {
+        setupAuthAndLead(role, 'none');
 
-      const result = await updateCRMLeadStatusAction('lead-1', 'won');
-      expect(result.success).toBe(true);
-      expect(result.error).toBeNull();
-      expect(revenueOperationsService.processDealClosing).toHaveBeenCalledWith(
-        'lead-1',
-        expect.objectContaining({ role: 'super_admin' })
-      );
-    });
+        const result = await updateCRMLeadStatusAction('lead-1', 'won');
 
-    it('allows role "super_admin" to mark unverified lead (deal_state: "none") as won', async () => {
-      setupAuthAndLead('super_admin', 'none');
+        expect(result.success).toBe(false);
+        expect(result.error).toBe('Status Won hanya dapat ditetapkan melalui verifikasi Deal.');
+        expect(revenueOperationsService.processDealClosing).not.toHaveBeenCalled();
+      }
+    );
 
-      const result = await updateCRMLeadStatusAction('lead-1', 'won');
-      expect(result.success).toBe(true);
-      expect(result.error).toBeNull();
-    });
-
-    it('allows role "admin" to mark unverified lead (deal_state: "none") as won', async () => {
-      setupAuthAndLead('admin', 'none');
-
-      const result = await updateCRMLeadStatusAction('lead-1', 'won');
-      expect(result.success).toBe(true);
-      expect(result.error).toBeNull();
-    });
-
-    it('allows raw role "superadmin" to mark verified lead as won', async () => {
-      setupAuthAndLead('superadmin', 'verified');
-
-      const result = await updateCRMLeadStatusAction('lead-1', 'won');
-      expect(result.success).toBe(true);
-      expect(result.error).toBeNull();
-    });
-
-    it('allows role "super_admin" to mark verified lead as won', async () => {
-      setupAuthAndLead('super_admin', 'verified');
-
-      const result = await updateCRMLeadStatusAction('lead-1', 'won');
-      expect(result.success).toBe(true);
-      expect(result.error).toBeNull();
-    });
-
-    it('allows role "admin" to mark verified lead as won', async () => {
+    it('does not reopen the direct path when deal_state is already verified', async () => {
       setupAuthAndLead('admin', 'verified');
 
       const result = await updateCRMLeadStatusAction('lead-1', 'won');
-      expect(result.success).toBe(true);
-      expect(result.error).toBeNull();
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('Status Won hanya dapat ditetapkan melalui verifikasi Deal.');
+      expect(revenueOperationsService.processDealClosing).not.toHaveBeenCalled();
     });
 
     it('rejects role "agent" from marking deal as won even if lead is owned', async () => {
@@ -318,7 +309,7 @@ describe('Deal Verification Authorization & Role Normalization (Regression Suite
           return {
             select: vi.fn().mockReturnValue({
               eq: vi.fn().mockReturnValue({
-                single: vi.fn().mockResolvedValue({ data: { role: 'agent' }, error: null }),
+                single: vi.fn().mockResolvedValue({ data: { role: 'agent', status: 'active' }, error: null }),
               }),
             }),
           };
@@ -347,7 +338,7 @@ describe('Deal Verification Authorization & Role Normalization (Regression Suite
 
       const result = await updateCRMLeadStatusAction('lead-1', 'won');
       expect(result.success).toBe(false);
-      expect(result.error).toBe('Deal harus diverifikasi Admin atau Super Admin.');
+      expect(result.error).toBe('Status Won hanya dapat ditetapkan melalui verifikasi Deal.');
     });
 
     it('rejects role "viewer" from changing status', async () => {
@@ -355,7 +346,7 @@ describe('Deal Verification Authorization & Role Normalization (Regression Suite
 
       const result = await updateCRMLeadStatusAction('lead-1', 'won');
       expect(result.success).toBe(false);
-      expect(result.error).toBe('Anda tidak berwenang mengubah Lead ini.');
+      expect(result.error).toBe('Anda tidak memiliki akses untuk mengelola CRM.');
     });
 
     it('rejects role "commissioner" from changing status', async () => {
@@ -363,7 +354,7 @@ describe('Deal Verification Authorization & Role Normalization (Regression Suite
 
       const result = await updateCRMLeadStatusAction('lead-1', 'won');
       expect(result.success).toBe(false);
-      expect(result.error).toBe('Anda tidak berwenang mengubah Lead ini.');
+      expect(result.error).toBe('Anda tidak memiliki akses untuk mengelola CRM.');
     });
   });
 

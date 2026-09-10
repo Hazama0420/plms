@@ -10,8 +10,12 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { canAccessRoute, normalizeRole } from "@/lib/permissions";
+import { canAccessRoute, isAuthorizedStatus, normalizeRole } from "@/lib/permissions";
 import { SITE } from "@/lib/site-config";
+import {
+  PHASE12_WRITE_FREEZE_CODE,
+  isFrozenApplicationRequest,
+} from "@/lib/write-freeze";
 
 /**
  * Host "telanjang" (apex) dari origin kanonik — `www.inlandproperty.site`
@@ -111,6 +115,32 @@ export async function proxy(req: NextRequest) {
     return NextResponse.redirect(canonical, 308);
   }
 
+  if (isFrozenApplicationRequest({
+    method: req.method,
+    pathname: path,
+    isServerAction: req.headers.has("next-action"),
+  })) {
+    return NextResponse.json(
+      {
+        success: false,
+        code: PHASE12_WRITE_FREEZE_CODE,
+        error: "Perubahan data dihentikan sementara untuk pemeliharaan keamanan.",
+      },
+      {
+        status: 503,
+        headers: {
+          "Cache-Control": "no-store",
+          "Retry-After": "60",
+          "X-PLMS-Write-Freeze": "phase12",
+        },
+      }
+    );
+  }
+
+  // API yang masuk matcher hanya membutuhkan freeze gate. Otorisasi normal
+  // tetap dilakukan oleh masing-masing Route Handler.
+  if (path.startsWith("/api/")) return res;
+
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -161,13 +191,13 @@ export async function proxy(req: NextRequest) {
     .eq("id", user.id)
     .maybeSingle();
 
-  if (profileError) {
-    console.error("[proxy] Gagal membaca data user:", profileError.message);
+  if (profileError || !profile) {
+    console.error("[proxy] Gagal membaca data user:", profileError?.message ?? "profile missing");
     return path === "/dashboard" ? res : redirectWithCookies("/dashboard", req, res);
   }
 
-  const role = normalizeRole(profile?.role ?? user.user_metadata?.role);
-  const status = (profile?.status ?? "active").toLowerCase().trim();
+  const role = normalizeRole(profile.role);
+  const status = String(profile.status ?? "").toLowerCase().trim();
 
   // ─────────────────────────────────────────────────────────────────────────
   // 2a. Status PENDING — hanya boleh mengakses /pending-approval
@@ -182,9 +212,10 @@ export async function proxy(req: NextRequest) {
   // ─────────────────────────────────────────────────────────────────────────
   // 2b. Status SUSPENDED — tendang ke login dengan alasan
   // ─────────────────────────────────────────────────────────────────────────
-  if (status === "suspended") {
+  if (!isAuthorizedStatus(status)) {
+    if (isAuthPage(path)) return res;
     const loginUrl = new URL("/login", req.url);
-    loginUrl.searchParams.set("reason", "suspended");
+    loginUrl.searchParams.set("reason", status === "suspended" ? "suspended" : "inactive");
     return redirectWithCookies(loginUrl.toString(), req, res);
   }
 
@@ -225,5 +256,13 @@ export const config = {
     "/dashboard",
     "/properties/:path*",
     "/kpr-calculator",
+    // API mutation families covered by the Phase 12 write-freeze gate.
+    "/api/leads/:path*",
+    "/api/followups/:path*",
+    "/api/media/:path*",
+    "/api/properties/:path*",
+    "/api/surveys/:path*",
+    "/api/admin/logs",
+    "/api/admin/users/:path*",
   ],
 };

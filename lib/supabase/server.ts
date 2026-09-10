@@ -1,6 +1,7 @@
 // lib/supabase/server.ts
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { phase12GuardedFetch } from "@/lib/write-freeze";
 
 export async function createServerClientInstance() {
   const cookieStore = await cookies();
@@ -23,6 +24,7 @@ export async function createServerClientInstance() {
           }
         },
       },
+      global: { fetch: phase12GuardedFetch },
     }
   );
 }

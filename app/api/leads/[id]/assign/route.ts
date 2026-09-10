@@ -31,6 +31,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole } from "@/lib/api-auth";
+import { isEligibleCRMAgentProfile } from "@/lib/crm-auth";
 import { notifyEvent } from "@/lib/notification-helper";
 import { leadAssignSchema, validate } from "@/lib/validations";
 
@@ -43,7 +44,7 @@ export async function PATCH(
   const auth = await requireRole(["super_admin", "admin", "agent"]);
   if (!auth.ok) return auth.response;
 
-  const { supabase, userId } = auth.ctx;
+  const { supabase, userId, role } = auth.ctx;
 
   try {
     const { id: leadId } = await context.params;
@@ -51,6 +52,27 @@ export async function PATCH(
     if (!parsed.ok) return parsed.response;
 
     const { assigned_to, kind } = parsed.data;
+
+    if (role === "agent" && assigned_to !== userId) {
+      return NextResponse.json(
+        { success: false, error: "Agent hanya dapat mengklaim Lead untuk dirinya sendiri." },
+        { status: 403 }
+      );
+    }
+
+    if (assigned_to) {
+      const { data: assignee } = await supabase
+        .from("users")
+        .select("role, status")
+        .eq("id", assigned_to)
+        .maybeSingle();
+      if (!isEligibleCRMAgentProfile(assignee)) {
+        return NextResponse.json(
+          { success: false, error: "Lead hanya dapat ditugaskan kepada Agent aktif." },
+          { status: 400 }
+        );
+      }
+    }
 
     // Keadaan sekarang dibaca lebih dulu karena kolom `assigned_to` hanya boleh
     // ditulis bila nilainya memang berubah.

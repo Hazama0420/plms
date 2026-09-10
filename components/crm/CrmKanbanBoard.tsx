@@ -83,42 +83,43 @@ export function CrmKanbanBoard() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [currentUserRole, setCurrentUserRole] = useState<string>("");
 
-  const isAdminOrSuperAdmin = useMemo(() => {
+  const isFullCRMReader = useMemo(() => {
     return (
       currentUserRole === "super_admin" ||
       currentUserRole === "superadmin" ||
-      currentUserRole === "admin"
+      currentUserRole === "admin" ||
+      currentUserRole === "commissioner"
     );
   }, [currentUserRole]);
 
   const canDragAndMove = useMemo(() => {
     const role = currentUserRole.toLowerCase().trim();
-    return role !== "viewer" && role !== "tamu" && role !== "guest";
+    return ["super_admin", "superadmin", "admin", "agent", "marketing"].includes(role);
   }, [currentUserRole]);
 
   const [claimingLeadId, setClaimingLeadId] = useState<string | null>(null);
 
   const canClaim = useMemo(() => {
     const role = currentUserRole.toLowerCase().trim();
-    return ["agent", "marketing", "admin", "super_admin", "superadmin"].includes(role);
+    return role === "agent";
   }, [currentUserRole]);
 
   const canAccessLeadContact = useCallback(
     (lead?: any) => {
-      if (isAdminOrSuperAdmin) return true;
+      if (isFullCRMReader) return true;
       if (!currentUserId || !lead) return false;
       return lead.assigned_to === currentUserId;
     },
-    [isAdminOrSuperAdmin, currentUserId]
+    [isFullCRMReader, currentUserId]
   );
 
   const formatPhoneForUser = useCallback(
     (phone?: string, lead?: any) => {
       if (!phone) return "-";
-      if (isAdminOrSuperAdmin || (lead && canAccessLeadContact(lead))) return phone;
+      if (isFullCRMReader || (lead && canAccessLeadContact(lead))) return phone;
       return "08xx-xxxx-xxxx";
     },
-    [isAdminOrSuperAdmin, canAccessLeadContact]
+    [isFullCRMReader, canAccessLeadContact]
   );
 
   const fetchKanbanLeads = useCallback(async () => {
@@ -139,7 +140,7 @@ export function CrmKanbanBoard() {
       const role = (userData?.role || user.user_metadata?.role || "agent").toLowerCase();
       setCurrentUserRole(role);
 
-      const isUserAdmin = role === "super_admin" || role === "superadmin" || role === "admin";
+      const isFullReader = ["super_admin", "superadmin", "admin", "commissioner"].includes(role);
 
       let query = supabase
         .from("crm_leads")
@@ -149,14 +150,19 @@ export function CrmKanbanBoard() {
         `)
         .order("created_at", { ascending: false });
 
-      if (!isUserAdmin) {
+      if (!isFullReader) {
         query = query.or(`created_by.eq.${user.id},assigned_to.eq.${user.id},assigned_to.is.null`);
       }
 
-      const { data, error } = await query;
+      const [{ data, error }, { data: claimableData, error: claimableError }] =
+        await Promise.all([
+          query,
+          supabase.rpc("list_claimable_crm_leads"),
+        ]);
       if (error) throw error;
+      if (claimableError) throw claimableError;
 
-      const normalizedData = (data || []).map((item) => {
+      const normalizedData = [...(data || []), ...(claimableData || [])].map((item) => {
         const rawStatus = (item.status || "new").toString().toLowerCase().trim();
         const validStatus = STATUS_STAGES.some((s) => s.id === rawStatus)
           ? (rawStatus as LeadStatus)
@@ -291,12 +297,8 @@ export function CrmKanbanBoard() {
         description: "Anda sekarang bertindak sebagai penanggung jawab lead ini.",
       });
 
-      // Update lead state optimistically
-      setLeads((prev) =>
-        prev.map((item) =>
-          item.id === leadId ? { ...item, assigned_to: currentUserId } : item
-        )
-      );
+      // Re-read through RLS so the newly owned row is hydrated with its contact.
+      await fetchKanbanLeads();
     } catch (err: any) {
       toast.error("Gagal mengklaim Lead: " + err.message);
       fetchKanbanLeads();
@@ -422,7 +424,7 @@ export function CrmKanbanBoard() {
         </div>
 
         <div className="flex items-center gap-2 w-full sm:w-auto sm:ml-auto justify-end">
-          {!isAdminOrSuperAdmin && (
+          {!isFullCRMReader && canDragAndMove && (
             <span className="text-[10px] font-medium text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-1 rounded-lg flex items-center gap-1 shrink-0">
               <Lock className="w-3 h-3 shrink-0" /> {t("crm.kanban.agentMode")}
               <span className="hidden sm:inline"> {t("crm.kanban.contactsCensored")}</span>
@@ -439,12 +441,14 @@ export function CrmKanbanBoard() {
             <RefreshCw className={cn("w-3.5 h-3.5", loading && "animate-spin")} />
           </Button>
 
-          <Button
-            onClick={() => router.push("/crm/leads/create")}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold gap-1.5 h-8 px-3 rounded-lg cursor-pointer shadow-xs"
-          >
-            <Plus className="w-3.5 h-3.5" /> {t("crm.kanban.newLead")}
-          </Button>
+          {canDragAndMove && (
+            <Button
+              onClick={() => router.push("/crm/leads/create")}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold gap-1.5 h-8 px-3 rounded-lg cursor-pointer shadow-xs"
+            >
+              <Plus className="w-3.5 h-3.5" /> {t("crm.kanban.newLead")}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -561,7 +565,7 @@ export function CrmKanbanBoard() {
                               </DropdownMenuItem>
                             )}
 
-                            {STATUS_STAGES.filter((s) => s.id !== lead.status).map((s) => (
+                            {canDragAndMove && STATUS_STAGES.filter((s) => s.id !== lead.status).map((s) => (
                               <DropdownMenuItem
                                 key={s.id}
                                 onClick={() => handleMoveStatus(lead, s.id)}

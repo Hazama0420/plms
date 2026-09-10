@@ -1,5 +1,6 @@
 // lib/supabase/client.ts
 import { createBrowserClient } from "@supabase/ssr";
+import { phase12GuardedFetch } from "@/lib/write-freeze";
 
 // Storage cadangan di RAM jika localStorage dilarang oleh browser/iframe
 const memoryStore = new Map<string, string>();
@@ -49,6 +50,7 @@ export const createClient = () =>
         persistSession: true,
         detectSessionInUrl: true,
       },
+      global: { fetch: phase12GuardedFetch },
     }
   );
 

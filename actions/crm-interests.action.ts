@@ -1,7 +1,7 @@
 'use server';
 
 import { createServerClientInstance } from '@/lib/supabase/server';
-import { normalizeRole } from '@/lib/permissions';
+import { canManageAllCRM, canManageCRM, getCRMAuthoritativeActor } from '@/lib/crm-auth';
 import { recordAudit } from '@/lib/audit-log';
 import type { CRMInterest } from '@/types/crm.types';
 
@@ -11,13 +11,6 @@ type ActionResult<T = unknown> = {
   error: string | null;
 };
 
-async function getActor(supabase: Awaited<ReturnType<typeof createServerClientInstance>>) {
-  const { data: { user }, error } = await supabase.auth.getUser();
-  if (error || !user) return null;
-  const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).single();
-  return { user, role: normalizeRole(profile?.role ?? user.user_metadata?.role) };
-}
-
 export async function createCRMInterestAction(data: {
   lead_id: string;
   property_id: string;
@@ -26,8 +19,9 @@ export async function createCRMInterestAction(data: {
   priority?: number;
 }): Promise<ActionResult<CRMInterest>> {
   const supabase = await createServerClientInstance();
-  const actor = await getActor(supabase);
+  const actor = await getCRMAuthoritativeActor(supabase);
   if (!actor) return { success: false, error: 'Sesi tidak valid. Silakan login kembali.' };
+  if (!canManageCRM(actor.role)) return { success: false, error: 'Anda tidak memiliki akses untuk mengelola CRM.' };
 
   if (!data.lead_id || !data.property_id) {
     return { success: false, error: 'Lead dan Properti wajib ditentukan.' };
@@ -44,7 +38,7 @@ export async function createCRMInterestAction(data: {
     return { success: false, error: 'Lead tidak ditemukan atau tidak berwenang.' };
   }
 
-  const privileged = actor.role === 'admin' || actor.role === 'super_admin';
+  const privileged = canManageAllCRM(actor.role);
   const authorized = privileged || lead.assigned_to === actor.user.id || lead.created_by === actor.user.id;
   if (!authorized) {
     return { success: false, error: 'Anda tidak berwenang menambahkan minat pada Lead ini.' };
@@ -85,8 +79,9 @@ export async function updateCRMInterestAction(
   }
 ): Promise<ActionResult<CRMInterest>> {
   const supabase = await createServerClientInstance();
-  const actor = await getActor(supabase);
+  const actor = await getCRMAuthoritativeActor(supabase);
   if (!actor) return { success: false, error: 'Sesi tidak valid. Silakan login kembali.' };
+  if (!canManageCRM(actor.role)) return { success: false, error: 'Anda tidak memiliki akses untuk mengelola CRM.' };
 
   const { data: interest, error: fetchErr } = await supabase
     .from('crm_interests')
@@ -99,7 +94,7 @@ export async function updateCRMInterestAction(
   }
 
   const lead = Array.isArray(interest.lead) ? interest.lead[0] : interest.lead;
-  const privileged = actor.role === 'admin' || actor.role === 'super_admin';
+  const privileged = canManageAllCRM(actor.role);
   const authorized = privileged || lead?.assigned_to === actor.user.id || lead?.created_by === actor.user.id;
   if (!authorized) {
     return { success: false, error: 'Anda tidak berwenang mengubah minat properti ini.' };
@@ -135,8 +130,9 @@ export async function updateCRMInterestAction(
 
 export async function deleteCRMInterestAction(interestId: string): Promise<ActionResult> {
   const supabase = await createServerClientInstance();
-  const actor = await getActor(supabase);
+  const actor = await getCRMAuthoritativeActor(supabase);
   if (!actor) return { success: false, error: 'Sesi tidak valid. Silakan login kembali.' };
+  if (!canManageCRM(actor.role)) return { success: false, error: 'Anda tidak memiliki akses untuk mengelola CRM.' };
 
   const { data: interest, error: fetchErr } = await supabase
     .from('crm_interests')
@@ -149,7 +145,7 @@ export async function deleteCRMInterestAction(interestId: string): Promise<Actio
   }
 
   const lead = Array.isArray(interest.lead) ? interest.lead[0] : interest.lead;
-  const privileged = actor.role === 'admin' || actor.role === 'super_admin';
+  const privileged = canManageAllCRM(actor.role);
   const authorized = privileged || lead?.assigned_to === actor.user.id || lead?.created_by === actor.user.id;
   if (!authorized) {
     return { success: false, error: 'Anda tidak berwenang menghapus minat properti ini.' };
@@ -175,8 +171,9 @@ export async function syncCRMLeadInterestsAction(
   propertyIds: string[]
 ): Promise<ActionResult> {
   const supabase = await createServerClientInstance();
-  const actor = await getActor(supabase);
+  const actor = await getCRMAuthoritativeActor(supabase);
   if (!actor) return { success: false, error: 'Sesi tidak valid. Silakan login kembali.' };
+  if (!canManageCRM(actor.role)) return { success: false, error: 'Anda tidak memiliki akses untuk mengelola CRM.' };
 
   const { data: lead, error: leadErr } = await supabase
     .from('crm_leads')
@@ -188,7 +185,7 @@ export async function syncCRMLeadInterestsAction(
     return { success: false, error: 'Lead tidak ditemukan atau tidak berwenang.' };
   }
 
-  const privileged = actor.role === 'admin' || actor.role === 'super_admin';
+  const privileged = canManageAllCRM(actor.role);
   const authorized = privileged || lead.assigned_to === actor.user.id || lead.created_by === actor.user.id;
   if (!authorized) {
     return { success: false, error: 'Anda tidak berwenang mengubah minat properti pada Lead ini.' };

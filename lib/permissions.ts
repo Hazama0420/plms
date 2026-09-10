@@ -6,21 +6,15 @@
 
 import { UserRole, Permission, ROLE_PERMISSIONS, VALID_ROLES } from "@/types/user.types";
 
-/**
- * Status akun yang tidak boleh masuk sistem.
- *
- * Sengaja daftar-tolak, bukan daftar-izin (`status !== 'active'`): tabel
- * `users` tidak pernah didefinisikan di berkas migrasi mana pun — DDL-nya
- * dibuat manual lewat SQL Editor — sehingga nilai bawaan kolom `status` tidak
- * bisa dipastikan dari repositori ini. Akun lama yang `status`-nya null akan
- * ikut terkunci oleh daftar-izin, termasuk admin. Yang ditolak di sini hanya
- * dua nilai yang memang ditulis eksplisit oleh alur pendaftaran.
- */
-export const BLOCKED_STATUSES = ["pending", "suspended"];
+export const AUTHORIZED_STATUS = "active";
 
-/** Apakah akun dengan status ini ditolak masuk? Nilai null/kosong lolos. */
+/** Hanya status aktif yang dapat memberi hak akses; nilai lain fail closed. */
+export function isAuthorizedStatus(raw: unknown): boolean {
+  return String(raw ?? "").toLowerCase().trim() === AUTHORIZED_STATUS;
+}
+
 export function isBlockedStatus(raw: unknown): boolean {
-  return BLOCKED_STATUSES.includes(String(raw ?? "").toLowerCase().trim());
+  return !isAuthorizedStatus(raw);
 }
 
 /**

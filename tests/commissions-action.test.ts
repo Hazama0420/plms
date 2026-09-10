@@ -44,7 +44,7 @@ describe('Commission Server Actions (Phase 11)', () => {
       mockSupabase.from.mockReturnValueOnce({
         select: vi.fn().mockReturnValue({
           eq: vi.fn().mockReturnValue({
-            maybeSingle: vi.fn().mockResolvedValue({ data: { role: 'viewer' } }),
+            single: vi.fn().mockResolvedValue({ data: { role: 'viewer', status: 'active' }, error: null }),
           }),
         }),
       });
@@ -52,6 +52,28 @@ describe('Commission Server Actions (Phase 11)', () => {
       const result = await getCommissionLedgersAction();
       expect(result.success).toBe(false);
       expect(result.error).toContain('Anda tidak berwenang');
+    });
+
+    it('fails closed for a blocked profile despite Admin metadata', async () => {
+      mockSupabase.auth.getUser.mockResolvedValueOnce({
+        data: { user: { id: 'blocked-1', user_metadata: { role: 'admin' } } },
+        error: null,
+      });
+      mockSupabase.from.mockReturnValueOnce({
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            single: vi.fn().mockResolvedValue({
+              data: { role: 'admin', status: 'suspended' },
+              error: null,
+            }),
+          }),
+        }),
+      });
+
+      const result = await getCommissionLedgersAction();
+
+      expect(result.success).toBe(false);
+      expect(revenueOperationsService.getCommissionLedgers).not.toHaveBeenCalled();
     });
 
     it('forces agent role to only view their own commissions (agentId scoping)', async () => {
@@ -64,7 +86,7 @@ describe('Commission Server Actions (Phase 11)', () => {
       mockSupabase.from.mockReturnValueOnce({
         select: vi.fn().mockReturnValue({
           eq: vi.fn().mockReturnValue({
-            maybeSingle: vi.fn().mockResolvedValue({ data: { role: 'agent' } }),
+            single: vi.fn().mockResolvedValue({ data: { role: 'agent', status: 'active' }, error: null }),
           }),
         }),
       });
@@ -92,7 +114,7 @@ describe('Commission Server Actions (Phase 11)', () => {
       mockSupabase.from.mockReturnValueOnce({
         select: vi.fn().mockReturnValue({
           eq: vi.fn().mockReturnValue({
-            maybeSingle: vi.fn().mockResolvedValue({ data: { role: 'commissioner' } }),
+            single: vi.fn().mockResolvedValue({ data: { role: 'commissioner', status: 'active' }, error: null }),
           }),
         }),
       });
@@ -127,7 +149,7 @@ describe('Commission Server Actions (Phase 11)', () => {
       mockSupabase.from.mockReturnValueOnce({
         select: vi.fn().mockReturnValue({
           eq: vi.fn().mockReturnValue({
-            maybeSingle: vi.fn().mockResolvedValue({ data: { role: 'admin' } }),
+            single: vi.fn().mockResolvedValue({ data: { role: 'admin', status: 'active' }, error: null }),
           }),
         }),
       });
@@ -157,7 +179,7 @@ describe('Commission Server Actions (Phase 11)', () => {
       mockSupabase.from.mockReturnValueOnce({
         select: vi.fn().mockReturnValue({
           eq: vi.fn().mockReturnValue({
-            maybeSingle: vi.fn().mockResolvedValue({ data: { role: 'commissioner' } }),
+            single: vi.fn().mockResolvedValue({ data: { role: 'commissioner', status: 'active' }, error: null }),
           }),
         }),
       });
@@ -170,6 +192,7 @@ describe('Commission Server Actions (Phase 11)', () => {
       const result = await updateCommissionStatusAction('comm-1', 'approved');
       expect(result.success).toBe(false);
       expect(result.error).toContain('Hanya Admin yang berwenang');
+      expect(revenueOperationsService.updateCommissionStatus).not.toHaveBeenCalled();
     });
   });
 });

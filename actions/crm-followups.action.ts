@@ -1,7 +1,7 @@
 'use server';
 
 import { createServerClientInstance } from '@/lib/supabase/server';
-import { normalizeRole } from '@/lib/permissions';
+import { canManageAllCRM, canManageCRM, getCRMAuthoritativeActor } from '@/lib/crm-auth';
 import { recordAudit } from '@/lib/audit-log';
 import { notifyEvent } from '@/lib/notification-helper';
 import type { CRMFollowup } from '@/types/crm.types';
@@ -17,13 +17,6 @@ type ActionResult<T = unknown> = {
   };
 };
 
-async function getActor(supabase: Awaited<ReturnType<typeof createServerClientInstance>>) {
-  const { data: { user }, error } = await supabase.auth.getUser();
-  if (error || !user) return null;
-  const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).single();
-  return { user, role: normalizeRole(profile?.role ?? user.user_metadata?.role) };
-}
-
 export async function createCRMFollowupAction(data: {
   lead_id: string;
   followup_date: string;
@@ -31,8 +24,9 @@ export async function createCRMFollowupAction(data: {
   assigned_to?: string;
 }): Promise<ActionResult<CRMFollowup>> {
   const supabase = await createServerClientInstance();
-  const actor = await getActor(supabase);
+  const actor = await getCRMAuthoritativeActor(supabase);
   if (!actor) return { success: false, error: 'Sesi tidak valid. Silakan login kembali.' };
+  if (!canManageCRM(actor.role)) return { success: false, error: 'Anda tidak memiliki akses untuk mengelola CRM.' };
 
   if (!data.followup_date) {
     return { success: false, error: 'Tanggal follow-up wajib diisi.' };
@@ -48,7 +42,7 @@ export async function createCRMFollowupAction(data: {
     return { success: false, error: 'Lead tidak ditemukan atau tidak berwenang.' };
   }
 
-  const privileged = actor.role === 'admin' || actor.role === 'super_admin';
+  const privileged = canManageAllCRM(actor.role);
   const authorizedLead = privileged || lead.assigned_to === actor.user.id || lead.created_by === actor.user.id;
   if (!authorizedLead) {
     return { success: false, error: 'Anda tidak berwenang membuat Follow-Up untuk Lead ini.' };
@@ -109,8 +103,9 @@ export async function updateCRMFollowupAction(
   }
 ): Promise<ActionResult<CRMFollowup>> {
   const supabase = await createServerClientInstance();
-  const actor = await getActor(supabase);
+  const actor = await getCRMAuthoritativeActor(supabase);
   if (!actor) return { success: false, error: 'Sesi tidak valid. Silakan login kembali.' };
+  if (!canManageCRM(actor.role)) return { success: false, error: 'Anda tidak memiliki akses untuk mengelola CRM.' };
 
   const { data: followup, error: fetchErr } = await supabase
     .from('crm_followups')
@@ -123,7 +118,7 @@ export async function updateCRMFollowupAction(
   }
 
   const lead = Array.isArray(followup.lead) ? followup.lead[0] : followup.lead;
-  const privileged = actor.role === 'admin' || actor.role === 'super_admin';
+  const privileged = canManageAllCRM(actor.role);
   const authorized = privileged || followup.assigned_to === actor.user.id || lead?.assigned_to === actor.user.id || lead?.created_by === actor.user.id;
 
   if (!authorized) {
@@ -190,8 +185,9 @@ export async function updateCRMFollowupAction(
 
 export async function deleteCRMFollowupAction(followupId: string): Promise<ActionResult> {
   const supabase = await createServerClientInstance();
-  const actor = await getActor(supabase);
+  const actor = await getCRMAuthoritativeActor(supabase);
   if (!actor) return { success: false, error: 'Sesi tidak valid. Silakan login kembali.' };
+  if (!canManageCRM(actor.role)) return { success: false, error: 'Anda tidak memiliki akses untuk mengelola CRM.' };
 
   const { data: followup, error: fetchErr } = await supabase
     .from('crm_followups')
@@ -204,7 +200,7 @@ export async function deleteCRMFollowupAction(followupId: string): Promise<Actio
   }
 
   const lead = Array.isArray(followup.lead) ? followup.lead[0] : followup.lead;
-  const privileged = actor.role === 'admin' || actor.role === 'super_admin';
+  const privileged = canManageAllCRM(actor.role);
   const authorized = privileged || followup.assigned_to === actor.user.id || lead?.assigned_to === actor.user.id || lead?.created_by === actor.user.id;
 
   if (!authorized) {

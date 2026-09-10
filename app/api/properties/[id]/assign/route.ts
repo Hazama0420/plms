@@ -12,6 +12,7 @@ import { requireRole } from "@/lib/api-auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { notifyEvent } from "@/lib/notification-helper";
 import { propertyAssignSchema, validate } from "@/lib/validations";
+import { isEligibleCRMAgentProfile } from "@/lib/crm-auth";
 
 export async function PATCH(
   request: NextRequest,
@@ -29,6 +30,20 @@ export async function PATCH(
 
     const { assigned_to } = parsed.data;
     const supabase = createAdminClient();
+
+    if (assigned_to) {
+      const { data: assignee } = await supabase
+        .from("users")
+        .select("role, status")
+        .eq("id", assigned_to)
+        .maybeSingle();
+      if (!isEligibleCRMAgentProfile(assignee)) {
+        return NextResponse.json(
+          { success: false, error: "Properti hanya dapat ditugaskan kepada Agent aktif." },
+          { status: 400 }
+        );
+      }
+    }
 
     // Melepas agen dari listing yang sedang terbit akan meninggalkannya publik
     // tanpa penanggung jawab — persis keadaan yang dilarang. Karena itu listingnya

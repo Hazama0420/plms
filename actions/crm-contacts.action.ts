@@ -1,18 +1,11 @@
 'use server';
 
 import { createServerClientInstance } from '@/lib/supabase/server';
-import { normalizeRole } from '@/lib/permissions';
+import { canManageAllCRM, canManageCRM, getCRMAuthoritativeActor } from '@/lib/crm-auth';
 import { recordAudit } from '@/lib/audit-log';
 import type { CRMContact } from '@/types/crm.types';
 
 type ActionResult<T = unknown> = { success: boolean; data?: T; error: string | null };
-
-async function getActor(supabase: Awaited<ReturnType<typeof createServerClientInstance>>) {
-  const { data: { user }, error } = await supabase.auth.getUser();
-  if (error || !user) return null;
-  const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).single();
-  return { user, role: normalizeRole(profile?.role ?? user.user_metadata?.role) };
-}
 
 export async function createCRMContactAction(data: {
   full_name: string;
@@ -25,8 +18,9 @@ export async function createCRMContactAction(data: {
   source?: string | null;
 }): Promise<ActionResult<CRMContact>> {
   const supabase = await createServerClientInstance();
-  const actor = await getActor(supabase);
+  const actor = await getCRMAuthoritativeActor(supabase);
   if (!actor) return { success: false, error: 'Sesi tidak valid. Silakan login kembali.' };
+  if (!canManageCRM(actor.role)) return { success: false, error: 'Anda tidak memiliki akses untuk mengelola CRM.' };
 
   if (!data.full_name || data.full_name.trim().length < 2) {
     return { success: false, error: 'Nama kontak minimal 2 karakter.' };
@@ -44,6 +38,7 @@ export async function createCRMContactAction(data: {
       city: data.city?.trim() || null,
       notes: data.notes?.trim() || null,
       source: data.source || 'Manual Entry',
+      created_by: actor.user.id,
     })
     .select()
     .single();
@@ -67,8 +62,9 @@ export async function updateCRMContactAction(
   data: Partial<CRMContact>
 ): Promise<ActionResult<CRMContact>> {
   const supabase = await createServerClientInstance();
-  const actor = await getActor(supabase);
+  const actor = await getCRMAuthoritativeActor(supabase);
   if (!actor) return { success: false, error: 'Sesi tidak valid. Silakan login kembali.' };
+  if (!canManageCRM(actor.role)) return { success: false, error: 'Anda tidak memiliki akses untuk mengelola CRM.' };
 
   const patch: Record<string, unknown> = {
     updated_at: new Date().toISOString(),
@@ -105,11 +101,10 @@ export async function updateCRMContactAction(
 
 export async function deleteCRMContactAction(contactId: string): Promise<ActionResult> {
   const supabase = await createServerClientInstance();
-  const actor = await getActor(supabase);
+  const actor = await getCRMAuthoritativeActor(supabase);
   if (!actor) return { success: false, error: 'Sesi tidak valid. Silakan login kembali.' };
 
-  const privileged = actor.role === 'admin' || actor.role === 'super_admin';
-  if (!privileged) {
+  if (!canManageAllCRM(actor.role)) {
     return { success: false, error: 'Hanya Admin atau Super Admin yang dapat menghapus kontak.' };
   }
 

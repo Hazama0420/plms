@@ -53,6 +53,10 @@ export const revenueOperationsService = {
     actor: { userId: string; email?: string | null; role: string },
     commissionRate = 0.0250
   ): Promise<RevenueOperationsResult> {
+    if (!canReviewDeal(actor.role)) {
+      return { success: false, error: "Hanya Admin atau Super Admin yang dapat memproses closing deal." };
+    }
+
     const supabase = createAdminClient();
 
     try {

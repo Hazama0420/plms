@@ -231,11 +231,11 @@ export async function PATCH(
 
     // Kepemilikan tidak boleh dipindah lewat PATCH bebas.
     delete body.user_id;
+    delete body.created_by;
+    delete body.assigned_to;
     delete body.id;
 
-    // PATCH menyalin seluruh body, sehingga `status` dan `assigned_to` bisa
-    // berubah dalam satu permintaan yang sama. Agen yang berlaku adalah nilai
-    // baru bila dikirim, kalau tidak nilai yang sudah tersimpan.
+    // Assignment hanya dapat diubah melalui endpoint khusus Super Admin.
     let downgraded = false;
     if (requiresAgent(body.status)) {
       const { data: existing } = await supabase
@@ -244,10 +244,7 @@ export async function PATCH(
         .eq("id", id)
         .single();
 
-      const effectiveAgent =
-        body.assigned_to !== undefined ? body.assigned_to : existing?.assigned_to;
-
-      const resolved = resolvePublishStatus(body.status, effectiveAgent);
+      const resolved = resolvePublishStatus(body.status, existing?.assigned_to);
       body.status = resolved.status;
       downgraded = resolved.downgraded;
     }

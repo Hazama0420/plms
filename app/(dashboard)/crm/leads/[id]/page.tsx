@@ -31,7 +31,12 @@ import { id } from "date-fns/locale";
 
 import { crmService, type LeadWithRelations } from "@/services/crm.service";
 import { supabase } from "@/lib/supabase/client";
-import { updateCRMLeadStatusAction, claimCRMLeadAction } from "@/actions/crm-leads.action";
+import {
+  updateCRMLeadStatusAction,
+  claimCRMLeadAction,
+  submitCRMDealAction,
+  verifyCRMDealAction,
+} from "@/actions/crm-leads.action";
 import type { LeadStatus } from "@/types/crm.types";
 
 import { Button } from "@/components/ui/button";
@@ -79,13 +84,13 @@ interface Followup {
   completed_at: string | null;
 }
 
-const STATUS_OPTIONS: { value: LeadStatus; label: string; color: string }[] = [
+const STATUS_OPTIONS: { value: LeadStatus; label: string; color: string; disabled?: boolean }[] = [
   { value: "new", label: "Baru (New)", color: "bg-blue-500" },
   { value: "contacted", label: "Dihubungi (Contacted)", color: "bg-amber-500" },
   { value: "qualified", label: "Kualifikasi (Qualified)", color: "bg-emerald-500" },
   { value: "proposal", label: "Proposal", color: "bg-indigo-500" },
   { value: "negotiation", label: "Negosiasi (Negotiation)", color: "bg-purple-500" },
-  { value: "won", label: "Menang (Won)", color: "bg-emerald-600" },
+  { value: "won", label: "Menang (Won)", color: "bg-emerald-600", disabled: true },
   { value: "lost", label: "Hilang (Lost)", color: "bg-rose-500" },
 ];
 
@@ -128,6 +133,8 @@ export default function LeadDetailPage() {
   const [showAddNote, setShowAddNote] = useState(false);
   const [showAddInterest, setShowAddInterest] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [dealDialogAction, setDealDialogAction] = useState<"submit" | "approve" | "reject" | null>(null);
+  const [dealRejectionReason, setDealRejectionReason] = useState("");
 
   const [aiModalOpen, setAiModalOpen] = useState(false);
   const [aiGeneratedMessage, setAiGeneratedMessage] = useState("");
@@ -187,8 +194,19 @@ export default function LeadDetailPage() {
 
   const canClaim = useMemo(() => {
     const role = currentUserRole.toLowerCase().trim();
-    return ["agent", "marketing", "admin", "super_admin", "superadmin"].includes(role);
+    return role === "agent";
   }, [currentUserRole]);
+
+  const ownsLead = useMemo(() => {
+    if (!currentUserId || !lead) return false;
+    return lead.assigned_to === currentUserId || lead.created_by === currentUserId;
+  }, [currentUserId, lead]);
+
+  const canSubmitDeal = useMemo(() => {
+    if (!lead || lead.status !== "negotiation") return false;
+    if (!["none", "submitted", "rejected"].includes(lead.deal_state || "none")) return false;
+    return ownsLead || isAdminOrSuperAdmin;
+  }, [isAdminOrSuperAdmin, lead, ownsLead]);
 
   const handleClaimLead = async () => {
     if (!lead) return;
@@ -215,6 +233,45 @@ export default function LeadDetailPage() {
     } catch (err: any) {
       toast.error("Gagal mengklaim Lead: " + err.message);
       fetchData();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDealAction = async () => {
+    if (!lead || !dealDialogAction) return;
+    if (dealDialogAction === "reject" && !dealRejectionReason.trim()) {
+      toast.error("Alasan penolakan wajib diisi.");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const result = dealDialogAction === "submit"
+        ? await submitCRMDealAction(lead.id)
+        : await verifyCRMDealAction(
+            lead.id,
+            dealDialogAction === "approve",
+            dealRejectionReason.trim() || undefined
+          );
+
+      if (!result.success) {
+        toast.error(result.error || "Proses Deal gagal.");
+        return;
+      }
+
+      toast.success(
+        dealDialogAction === "submit"
+          ? "Deal diajukan untuk verifikasi."
+          : dealDialogAction === "approve"
+            ? "Deal berhasil diverifikasi dan ditutup."
+            : "Deal ditolak dan dikembalikan kepada tim penjualan."
+      );
+      setDealDialogAction(null);
+      setDealRejectionReason("");
+      await fetchData();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Proses Deal gagal.");
     } finally {
       setSaving(false);
     }
@@ -570,7 +627,7 @@ export default function LeadDetailPage() {
             </SelectTrigger>
             <SelectContent className="bg-card border-border text-card-foreground">
               {STATUS_OPTIONS.map((opt) => (
-                <SelectItem key={opt.value} value={opt.value} className="text-xs">
+                <SelectItem key={opt.value} value={opt.value} disabled={opt.disabled} className="text-xs">
                   {opt.label}
                 </SelectItem>
               ))}
@@ -619,6 +676,65 @@ export default function LeadDetailPage() {
             </Button>
           )}
         </div>
+      )}
+
+      {(canSubmitDeal || lead.deal_state === "pending_verification" || lead.deal_state === "verified") && (
+        <Card className="border-emerald-500/25 bg-emerald-500/5 shadow-2xs rounded-xl">
+          <CardContent className="p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <CheckCircle className="h-4 w-4 text-emerald-600" />
+                <p className="text-xs font-bold text-foreground">Verifikasi Deal</p>
+                <Badge variant="outline" className="text-[9px] uppercase border-emerald-500/30 text-emerald-700 dark:text-emerald-300">
+                  {(lead.deal_state || "none").replaceAll("_", " ")}
+                </Badge>
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                {lead.deal_state === "verified"
+                  ? "Deal telah ditutup secara atomik; invoice dan komisi sudah dicatat."
+                  : lead.deal_state === "pending_verification"
+                    ? "Syarat Deal dibekukan selama menunggu keputusan Admin."
+                    : "Ajukan Deal dari tahap Negosiasi untuk pemeriksaan dan closing resmi."}
+              </p>
+              {lead.deal_state === "rejected" && lead.deal_rejection_reason && (
+                <p className="text-[11px] font-medium text-rose-600 dark:text-rose-400">
+                  Alasan sebelumnya: {lead.deal_rejection_reason}
+                </p>
+              )}
+            </div>
+
+            <div className="flex gap-2 shrink-0">
+              {canSubmitDeal && (
+                <Button
+                  onClick={() => setDealDialogAction("submit")}
+                  disabled={saving}
+                  className="h-9 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold"
+                >
+                  Ajukan Verifikasi
+                </Button>
+              )}
+              {lead.deal_state === "pending_verification" && isAdminOrSuperAdmin && (
+                <>
+                  <Button
+                    variant="outline"
+                    onClick={() => setDealDialogAction("reject")}
+                    disabled={saving}
+                    className="h-9 border-rose-500/40 text-rose-600 hover:bg-rose-500/10 text-xs font-semibold"
+                  >
+                    Tolak
+                  </Button>
+                  <Button
+                    onClick={() => setDealDialogAction("approve")}
+                    disabled={saving}
+                    className="h-9 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold"
+                  >
+                    Verifikasi & Tutup
+                  </Button>
+                </>
+              )}
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       {/* QUICK ACTIONS BAR */}
@@ -944,6 +1060,63 @@ export default function LeadDetailPage() {
       </Tabs>
 
       {/* DIALOG MODALS */}
+      <Dialog
+        open={dealDialogAction !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDealDialogAction(null);
+            setDealRejectionReason("");
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md rounded-2xl border-border bg-card text-card-foreground">
+          <DialogHeader>
+            <DialogTitle className="text-sm font-bold text-foreground">
+              {dealDialogAction === "submit"
+                ? "Ajukan Verifikasi Deal"
+                : dealDialogAction === "approve"
+                  ? "Verifikasi dan Tutup Deal"
+                  : "Tolak Verifikasi Deal"}
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              {dealDialogAction === "approve"
+                ? "Closing akan mengunci Deal, memperbarui status properti, serta membuat invoice dan komisi secara atomik."
+                : dealDialogAction === "reject"
+                  ? "Jelaskan koreksi yang harus dilakukan tim penjualan sebelum mengajukan ulang."
+                  : "Budget, properti, minat, dan Agen penanggung jawab akan dibekukan sampai Admin memberi keputusan."}
+            </DialogDescription>
+          </DialogHeader>
+
+          {dealDialogAction === "reject" && (
+            <Textarea
+              value={dealRejectionReason}
+              onChange={(event) => setDealRejectionReason(event.target.value)}
+              placeholder="Alasan penolakan..."
+              rows={4}
+              className="text-xs resize-none border-border bg-background"
+            />
+          )}
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setDealDialogAction(null)} disabled={saving} className="h-9 text-xs">
+              Batal
+            </Button>
+            <Button
+              onClick={handleDealAction}
+              disabled={saving}
+              className={cn(
+                "h-9 text-xs text-white",
+                dealDialogAction === "reject"
+                  ? "bg-rose-600 hover:bg-rose-700"
+                  : "bg-emerald-600 hover:bg-emerald-700"
+              )}
+            >
+              {saving ? "Memproses..." : dealDialogAction === "approve" ? "Verifikasi & Tutup" : "Konfirmasi"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={aiModalOpen} onOpenChange={setAiModalOpen}>
         <DialogContent className="sm:max-w-md rounded-2xl border-border bg-card text-card-foreground">
           <DialogHeader>

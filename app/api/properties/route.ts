@@ -3,6 +3,7 @@ import { requirePermission } from "@/lib/api-auth";
 import { propertyInsertSchema, validate } from "@/lib/validations";
 import { NO_AGENT_MESSAGE, resolvePublishStatus } from "@/lib/property-publish";
 import { NO_REGION_MESSAGE, buildAddressPayload, hasRegion } from "@/lib/property-address";
+import { isEligibleCRMAgentProfile } from "@/lib/crm-auth";
 
 /** `properties.slug` bersifat NOT NULL dan UNIQUE. */
 function generateUniqueSlug(title: string) {
@@ -43,7 +44,18 @@ export async function POST(request: NextRequest) {
     // tidak pernah diisi di sini, sementara status default-nya "published" —
     // artinya setiap listing lewat route ini lahir dalam keadaan terbit tanpa
     // penanggung jawab. Pembuatnya dipakai sebagai penanggung jawab bawaan.
-    const assignedTo = body.assigned_to || userId;
+    const assignedTo = userId;
+    const { data: assignee } = await supabase
+      .from("users")
+      .select("role, status")
+      .eq("id", assignedTo)
+      .maybeSingle();
+    if (!isEligibleCRMAgentProfile(assignee)) {
+      return NextResponse.json(
+        { success: false, error: "Properti hanya dapat ditugaskan kepada Agent aktif." },
+        { status: 400 }
+      );
+    }
 
     // Bila entah bagaimana agennya tetap kosong, permintaan publikasi diturunkan
     // menjadi draf alih-alih ditolak: datanya sudah dikirim pengguna dan tidak

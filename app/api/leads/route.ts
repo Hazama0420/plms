@@ -33,6 +33,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createServerClientInstance } from "@/lib/supabase/server";
 import { getClientIp, rateLimit } from "@/lib/rate-limit";
 import { leadInsertSchema, validate } from "@/lib/validations";
+import { SITE } from "@/lib/site-config";
 
 // Maksimal 5 pengajuan per IP tiap 10 menit untuk tamu. Pemilik akun dibatasi
 // per akun dengan jatah lebih longgar: satu client yang membandingkan sepuluh
@@ -46,6 +47,7 @@ const LEAD_WINDOW_MS = 10 * 60_000;
 // produksi memuat "super_admin" maupun "superadmin".
 const INTERNAL_ROLES = new Set([
   "agent",
+  "marketing",
   "admin",
   "super_admin",
   "superadmin",
@@ -79,8 +81,9 @@ export async function POST(req: Request) {
           id: string;
           full_name: string | null;
           email: string | null;
-          phone: string | null;
-          role: string;
+           phone: string | null;
+           role: string;
+           status: string;
         }
       | null = null;
 
@@ -95,7 +98,7 @@ export async function POST(req: Request) {
         // profil sendiri jadi tak terbaca.
         const { data: profile } = await supabase
           .from("users")
-          .select("id, full_name, email, phone, whatsapp, role")
+          .select("id, full_name, email, phone, whatsapp, role, status")
           .eq("id", sessionUser.id)
           .maybeSingle();
 
@@ -105,8 +108,9 @@ export async function POST(req: Request) {
           email: profile?.email ?? sessionUser.email ?? null,
           // whatsapp didahulukan: itulah nomor yang benar-benar dipakai
           // berkomunikasi bila pengguna mengisi keduanya berbeda.
-          phone: profile?.whatsapp || profile?.phone || null,
-          role: String(profile?.role ?? "viewer").toLowerCase(),
+           phone: profile?.whatsapp || profile?.phone || null,
+           role: String(profile?.role ?? "viewer").toLowerCase(),
+           status: String(profile?.status ?? "").toLowerCase(),
         };
       }
     } catch (err) {
@@ -154,7 +158,9 @@ export async function POST(req: Request) {
 
     const accountPhone = account?.phone ? account.phone.replace(/[^0-9]/g, "") : "";
     const accountName = account?.full_name?.trim() || "";
-    const isInternal = account ? INTERNAL_ROLES.has(account.role) : false;
+    const isInternal = account
+      ? account.status === "active" && INTERNAL_ROLES.has(account.role)
+      : false;
 
     // Staf internal: tidak ada lead, hanya nomor agen tujuan. Diperiksa sebelum
     // apa pun ditulis supaya tombol WA di katalog tidak mengisi CRM dengan
@@ -265,7 +271,10 @@ export async function POST(req: Request) {
         // dibuat) dan `created_by` di tempat berbeda, jadi menyebut kolom satu
         // per satu berisiko menunjuk kolom yang tidak ada — dan query yang gagal
         // membuat seluruh lead jatuh ke agen default tanpa jejak.
-        const query = supabase.from("properties").select("*, price:property_price(*)");
+        const query = supabase
+          .from("properties")
+          .select("*, price:property_price(*)")
+          .eq("status", "published");
         const { data: propData } = await (isUuid
           ? query.eq("id", propertyRef)
           : query.eq("listing_code", propertyRef)
@@ -291,6 +300,7 @@ export async function POST(req: Request) {
     if (!ownerAgentId) {
       ownerAgentId = process.env.DEFAULT_AGENT_UUID || null;
     }
+    ownerAgentId = await resolveEligibleAgentId(supabase, ownerAgentId);
 
     // ========================================================================
     // 6. Simpan / cari kontak klien di 'crm_contacts'
@@ -359,24 +369,25 @@ export async function POST(req: Request) {
     }
 
     let leadId: string;
-    let leadRow: any;
     const isNewLead = !existingLead;
 
     if (existingLead) {
       leadId = existingLead.id;
       // Agen yang sudah memegang lead tetap dipertahankan; menugaskan ulang
       // diam-diam akan memindahkan prospek dari meja orang lain.
-      if (existingLead.assigned_to) ownerAgentId = existingLead.assigned_to;
+      if (existingLead.assigned_to) {
+        ownerAgentId = await resolveEligibleAgentId(supabase, existingLead.assigned_to);
+      }
 
       // Dinaikkan supaya lead ini kembali ke urutan teratas antrean agen.
-      const { data: touched } = await supabase
+      const { data: touched, error: touchError } = await supabase
         .from("crm_leads")
         .update({ updated_at: new Date().toISOString() })
         .eq("id", leadId)
-        .select("*, contact:crm_contacts(*)")
+        .select("id")
         .maybeSingle();
 
-      leadRow = touched ?? { id: leadId };
+      if (touchError || !touched) throw new Error("Gagal memperbarui lead yang sudah ada.");
     } else {
       const { data: newLead, error: leadErr } = await supabase
         .from("crm_leads")
@@ -390,13 +401,12 @@ export async function POST(req: Request) {
           budget: budgetValue,
           notes: notes,
         })
-        .select("*, contact:crm_contacts(*)")
+        .select("id")
         .single();
 
       if (leadErr) throw new Error("Gagal membuat lead: " + leadErr.message);
 
       leadId = newLead.id;
-      leadRow = newLead;
 
       // Simpan ke 'crm_interests' agar muncul di tab Minat detail CRM. Hanya
       // untuk lead baru — lead yang dipakai ulang sudah punya barisnya.
@@ -554,33 +564,21 @@ export async function POST(req: Request) {
     // kontak, bukan agen) dan dasbor memakai nomor cadangan yang ditulis keras
     // di kode. Dengan nomor datang dari sini, ketiga halaman memakai sumber
     // yang sama dan tidak perlu menarik direktori staf ke peramban.
-    const agent = await resolveAgentContact(supabase, null, ownerAgentId);
-
     return NextResponse.json({
       success: true,
       mode: viaAccount ? "account" : "form",
-      isNewLead,
-      // "Agen telah diberi tahu" hanya benar bila ada agen yang diberi tahu.
-      // Tanpa agen, yang menerima notifikasi adalah admin — dan itu urusan
-      // internal, bukan kabar yang perlu disampaikan ke pengunjung. Jadi
-      // kalimatnya diganti menjadi janji yang tetap benar, tanpa membocorkan
-      // bahwa listing itu sedang tidak dipegang siapa pun.
-      message: viaAccount
-        ? "Aktivitas Anda tercatat. Membuka WhatsApp agen..."
-        : ownerAgentId
-          ? "Lead & minat properti berhasil tersimpan. Agen telah diberi tahu."
-          : "Lead & minat properti berhasil tersimpan. Tim kami akan segera menghubungi Anda.",
-      data: leadRow,
-      agent,
+      message: "Pengajuan berhasil diproses. Tim kami akan segera menghubungi Anda.",
+      // A stable company channel never reveals or diverges from internal CRM assignment.
+      agent: { name: SITE.name, whatsapp: toWaNumber(SITE.whatsapp) },
       // Dipantulkan kembali supaya pemanggil bisa menyusun pesan WhatsApp
       // dengan nama pengirim tanpa harus tahu dari mana identitasnya berasal.
       // Isinya data milik pemanggil sendiri, bukan milik orang lain.
       inquirer: { name, phone: cleanPhone },
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("API Leads Error:", error);
     return NextResponse.json(
-      { error: error.message || "Gagal memproses lead" },
+      { error: "Gagal memproses pengajuan. Silakan coba lagi." },
       { status: 500 }
     );
   }
@@ -607,7 +605,7 @@ async function resolveAgentContact(
     const isListingCode = /^[A-Za-z0-9_-]{1,64}$/.test(propertyRef);
 
     if (isUuid || isListingCode) {
-      const query = supabase.from("properties").select("*");
+      const query = supabase.from("properties").select("*").eq("status", "published");
       const { data: propData } = await (isUuid
         ? query.eq("id", propertyRef)
         : query.eq("listing_code", propertyRef)
@@ -621,6 +619,7 @@ async function resolveAgentContact(
   }
 
   if (!resolvedId) resolvedId = process.env.DEFAULT_AGENT_UUID || null;
+  resolvedId = await resolveEligibleAgentId(supabase, resolvedId);
   if (!resolvedId) return { name: "Agen Inland", whatsapp: null };
 
   const { data: agentRow } = await supabase
@@ -635,4 +634,22 @@ async function resolveAgentContact(
     name: agentRow.full_name || "Agen Inland",
     whatsapp: toWaNumber(agentRow.whatsapp || agentRow.phone),
   };
+}
+
+async function resolveEligibleAgentId(
+  supabase: ReturnType<typeof createAdminClient>,
+  candidate: string | null
+): Promise<string | null> {
+  if (!candidate) return null;
+
+  const { data: agent } = await supabase
+    .from("users")
+    .select("id, role, status")
+    .eq("id", candidate)
+    .maybeSingle();
+
+  return agent?.role?.toLowerCase().trim() === "agent"
+    && agent?.status?.toLowerCase().trim() === "active"
+    ? agent.id
+    : null;
 }

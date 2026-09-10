@@ -31,6 +31,18 @@ describe('Revenue Operations Service (Phase 11)', () => {
     const actor = { userId: 'admin-uuid-1', email: 'admin@inland.co.id', role: 'admin' };
     const customRate = 0.03;
 
+    it('rejects non-reviewer roles before creating a service-role client', async () => {
+      const result = await revenueOperationsService.processDealClosing(leadId, {
+        userId: 'agent-1',
+        role: 'agent',
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Hanya Admin atau Super Admin');
+      expect(supabaseAdminModule.createAdminClient).not.toHaveBeenCalled();
+      expect(mockRpc).not.toHaveBeenCalled();
+    });
+
     it('calls PostgreSQL atomic RPC with exact parameters', async () => {
       mockRpc.mockResolvedValueOnce({
         data: {

@@ -1,7 +1,7 @@
 # CURRENT STATE — INLAND PROPERTY / PLMS
 
 ## Last Updated
-2026-09-07 — Debug Runtime Menyeluruh: Deal Won authorization boolean fix (`actions/crm-leads.action.ts`), Dashboard leads schema query fix (`contact:crm_contacts(full_name, phone)`), live Supabase audit (0 drift, 66/66 tests passing, build pass).
+2026-09-10 — Phase 12 Step 1F final security review passed. The Step 1G immutable release artifact is prepared and validated locally but not pushed; Migration 034, the application release, and technical write freeze are not deployed or active.
 
 ## Project Identity
 
@@ -30,15 +30,15 @@
 - **AI Layer**: Centralized AI registry with policy enforcement
 
 ### Server Actions Architecture
-**Status**: ✅ IMPLEMENTED dan FROZEN
+**Status**: IMPLEMENTED; Phase 12 authorization hardening verified locally against the exact production schema clone
 - **Directory**: `actions/` exists with 4 CRM action files
-- **Security**: `'use server'` directives, session verification, audit logging
+- **Security**: `'use server'` directives, authoritative active-profile roles, fail-closed status checks, audit logging
 - **Files**: 
   - `crm-contacts.action.ts`
   - `crm-followups.action.ts`
   - `crm-interests.action.ts`
   - `crm-leads.action.ts` (491 lines complete)
-- **Status**: FROZEN untuk security compliance
+- **Shared guard**: `lib/crm-auth.ts`
 
 ### Central AI Architecture
 **Status**: ✅ IMPLEMENTED dan FUNCTIONAL
@@ -80,9 +80,9 @@
 ## Current Major Work
 
 ### Active Areas
-1. **System Audit & Stability (Phase 10)**: Full forensic audit across database, CRM pipeline, properties, invoices, permissions, and i18n
-2. **CRM Automation & Integration**: Lead-to-Survey and Deal-to-Invoice workflows
-3. **Data Consistency**: Child table normalization and KPI reconciliation
+1. **Phase 12 Immutable Release**: Step 1F passed; Step 1G creates and verifies the reviewed 41-file release commit
+2. **Controlled Rollout**: Not started; Migration 034 must precede the matching application deployment
+3. **Data Reconciliation**: Review historical won state, Admin-assigned leads, and ownerless contacts without guessing ownership
 
 ### Recent Updates (2026-09-05)
 - **Phase 10: Full System Audit**:
@@ -119,11 +119,21 @@
 
 ## Known Limitations & Remaining Findings
 - **Data Health Remediation**: Data Health is detection-only per business rules; automated remediation is left to explicit administrator actions.
+- **VERIFIED live, read-only**: 1 historical `won` lead lacks `deal_state='verified'`; Migration 034 preserves it for explicit reconciliation.
+- **VERIFIED live, read-only**: 11 orphan CRM contacts have no authoritative owner provenance. They become full-reader-only after Migration 034 until handled explicitly.
+- **VERIFIED live, read-only**: 8 of 10 leads are assigned to Admin/Super Admin profiles rather than Agents; the closing RPC rejects them as commission recipients.
+- **ROLLOUT**: Migration 034 uses `EXCLUSIVE` locks for financial reconciliation safety. Apply during a controlled write freeze after checking for long-running transactions.
+- **ROLLOUT**: Technical write-freeze support is implemented but not deployed or active. It blocks mutation ingress, affected Supabase REST/RPC resources, property media upload, and both mutating schedulers while preserving reads.
+- **RESIDUAL**: Suspending an Agent does not proactively downgrade existing published properties; publication and relevant property mutations revalidate active-Agent eligibility.
+- **RESIDUAL**: The trusted closing path still depends on the postgres-owned RPC. Any future postgres-owned `SECURITY DEFINER` lead mutation requires security review.
+- **QUALITY BASELINE**: 11 suites / 171 tests, TypeScript, production build (67 routes), and `git diff --check` pass. Repository-wide ESLint remains red with pre-existing unrelated legacy/generated debt.
+- **COMPLETED — Step 1C.1 ordering**: The blocked 032 draft is preserved unchanged under `supabase/migration-drafts/`; migration tooling now sees local 033 directly after production 031. The corrected broad migration must later receive a version after 033.
+- **COMPLETED — Step 1C.2 production containment**: Migration 033 is applied in production. `PUBLIC`, `anon`, and `authenticated` no longer have effective EXECUTE on the deal-closing RPC; `service_role` retains EXECUTE.
 
 ### Implementation Status
 - **Phase 10C Deliverables**: ✅ COMPLETED (`PHASE_10C_BI_AUTOMATION_PRODUCTIVITY.md`)
-- **Code Modifications**: Completed for Phase 10C (BUG-12, BUG-13, Data Health, CRM Productivity).
-- **Database Schema**: Zero destructive changes.
+- **Phase 12 Step 1F**: COMPLETED; READY FOR IMMUTABLE RELEASE.
+- **Database Schema**: Migration 034 is forward-only and unapplied to production.
 
 ## Security Constraints
 
@@ -134,7 +144,74 @@
 
 ## Next Task
 
-**Current Task**: Phase 11 — Sales & Revenue Operations (IN PROGRESS)
+**Current Task**: Phase 12 Step 1G — Immutable Security Release Commit
+
+### Phase 12 Step 1 State
+- **COMPLETED locally**: Read-only live catalog inspection verified migration 031, exact CRM policies/grants, RPC owner/ACL/definition, role spellings, and aggregate integrity state without exposing PII.
+- **COMPLETED locally**: Preserved the blocked broad 032 draft under `supabase/migration-drafts/`; its Git object hash remains `e8dc4c70a86d3e47f6dbc64e50da3e235dbd9d75`.
+- **COMPLETED locally**: All four CRM action files use authoritative active `public.users` profiles; none trusts `user_metadata.role`.
+- **COMPLETED locally**: Viewer has no CRM access; Agent has owned rows plus a sanitized atomic claim queue; Marketing is own/created; Commissioner is full read-only; Admin/Super Admin manage all.
+- **VERIFIED live**: Direct create, single, and bulk action transitions to `won` are rejected; ACL-only migration 033 restricts the exact closing RPC signature to `service_role`.
+- **COMPLETED locally**: Lead detail now exposes explicit submit/reject/verify actions; generic `won` remains disabled and rejected server-side/database-side.
+- **COMPLETED locally**: Migration 034 enforces canonical pipeline/deal state, active-Agent closing attribution, available property, positive financial value, immutable closing identities, reconciliation, audit, and lifecycle-safe idempotency.
+- **COMPLETED locally**: Unassigned lead PII is hidden from base tables. Active Agents receive sanitized claim metadata and claim through `claim_crm_lead_atomic()`; submitted/verified leads cannot be claimed.
+- **COMPLETED locally**: Property creator/assignment changes are guarded; generic PATCH strips both fields; only Super Admin assignment flow remains; publishing revalidates an active Agent.
+- **COMPLETED locally**: Public `/api/leads` returns invariant success content and the company WhatsApp channel, never internal assignment or CRM row state.
+- **VERIFIED locally**: Disposable PostgreSQL 17 suite passes RLS, workflow, closing, rollback, property, preflight rejection, and synchronized one-winner claim assertions.
+- **VERIFIED locally**: Migration 034 applies and its SQL suite passes against a schema-only clone of the exact production `public` catalog in local Supabase PostgreSQL 17.6.
+- **VERIFIED locally**: Real PostgREST requests with an authenticated JWT confirm owned-only base rows, sanitized claim output, atomic claim, and post-claim contact visibility.
+- **VERIFIED linked dry-run**: Only `034_phase12_crm_security_hardening.sql` would be pushed. No production apply occurred.
+- **APPLIED live**: Migration 033 completed through the normal linked Supabase migration mechanism after a dry-run listed only 033.
+- **VERIFIED live, read-only**: Exactly one `public.process_deal_closing_atomic(uuid,uuid,numeric)` overload exists; owner `postgres`, `SECURITY DEFINER=true`, `search_path=public`.
+- **VERIFIED live, read-only**: Effective EXECUTE is `PUBLIC=false`, `anon=false`, `authenticated=false`, `service_role=true`.
+- **VERIFIED live, read-only**: Migration history contains 031 and 033; migration 032 is absent. No business RPC, cron, application deployment, or business-data mutation occurred.
+- **COMPLETED locally — Step 1E.1**: Authorization now uses a strict normalized `status='active'` allowlist across Proxy, Route Handler guards, CRM Server Actions, Agent eligibility, OAuth callback, RLS helpers, invoice policies, and the closing RPC. Missing, NULL, empty, whitespace, pending, suspended, malformed, and unknown statuses fail closed.
+- **COMPLETED locally — Step 1E.1**: Invoice RLS is aligned with the application boundary: active Admin/Super Admin only. Migration 034 removes unknown invoice policies before installing the exact four-policy set.
+- **COMPLETED locally — Step 1E.1**: Migration 034 sets transaction-local `lock_timeout='10s'` and `statement_timeout='5min'` before acquiring table locks.
+- **COMPLETED locally — Step 1E.1**: Technical write freeze is centralized in `lib/write-freeze.ts`, enforced at Proxy ingress and all mutable Supabase client factories, and covers CRM, properties/children/media, invoices/items, commissions, surveys/requests, closing/claim RPCs, and mutating schedulers.
+- **VERIFIED locally — Step 1E.1**: True pre-031 bootstrap sequence applies 031→033→034 with 032 absent; adversarial invoice policy containment, 16 non-active/missing-profile identities, closing role matrix, reconciliation rollback, 10.1-second lock timeout, and synchronized one-winner claim concurrency all pass on PostgreSQL 17.
+- **VERIFIED locally — Step 1E.1**: Corrected Migration 034 and SQL assertions pass against the exact schema-only production `public` clone on local Supabase PostgreSQL 17.6.
+- **VERIFIED locally — Step 1E.1**: Authenticated PostgREST JWT requests pass non-active/missing-profile RLS, invoice role boundary, closing RPC ACL denial, active-Agent atomic claim, and post-claim contact visibility.
+- **VERIFIED locally — Step 1E.1**: 11 suites / 171 tests, `npx tsc --noEmit`, `git diff --check`, and the production build pass (67 routes).
+- **VERIFIED live, read-only — 2026-09-10**: Migration history remains 031/033 only; exact closing RPC remains postgres-owned `SECURITY DEFINER`, `search_path=public`, with effective EXECUTE `PUBLIC=false`, `anon=false`, `authenticated=false`, `service_role=true`.
+- **VERIFIED live, read-only — 2026-09-10**: Profiles are 7 active / 1 suspended; there are no transactions older than five minutes. Data aggregates remain: won-without-verified=1, verified-without-won/invoice/commission=0, assigned-without-active-Agent=8, published-without-assignee=5, published-without-active-Agent=13.
+- **COMPLETED — Step 1F**: Final security review returned READY FOR IMMUTABLE RELEASE with an exact 41-file allowlist; `services/crm.service.ts` is excluded as line-ending-only.
+- **VERIFIED — Step 1G pre-commit**: 11 suites / 171 tests, TypeScript, production build (67 routes), staged diff integrity, and linked migration history pass. Only Migration 034 is pending.
+
+### Phase 12 Decisions
+- Normalize legacy `superadmin` to canonical `super_admin`; include `commissioner` in the database role constraint.
+- Keep unassigned lead rows/PII out of base-table access; expose only sanitized claim metadata and an atomic active-Agent claim RPC.
+- Do not assign existing orphan contacts speculatively; persist `created_by` for new CRM contacts.
+- Preserve and report historical `won` data instead of silently rewriting it.
+- Protect closing state and invoice identity with database triggers; keep closing in one PostgreSQL transaction.
+- Deploy migration-first because the matching application uses the new claim RPC; follow immediately with the application release.
+- Treat only normalized `active` as authorized; never maintain a deny-list of known inactive status values.
+- Preserve reads during the controlled write freeze and reject affected writes with explicit no-store HTTP 503 responses.
+
+### Phase 12 Changed Files
+- `supabase/migration-drafts/032_phase12_p0_crm_security_containment.sql`
+- `supabase/migrations/033_phase12_rpc_acl_containment.sql`
+- `supabase/migrations/034_phase12_crm_security_hardening.sql`
+- `lib/crm-auth.ts`
+- `lib/permissions.ts`, `lib/api-auth.ts`, `lib/write-freeze.ts`, `proxy.ts`
+- `lib/supabase/client.ts`, `lib/supabase/server.ts`, `lib/supabase/admin.ts`
+- `app/auth/callback/page.tsx`
+- `actions/crm-leads.action.ts`, `actions/crm-contacts.action.ts`
+- `actions/crm-followups.action.ts`, `actions/crm-interests.action.ts`
+- `services/crm.service.ts`, `services/revenue-operations.service.ts`, `app/api/leads/route.ts`
+- `app/api/properties/route.ts`, `app/api/properties/[id]/route.ts`, `app/api/properties/[id]/assign/route.ts`
+- `app/(dashboard)/crm/leads/[id]/page.tsx`, `components/crm/CrmKanbanBoard.tsx`
+- `scripts/verify-phase12-security.sql`
+- `scripts/verify-phase12-rpc-acl-containment.sql`
+- `scripts/test-phase12-disposable.ps1`
+- `supabase/tests/phase12_bootstrap.sql`, `supabase/tests/phase12_preflight_fixture.sql`, `supabase/tests/phase12_security_test.sql`
+- `tests/api-auth.test.ts`, `tests/crm-auth.test.ts`, `tests/crm-security-contract.test.ts`, `tests/write-freeze.test.ts`
+- `tests/deal-verification.test.ts`, `tests/permissions.test.ts`, `tests/revenue-operations.test.ts`, `tests/commissions-action.test.ts`
+
+### Next Recommended Step
+Proceed to Phase 12 Step 1H controlled production rollout only after the immutable Step 1G commit is explicitly approved for push. Do not deploy or apply Migration 034 as part of release preparation.
+
+### Completed Work (Phase 11)
 
 ### Completed Work (Phase 11)
 - ✅ **Step 1 — Secure /api/followups**: `requireRole` guard, role-scoped queries (agents see only their follow-ups), phone number masking.
@@ -215,8 +292,7 @@
 ## Phase Status
 
 ### Current Phase
-**PHASE 11: SALES & REVENUE OPERATIONS (COMPLETED & VERIFIED)**
-- Steps 1–7: COMPLETED & VERIFIED
+**PHASE 12 STEP 1G: IMMUTABLE SECURITY RELEASE PREPARATION; NOT PUSHED OR DEPLOYED**
 
 ### Completed Phases
 - ✅ **Phase 1 - 9.2**: Core CRM, Properties, V2 UI, Mobile Polish, Full-Page Bilingual
@@ -225,6 +301,9 @@
 - ✅ **Phase 10B**: Workflow Integration & Data Reconciliation (COMPLETED)
 - ✅ **Phase 10C**: BI, Automation & CRM Productivity (COMPLETED)
 - ✅ **Phase 11**: Sales & Revenue Operations (COMPLETED & VERIFIED — Steps 1-7 done)
+- **Phase 12 Step 1A-1C.2**: Production RPC ACL containment complete; blocked Migration 032 quarantined
+- **Phase 12 Step 1D**: Corrective Migration 034 and matching application changes completed and verified locally; independent security review is next
+- **Phase 12 Step 1E.1**: Fail-closed status, finite lock timeouts, invoice RLS containment, technical write freeze, and expanded runtime/database evidence completed locally
 
 ---
 
